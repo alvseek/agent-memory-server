@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Runtime data — NEVER commit the database (Valaskjalf/memory)
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Secrets / host-specific deploy config
+.env
+deploy/*.env
+
+# OS / editor
+.DS_Store
+Thumbs.db

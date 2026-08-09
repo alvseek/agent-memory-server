@@ -1,0 +1,3 @@
+[submodule "control-files"]
+	path = control-files
+	url = https://github.com/alvseek/agent-memory-system.git
