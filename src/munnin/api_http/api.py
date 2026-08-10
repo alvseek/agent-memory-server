@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from munnin.core.service import MemoryService
+from munnin.business_services.memory_service import MemoryService
 
 
 def build_router(service: MemoryService) -> APIRouter:

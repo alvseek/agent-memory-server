@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
-from munnin.core.service import MemoryService
+from munnin.business_services.memory_service import MemoryService
 
 
 def build_mcp(service: MemoryService) -> FastMCP:

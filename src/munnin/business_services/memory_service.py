@@ -8,7 +8,7 @@ add_reasoning, ...) land in Phase 5; Phase 4 provides only liveness.
 from __future__ import annotations
 
 from munnin import __version__
-from munnin.store.repository import MemoryRepository
+from munnin.data_repositories.memory_repository import MemoryRepository
 
 
 class MemoryService:

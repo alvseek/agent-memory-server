@@ -10,11 +10,11 @@ import httpx
 from fastmcp import Client
 from httpx import ASGITransport
 
-from munnin.adapters.mcp.server import build_mcp
+from munnin.api_mcp.server import build_mcp
 from munnin.app import build_app
-from munnin.config import load_config
-from munnin.core.service import MemoryService
-from munnin.store.sqlite_repo import SqliteMemoryRepository
+from munnin.business_services.memory_service import MemoryService
+from munnin.configuration.config import load_config
+from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 
 async def test_health_endpoint() -> None:

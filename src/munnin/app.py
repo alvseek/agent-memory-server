@@ -13,11 +13,11 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from munnin import __version__
-from munnin.adapters.http.api import build_router
-from munnin.adapters.mcp.server import build_mcp
-from munnin.config import Config, load_config
-from munnin.core.service import MemoryService
-from munnin.store.sqlite_repo import SqliteMemoryRepository
+from munnin.api_http.api import build_router
+from munnin.api_mcp.server import build_mcp
+from munnin.business_services.memory_service import MemoryService
+from munnin.configuration.config import Config, load_config
+from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 
 def build_app(config: Config | None = None) -> FastAPI:

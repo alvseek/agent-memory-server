@@ -8,11 +8,13 @@ from __future__ import annotations
 import uvicorn
 
 from munnin.app import build_app
-from munnin.config import load_config
+from munnin.configuration.config import load_config
+from munnin.logger.logger import get_logger
 
 
 def main() -> None:
     config = load_config()
+    get_logger("boot").info("munnin starting on %s:%s", config.host, config.port)
     uvicorn.run(build_app(config), host=config.host, port=config.port)
 
 

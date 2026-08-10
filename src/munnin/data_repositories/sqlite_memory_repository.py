@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from munnin.store.models import MemoryRecord, RecordType
+from munnin.data_entities.memory_record import MemoryRecord, RecordType
 
 
 class SqliteMemoryRepository:
