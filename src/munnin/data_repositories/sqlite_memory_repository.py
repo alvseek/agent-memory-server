@@ -26,19 +26,29 @@ _SCHEMA_SQL = (
     Path(__file__).resolve().parent.parent / "data_entities" / "schema.sql"
 ).read_text(encoding="utf-8")
 
-_COLUMNS = (
-    "id, uuid, user_id, agent_id, record_type, project, title, tags, "
-    "created_date, modified_date, archived_date, deleted_date, full_content"
+# One source of truth for column order.
+_COL = (
+    "id", "uuid", "user_id", "agent_id", "record_type", "project", "title",
+    "tags", "created_date", "modified_date", "archived_date", "deleted_date",
+    "full_content",
 )
+_COLUMNS = ", ".join(_COL)
 # Insert set = every column except the autoincrement id.
-_INSERT_COLUMNS = (
-    "uuid, user_id, agent_id, record_type, project, title, tags, "
-    "created_date, modified_date, archived_date, deleted_date, full_content"
-)
+_INSERT_COLUMNS = ", ".join(_COL[1:])
+# Alias-prefixed list for joins (e.g. the FTS search join on `m`).
+_M_COLUMNS = ", ".join(f"m.{c}" for c in _COL)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _to_fts_query(text: str) -> str:
+    """Turn arbitrary text into a safe FTS5 MATCH string: each whitespace term is
+    quoted (embedded ``"`` doubled) and joined with a space (implicit AND). This
+    neutralises FTS5 operator syntax so any input (``C++``, ``store≠repo``, stray
+    quotes) matches literally instead of erroring or injecting operators."""
+    return " ".join('"' + term.replace('"', '""') + '"' for term in text.split())
 
 
 class SqliteMemoryRepository:
@@ -112,14 +122,70 @@ class SqliteMemoryRepository:
             ).fetchone()
         return _row_to_record(row)
 
-    def edit(self, uuid: str, old_string: str, new_string: str) -> MemoryRecord:
-        raise NotImplementedError("SP-2 (Store Write + Search)")
+    def edit(
+        self,
+        uuid: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> MemoryRecord:
+        """Edit-tool-parity content edit. Unique-replace by default (raises if the
+        substring is absent or ambiguous); ``replace_all=True`` replaces every
+        occurrence. Bumps ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger.
+
+        Raises ``LookupError`` if the record is missing/deleted, ``ValueError`` if
+        ``old_string`` is not found or (without ``replace_all``) ambiguous."""
+        with self._conn() as conn:
+            row = conn.execute(
+                f"SELECT {_COLUMNS} FROM memory_record "
+                "WHERE uuid=? AND user_id=? AND deleted_date IS NULL",
+                (uuid, self._user_id),
+            ).fetchone()
+            if row is None:
+                raise LookupError(f"record not found: {uuid}")
+            content = row["full_content"] or ""
+            count = content.count(old_string)
+            if count == 0:
+                raise ValueError(f"old_string not found in record {uuid}")
+            if count > 1 and not replace_all:
+                raise ValueError(
+                    f"old_string is ambiguous ({count} occurrences) in {uuid}; "
+                    "pass replace_all=True to replace every occurrence"
+                )
+            new_content = (
+                content.replace(old_string, new_string)
+                if replace_all
+                else content.replace(old_string, new_string, 1)
+            )
+            conn.execute(
+                "UPDATE memory_record SET full_content=?, modified_date=? "
+                "WHERE uuid=? AND user_id=?",
+                (new_content, _now(), uuid, self._user_id),
+            )
+            updated = conn.execute(
+                f"SELECT {_COLUMNS} FROM memory_record WHERE uuid=? AND user_id=?",
+                (uuid, self._user_id),
+            ).fetchone()
+        return _row_to_record(updated)
 
     def archive(self, uuid: str) -> None:
-        raise NotImplementedError("SP-2 (Store Write + Search)")
+        """Set ``archived_date`` (idempotent — first timestamp preserved)."""
+        self._set_lifecycle("archived_date", uuid)
 
     def soft_delete(self, uuid: str) -> None:
-        raise NotImplementedError("SP-2 (Store Write + Search)")
+        """Set ``deleted_date`` tombstone (idempotent)."""
+        self._set_lifecycle("deleted_date", uuid)
+
+    def _set_lifecycle(self, column: str, uuid: str) -> None:
+        # `column` is a literal constant from archive/soft_delete, never caller input.
+        with self._conn() as conn:
+            cur = conn.execute(
+                f"UPDATE memory_record SET {column}=COALESCE({column}, ?) "
+                "WHERE uuid=? AND user_id=?",
+                (_now(), uuid, self._user_id),
+            )
+            if cur.rowcount == 0:
+                raise LookupError(f"record not found: {uuid}")
 
     # --- reads ---
 
@@ -163,7 +229,24 @@ class SqliteMemoryRepository:
         return [_row_to_record(r) for r in rows]
 
     def search(self, text: str, *, include_archived: bool = True) -> Sequence[MemoryRecord]:
-        raise NotImplementedError("SP-2 (Store Write + Search)")
+        """Full-text search (FTS5) over content + title + tags. Safe plain-text
+        (see ``_to_fts_query``); ``user_id``-stamped; soft-deleted excluded; archived
+        included by default (still searchable). Ranked most-relevant-first (bm25)."""
+        match = _to_fts_query(text)
+        if not match:
+            return []
+        where = ["memory_fts MATCH ?", "m.user_id = ?", "m.deleted_date IS NULL"]
+        params: list[object] = [match, self._user_id]
+        if not include_archived:
+            where.append("m.archived_date IS NULL")
+        sql = (
+            f"SELECT {_M_COLUMNS} FROM memory_fts "
+            "JOIN memory_record m ON m.id = memory_fts.rowid "
+            f"WHERE {' AND '.join(where)} ORDER BY memory_fts.rank"
+        )
+        with self._conn() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_row_to_record(r) for r in rows]
 
 
 def _row_to_record(row: sqlite3.Row) -> MemoryRecord:

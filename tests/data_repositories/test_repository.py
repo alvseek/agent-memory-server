@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from munnin.data_entities.memory_record import SHARED_AGENT_ID, MemoryRecord, RecordType
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
@@ -82,15 +80,3 @@ def test_tenancy_isolation(tmp_path: Path) -> None:
     assert {r.uuid for r in a.query()} == {"u1"}
     assert list(b.query()) == []  # other tenant cannot see alvi's row
     assert b.get("u1") is None
-
-
-def test_sp2_methods_still_raise(tmp_path: Path) -> None:
-    repo = _repo(tmp_path)
-    for call in (
-        lambda: repo.edit("u", "a", "b"),
-        lambda: repo.archive("u"),
-        lambda: repo.soft_delete("u"),
-        lambda: repo.search("x"),
-    ):
-        with pytest.raises(NotImplementedError):
-            call()

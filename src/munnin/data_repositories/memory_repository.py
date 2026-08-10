@@ -25,9 +25,17 @@ class MemoryRepository(Protocol):
         """Append a new item. Idempotent on ``uuid`` (upsert)."""
         ...
 
-    def edit(self, uuid: str, old_string: str, new_string: str) -> MemoryRecord:
+    def edit(
+        self,
+        uuid: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> MemoryRecord:
         """Targeted string replace inside a record's ``full_content`` (server-side
-        read-replace-write). Per-word/line granularity — token-identical to the Edit tool."""
+        read-replace-write). Per-word/line granularity — token-identical to the Edit tool.
+        Unique-replace by default (raises if absent/ambiguous); ``replace_all=True``
+        replaces every occurrence."""
         ...
 
     def archive(self, uuid: str) -> None:
