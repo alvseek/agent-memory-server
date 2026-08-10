@@ -8,8 +8,30 @@ file.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
+
+# The reserved sentinel for fleet-shared memory (always-load layer i). One constant,
+# never a magic string. It is NOT a legal agent domain (underscores fail the kebab rule),
+# so no real agent can collide with it and break fleet-shared isolation.
+SHARED_AGENT_ID = "__shared__"
+
+_DOMAIN_RE = re.compile(r"^[a-z0-9-]+$")
+# Kebab-legal but semantically reserved names that must not be used as domains.
+_RESERVED_DOMAINS = frozenset({"shared"})
+
+
+def validate_domain(name: str) -> str:
+    """Validate an agent domain name and return it. Kebab-case ``[a-z0-9-]+`` only
+    (so the ``__shared__`` sentinel — which has underscores — can never be a domain),
+    and not a reserved word. Raises ``ValueError`` otherwise."""
+    if not _DOMAIN_RE.fullmatch(name) or name in _RESERVED_DOMAINS:
+        raise ValueError(
+            f"invalid agent domain {name!r}: must match [a-z0-9-]+ and not be reserved "
+            f"({sorted(_RESERVED_DOMAINS)} or the '{SHARED_AGENT_ID}' sentinel)"
+        )
+    return name
 
 
 class RecordType(str, Enum):
