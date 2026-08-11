@@ -34,6 +34,15 @@ def validate_domain(name: str) -> str:
     return name
 
 
+def validate_write_agent(name: str) -> str:
+    """Validate an ``agent_id`` for a WRITE. Like ``validate_domain`` but also accepts
+    the reserved ``__shared__`` sentinel (fleet-shared reasoning/knowledge are written
+    under it). Reads stay permissive — only writes decide ownership."""
+    if name == SHARED_AGENT_ID:
+        return name
+    return validate_domain(name)
+
+
 class RecordType(str, Enum):
     """Drives the two read patterns: identity/reasoning/emotional are loaded whole
     at awaken; episode/knowledge are browsed via the index, bodies on demand."""

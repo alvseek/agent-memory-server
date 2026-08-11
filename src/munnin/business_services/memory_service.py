@@ -7,6 +7,7 @@ add_reasoning, ...) land in Phase 5; Phase 4 provides only liveness.
 
 from __future__ import annotations
 
+import uuid as _uuid
 from typing import Any
 
 from munnin import __version__
@@ -15,6 +16,7 @@ from munnin.data_entities.memory_record import (
     MemoryRecord,
     RecordType,
     validate_domain,
+    validate_write_agent,
 )
 from munnin.data_repositories.memory_repository import MemoryRepository
 
@@ -38,6 +40,23 @@ def _index(r: MemoryRecord) -> dict[str, Any]:
         "tags": r.tags,
         "created_date": r.created_date,
         "modified_date": r.modified_date,
+    }
+
+
+def _record(r: MemoryRecord) -> dict[str, Any]:
+    """Full public record projection — the whole item including body. Omits the
+    internal ``id`` (never leaves the store) and ``user_id`` (tenancy-internal)."""
+    return {
+        "uuid": r.uuid,
+        "agent_id": r.agent_id,
+        "record_type": r.record_type.value,
+        "project": r.project,
+        "title": r.title,
+        "tags": r.tags,
+        "created_date": r.created_date,
+        "modified_date": r.modified_date,
+        "archived_date": r.archived_date,
+        "content": r.full_content,
     }
 
 
@@ -96,3 +115,84 @@ class MemoryService:
             "episodic_index": [_index(r) for r in episodes],
             "latest_episode": _whole(latest) if latest else None,
         }
+
+    # --- reads (load by id / browse / full-text) ---
+
+    def get(self, uuid: str) -> dict[str, Any] | None:
+        """Load one record's full body by id. Excludes soft-deleted. ``None`` if absent."""
+        r = self._repo.get(uuid)
+        return _record(r) if r else None
+
+    def query(
+        self,
+        *,
+        agent_id: str | None = None,
+        record_type: str | None = None,
+        project: str | None = None,
+        include_archived: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Browse the index projection on demand (bodies included). ``record_type`` is a
+        string coerced to the enum (invalid → ``ValueError``)."""
+        rtype = RecordType(record_type) if record_type else None
+        rows = self._repo.query(
+            agent_id=agent_id,
+            record_type=rtype,
+            project=project,
+            include_archived=include_archived,
+        )
+        return [_record(r) for r in rows]
+
+    def search(self, text: str, *, include_archived: bool = True) -> list[dict[str, Any]]:
+        """Full-text (FTS5) keyword search over content + title + tags. Archived rows are
+        searchable by default; soft-deleted never surface."""
+        return [_record(r) for r in self._repo.search(text, include_archived=include_archived)]
+
+    # --- writes (Edit-tool parity; record assembled server-side) ---
+
+    def insert(
+        self,
+        *,
+        agent_id: str,
+        record_type: str,
+        content: str,
+        title: str | None = None,
+        tags: list[str] | None = None,
+        project: str | None = None,
+        uuid: str | None = None,
+    ) -> dict[str, Any]:
+        """Append a new item. Assembles the ``MemoryRecord`` server-side (the repo stamps
+        ``user_id`` + defaults dates); generates a ``uuid`` if absent. Idempotent upsert on
+        ``uuid``. ``agent_id`` accepts a kebab domain or ``__shared__``; invalid
+        ``agent_id``/``record_type`` raise ``ValueError``."""
+        agent = validate_write_agent(agent_id)
+        rtype = RecordType(record_type)
+        record = MemoryRecord(
+            uuid=uuid or _uuid.uuid4().hex,
+            user_id="",  # repo stamps server-side
+            agent_id=agent,
+            record_type=rtype,
+            full_content=content,
+            title=title,
+            tags=tags or [],
+            project=project,
+        )
+        return _record(self._repo.insert(record))
+
+    def edit(
+        self, uuid: str, old_string: str, new_string: str, replace_all: bool = False
+    ) -> dict[str, Any]:
+        """Targeted string replace inside a record's body (Edit-tool parity). Raises
+        ``LookupError`` if missing/deleted, ``ValueError`` if ``old_string`` is absent or
+        (without ``replace_all``) ambiguous."""
+        return _record(self._repo.edit(uuid, old_string, new_string, replace_all))
+
+    def archive(self, uuid: str) -> dict[str, str]:
+        """Retire a record from the hot index (still searchable). Raises ``LookupError`` if
+        absent."""
+        self._repo.archive(uuid)
+        return {"uuid": uuid, "status": "archived"}
+
+    def soft_delete(self, uuid: str) -> dict[str, str]:
+        """Tombstone a record (excluded from all reads). Raises ``LookupError`` if absent."""
+        self._repo.soft_delete(uuid)
+        return {"uuid": uuid, "status": "deleted"}
