@@ -156,3 +156,23 @@ def parse_active_episodes(index_text: str) -> list[dict[str, str]]:
 def _first_date(text: str) -> str | None:
     m = _LEADING_DATE.search(text)
     return m.group(1) if m else None
+
+
+_FILENAME_DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})")
+
+
+def first_heading(text: str) -> str | None:
+    """The first markdown heading's text (any level), or ``None``. Used to title an
+    archived item that has no index line to describe it."""
+    for line in text.splitlines():
+        m = _HEADING.match(line)
+        if m:
+            return m.group(2).strip()
+    return None
+
+
+def date_from_filename(name: str) -> str | None:
+    """The leading ``YYYY-MM-DD`` in a filename, or ``None`` for rolling/undated files.
+    Legacy archived episodes carry this prefix; rolling files (no prefix) don't."""
+    m = _FILENAME_DATE.match(name)
+    return m.group(1) if m else None

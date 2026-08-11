@@ -13,8 +13,9 @@ from pathlib import Path
 import pytest
 
 from munnin.business_services.memory_service import MemoryService
+from munnin.data_entities.memory_record import RecordType
 from munnin.data_migrations import markdown_parser as P
-from munnin.data_migrations.importer import import_agent
+from munnin.data_migrations.importer import import_agent, import_fleet, import_shared
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 _REAL = Path.home() / ".claude" / "@agent-memory"
@@ -25,6 +26,7 @@ pytestmark = pytest.mark.skipif(not _REAL.exists(), reason="real @agent-memory s
 
 def _awaken_meta(tmp_path: Path) -> dict:
     repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    import_shared(repo, _REAL)
     import_agent(repo, _REAL, "meta")
     return MemoryService(repo, user_id="alvi").awaken("meta")
 
@@ -63,3 +65,62 @@ def test_shared_knowledge_present(tmp_path: Path) -> None:
     payload = _awaken_meta(tmp_path)
     assert len(payload["shared"]["knowledge"]) >= 1
     assert all(item["content"] for item in payload["shared"]["knowledge"])
+
+
+# --- SP-4: full-fleet round-trip fidelity gate ---
+
+
+_Fleet = tuple["MemoryService", "SqliteMemoryRepository", Path]
+
+
+@pytest.fixture(scope="module")
+def _fleet() -> _Fleet:
+    import tempfile
+
+    db = Path(tempfile.mkdtemp(prefix="munnin-fleet-")) / "m.db"
+    repo = SqliteMemoryRepository(db, user_id="alvi")
+    import_fleet(repo, _REAL)
+    return MemoryService(repo, user_id="alvi"), repo, db
+
+
+def test_fleet_fidelity_all_agents(_fleet: _Fleet) -> None:
+    svc, _repo, _db = _fleet
+    for agent_dir in sorted(_REAL.glob("agent-*")):
+        if not agent_dir.is_dir():
+            continue
+        agent = agent_dir.name[len("agent-") :]
+        payload = svc.awaken(agent)
+        core = (agent_dir / "agent-core-memory.md").read_text(encoding="utf-8")
+        parsed = P.parse_agent_core(core)
+        idx_path = agent_dir / "agent-memory-index.md"
+        idx = idx_path.read_text(encoding="utf-8") if idx_path.exists() else ""
+        # always-load layers: exact per-section item counts vs the source markdown
+        assert len(payload["identity"]) == len(parsed["identity"]), f"{agent} identity"
+        assert len(payload["reasoning"]) == len(parsed["reasoning"]), f"{agent} reasoning"
+        assert len(payload["emotional"]) == len(parsed["emotional"]), f"{agent} emotional"
+        # on-demand indexes: active only (archived excluded). A dangling index ref (points
+        # at a file no longer on disk) can't be migrated, so compare against refs that exist.
+        active_refs = [r for r in P.parse_active_episodes(idx) if (agent_dir / r["file"]).is_file()]
+        assert len(payload["episodic_index"]) == len(active_refs), f"{agent} episodic"
+        knowledge_refs = P.parse_knowledge_index(idx)
+        assert len(payload["knowledge_index"]) == len(knowledge_refs), f"{agent} knowledge"
+
+
+def test_fleet_active_archived_split(_fleet: _Fleet) -> None:
+    svc, repo, _db = _fleet
+    payload = svc.awaken("meta")
+    active = len(payload["episodic_index"])
+    allep = len(repo.query(agent_id="meta", record_type=RecordType.episode, include_archived=True))
+    assert allep > active  # archived episodes exist and are excluded from awaken's hot index
+    # a known archived (unindexed) episode is still findable via search
+    hits = repo.search("4layer", include_archived=True)
+    assert any(r.record_type is RecordType.episode and r.archived_date for r in hits)
+
+
+def test_fleet_import_idempotent(tmp_path: Path) -> None:
+    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    import_fleet(repo, _REAL)
+    n1 = len(repo.query(include_archived=True))
+    import_fleet(repo, _REAL)  # re-run over the real fleet
+    n2 = len(repo.query(include_archived=True))
+    assert n1 == n2  # deterministic uuid5 → upsert, no duplicates

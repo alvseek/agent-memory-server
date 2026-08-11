@@ -117,3 +117,20 @@ def test_real_source_smoke() -> None:
     assert len(P.parse_shared_reasoning(sr)) >= 10
     assert len(P.parse_active_episodes(idx)) >= 5
     assert all(e["file"].startswith("episodes/") for e in P.parse_active_episodes(idx))
+
+
+# --- SP-4 helpers: first_heading + date_from_filename ---
+
+
+def test_first_heading_various_levels() -> None:
+    assert P.first_heading("no heading here\njust text") is None
+    assert P.first_heading("## Second level\nbody") == "Second level"
+    assert P.first_heading("intro\n\n#### Deep\nx") == "Deep"
+    assert P.first_heading("# Top **bold**\n## Sub") == "Top **bold**"
+
+
+def test_date_from_filename() -> None:
+    assert P.date_from_filename("2025-09-07-4layer-system.md") == "2025-09-07"
+    assert P.date_from_filename("2026-03-04-02.04-foo.md") == "2026-03-04"
+    assert P.date_from_filename("agent-memory-mcp-server-build.md") is None
+    assert P.date_from_filename("no-date.md") is None
