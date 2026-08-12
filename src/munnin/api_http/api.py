@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from munnin.business_services.memory_service import MemoryService
+from munnin.content.loader import ContentLoader
 
 
 class InsertBody(BaseModel):
@@ -36,7 +37,7 @@ class UuidBody(BaseModel):
     uuid: str
 
 
-def build_router(service: MemoryService) -> APIRouter:
+def build_router(service: MemoryService, content: ContentLoader | None = None) -> APIRouter:
     router = APIRouter()
 
     @router.get("/health")
@@ -126,6 +127,40 @@ def build_router(service: MemoryService) -> APIRouter:
         try:
             return service.soft_delete(body.uuid)
         except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # --- served content (twin of the MCP Prompts/Resources) ---
+
+    @router.get("/api/prompts")
+    def list_prompts() -> dict[str, list[str]]:
+        """List the served memory-procedure prompt names."""
+        names = content.list_prompts() if content is not None else []
+        return {"prompts": names}
+
+    @router.get("/api/prompts/{name}")
+    def get_prompt(name: str) -> dict[str, str]:
+        """Return a memory procedure composed with the DB storage backend."""
+        if content is None:
+            raise HTTPException(status_code=404, detail="content not available")
+        try:
+            return {"name": name, "content": content.get_prompt(name)}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @router.get("/api/resources")
+    def list_resources() -> dict[str, list[str]]:
+        """List the served template resource names."""
+        names = content.list_resources() if content is not None else []
+        return {"resources": names}
+
+    @router.get("/api/resources/{name}")
+    def get_resource(name: str) -> dict[str, str]:
+        """Return a framework template verbatim."""
+        if content is None:
+            raise HTTPException(status_code=404, detail="content not available")
+        try:
+            return {"name": name, "content": content.get_resource(name)}
+        except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     return router

@@ -13,9 +13,10 @@ from typing import Any
 from fastmcp import FastMCP
 
 from munnin.business_services.memory_service import MemoryService
+from munnin.content.loader import ContentLoader
 
 
-def build_mcp(service: MemoryService) -> FastMCP:
+def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> FastMCP:
     mcp: FastMCP = FastMCP("munnin")
 
     @mcp.tool
@@ -99,4 +100,46 @@ def build_mcp(service: MemoryService) -> FastMCP:
         """Tombstone a record (excluded from all reads)."""
         return service.soft_delete(uuid)
 
+    if content is not None and content.available():
+        _register_content(mcp, content)
+
     return mcp
+
+
+def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
+    """Register served memory procedures as Prompts + templates as Resources.
+
+    Both are read live from the control-files submodule; procedures are composed
+    with the db storage backend so the served text speaks DB tools, not markdown
+    files. The twin of these is the FastAPI ``/api/prompts`` + ``/api/resources``.
+    """
+    def _make_prompt(procedure: str):
+        # Zero-arg so FastMCP registers a plain prompt (a parameter would make it
+        # a prompt-with-arguments); the name is bound via the factory closure.
+        def fn() -> str:
+            return content.get_prompt(procedure)
+
+        fn.__name__ = procedure.replace("-", "_")
+        return fn
+
+    for name in content.list_prompts():
+        mcp.prompt(
+            name=name,
+            description=f"Memory procedure '{name}' — how-to for the DB-backed memory tools.",
+        )(_make_prompt(name))
+
+    def _make_resource(template: str):
+        # Zero-arg so FastMCP registers a static resource, not a URI template.
+        def fn() -> str:
+            return content.get_resource(template)
+
+        fn.__name__ = f"resource_{template.replace('-', '_')}"
+        return fn
+
+    for name in content.list_resources():
+        mcp.resource(
+            f"resource://templates/{name}",
+            name=name,
+            description=f"Framework template '{name}'.",
+            mime_type="text/markdown",
+        )(_make_resource(name))
