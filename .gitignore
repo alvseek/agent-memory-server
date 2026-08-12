@@ -15,6 +15,10 @@ data/*.db-shm
 .env
 deploy/*.env
 
+# QA instrument runtime artifacts (scripts/runbooks ARE committed)
+qa/.munnin.log
+qa/.munnin.pid
+
 # OS / editor
 .DS_Store
 Thumbs.db
