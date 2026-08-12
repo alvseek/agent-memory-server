@@ -65,6 +65,15 @@ def test_resources_include_block_templates(loader: ContentLoader) -> None:
         assert stem in res
 
 
+def test_markdown_scaffold_excluded_from_resources(loader: ContentLoader) -> None:
+    # the markdown file/index scaffold is markdown-backend-only, not a DB-world block template
+    res = loader.list_resources()
+    assert "episodic-memory-template" not in res
+    assert len(res) == 4
+    with pytest.raises(KeyError):
+        loader.get_resource("episodic-memory-template")
+
+
 def test_get_resource_returns_body(loader: ContentLoader) -> None:
     body = loader.get_resource("episodic-entry-template")
     assert "Detailed Entry Template" in body

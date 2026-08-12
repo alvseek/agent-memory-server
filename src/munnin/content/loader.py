@@ -31,6 +31,9 @@ _PROMPTS: dict[str, str] = {
 }
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"
 _TEMPLATES_DIR = "templates"
+# Markdown-only file/index scaffold — used by the markdown backend's create-episode `cp`,
+# NOT a DB-world block template. Not served as a resource (a Munnin client never cp's a file).
+_RESOURCE_EXCLUDE = {"episodic-memory-template"}
 
 
 class ContentLoader:
@@ -80,10 +83,12 @@ class ContentLoader:
         d = self._root / _TEMPLATES_DIR
         if not d.exists():
             return []
-        return sorted(p.stem for p in d.glob("*.md"))
+        return sorted(p.stem for p in d.glob("*.md") if p.stem not in _RESOURCE_EXCLUDE)
 
     def get_resource(self, name: str) -> str:
-        """Return a template file verbatim. Raises ``KeyError`` if absent."""
+        """Return a template file verbatim. Raises ``KeyError`` if absent or excluded."""
+        if name in _RESOURCE_EXCLUDE:
+            raise KeyError(f"unknown resource: {name}")
         path = self._root / _TEMPLATES_DIR / f"{name}.md"
         if not path.exists():
             raise KeyError(f"unknown resource: {name}")

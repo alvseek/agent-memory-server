@@ -1,18 +1,18 @@
-"""Markdown-fidelity gate — the seam refactor must not change fleet behavior.
+"""Markdown-fidelity gate — the markdown pathway must carry every storage mechanic.
 
-For each refactored procedure, assert every storage MECHANIC present in the
-pre-refactor version (``git HEAD`` of the control-files submodule) still appears
-in the composed markdown pathway: refactored core + markdown backend section +
-referenced templates. A dropped mechanic fails loud.
+Originally a one-time migration guard that diffed the refactored procedures against
+their pre-refactor ``git HEAD`` version. Once the seam refactor was committed, HEAD
+*became* the refactored core, so that comparison is moot. This is the durable
+forward form: compose ``core + markdown.md §proc + referenced templates`` and assert
+every curated mechanic token is present. If a future edit drops a mechanic from the
+markdown backend, the fleet's markdown pathway would silently change — this fails loud.
 
-This is the SP5-5 guardrail: byte-identity is impossible (the seam relocates
-text), so we enforce *behavioral* preservation via strict mechanic-token
-accounting derived from the HEAD source.
+Byte-identity with the old procedures is intentionally NOT required (the seam relocates
+text); behavioral preservation via mechanic-token presence is the property that matters.
 """
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -24,12 +24,11 @@ CF = REPO / "control-files"
 PROC_DIR = CF / "procedures" / "memory"
 BACKEND = PROC_DIR / "storage-backends"
 
-# procedure -> HEAD path (under control-files), referenced templates, must-survive mechanic tokens.
-# Tokens are the concrete storage mechanics (commands, paths, index rules, thresholds) that a
-# markdown-era agent must still be told to do. Extended per procedure as the refactor proceeds.
+# procedure -> referenced templates + the storage mechanics (commands, paths, index rules,
+# thresholds) a markdown-era agent must still be told to do. The markdown composition MUST
+# carry all of these.
 CASES: dict[str, dict] = {
     "update-episodic": {
-        "proc": "procedures/memory/update-episodic.md",
         "templates": ["templates/episodic-entry-template.md"],
         "tokens": [
             "date '+%Y-%m-%d %H:%M'",
@@ -45,17 +44,10 @@ CASES: dict[str, dict] = {
         ],
     },
     "add-reasoning": {
-        "proc": "procedures/memory/add-reasoning.md",
         "templates": ["templates/reasoning-pattern-template.md"],
-        "tokens": [
-            "agent-core-memory.md",
-            "uuidgen",
-            "/proc/sys/kernel/random/uuid",
-            "NewGuid",
-        ],
+        "tokens": ["agent-core-memory.md", "uuidgen", "/proc/sys/kernel/random/uuid", "NewGuid"],
     },
     "update-emotional": {
-        "proc": "procedures/memory/update-emotional.md",
         "templates": ["templates/emotional-moment-template.md"],
         "tokens": [
             "date '+%Y-%m-%d %H:%M'",
@@ -65,7 +57,6 @@ CASES: dict[str, dict] = {
         ],
     },
     "update-knowledge": {
-        "proc": "procedures/memory/update-knowledge.md",
         "templates": ["templates/knowledge-file-template.md"],
         "tokens": [
             "knowledge-base/research/",
@@ -75,25 +66,14 @@ CASES: dict[str, dict] = {
         ],
     },
     "load-episodic": {
-        "proc": "procedures/memory/load-episodic.md",
         "templates": [],
-        "tokens": [
-            "agent-memory-index.md",
-            "# Recent Context Episodes",
-            "episodes/",
-        ],
+        "tokens": ["agent-memory-index.md", "# Recent Context Episodes", "episodes/"],
     },
     "load-knowledge": {
-        "proc": "procedures/memory/load-knowledge.md",
         "templates": [],
-        "tokens": [
-            "agent-memory-index.md",
-            "# Core Knowledge Base",
-            "knowledge-base/",
-        ],
+        "tokens": ["agent-memory-index.md", "# Core Knowledge Base", "knowledge-base/"],
     },
     "archive-old-memories": {
-        "proc": "procedures/memory/archive-old-memories.md",
         "templates": [],
         "tokens": [
             "date '+%Y-%m-%d %H:%M'",
@@ -105,26 +85,11 @@ CASES: dict[str, dict] = {
         ],
     },
     "update-memory": {
-        "proc": "procedures/memory/update-memory.md",
         "templates": [],
-        "tokens": [
-            "agent-memory-index.md",
-            "shared-memory/",
-            "core-reasoning-memory.md",
-            "knowledge-base/",
-        ],
+        "tokens": ["agent-memory-index.md", "shared-memory/", "core-reasoning-memory.md",
+                   "knowledge-base/"],
     },
 }
-
-
-def _head(path_in_cf: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(CF), "show", f"HEAD:{path_in_cf}"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-    ).stdout
 
 
 def _composed_markdown(name: str, case: dict) -> str:
@@ -136,25 +101,18 @@ def _composed_markdown(name: str, case: dict) -> str:
 
 
 @pytest.mark.parametrize("name", list(CASES))
-def test_mechanics_preserved(name: str) -> None:
+def test_mechanics_present_in_markdown_pathway(name: str) -> None:
     case = CASES[name]
-    head = _head(case["proc"])
     composed = _composed_markdown(name, case)
-    # Only assert on tokens that were actually mechanics in HEAD (guards against typos in the list).
-    expected = [t for t in case["tokens"] if t in head]
-    assert expected, f"{name}: no known mechanic tokens found in HEAD — check the token list"
-    missing = [t for t in expected if t not in composed]
-    assert not missing, f"{name}: mechanics dropped from the markdown pathway: {missing}"
+    missing = [t for t in case["tokens"] if t not in composed]
+    assert not missing, f"{name}: mechanics missing from the markdown pathway: {missing}"
 
 
 def test_harness_detects_a_dropped_mechanic() -> None:
-    """The gate must BITE: if the markdown backend loses a mechanic, the check fails."""
+    """The gate must BITE: if the markdown backend loses its mechanics, tokens go missing."""
     name = "update-episodic"
     case = CASES[name]
-    head = _head(case["proc"])
     core = (PROC_DIR / f"{name}.md").read_text(encoding="utf-8")
-    # Compose with an EMPTY backend — simulates a refactor that dropped all mechanics.
-    broken = substitute_storage_mechanics(core, "")
-    expected = [t for t in case["tokens"] if t in head]
-    missing = [t for t in expected if t not in broken]
+    broken = substitute_storage_mechanics(core, "")  # empty backend = mechanics dropped
+    missing = [t for t in case["tokens"] if t not in broken]
     assert missing, "regression check failed: empty backend should drop mechanics"
