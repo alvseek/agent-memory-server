@@ -17,12 +17,16 @@ from pathlib import Path
 
 import pytest
 
-from munnin.content.compose import extract_section, substitute_storage_mechanics
+from munnin.content.seam import seam_compose
 
 REPO = Path(__file__).resolve().parents[2]
 CF = REPO / "control-files"
 PROC_DIR = CF / "procedures" / "memory"
 BACKEND = PROC_DIR / "storage-backends"
+
+_compose = seam_compose(str(CF))
+extract_section = _compose.extract_section
+substitute_storage_mechanics = _compose.substitute_storage_mechanics
 
 # procedure -> referenced templates + the storage mechanics (commands, paths, index rules,
 # thresholds) a markdown-era agent must still be told to do. The markdown composition MUST

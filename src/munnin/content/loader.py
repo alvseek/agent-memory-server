@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from munnin.content.compose import extract_section, substitute_storage_mechanics
+from munnin.content.seam import seam_compose
 
 # Served memory procedures: prompt name -> path under content_root.
 _PROMPTS: dict[str, str] = {
@@ -69,9 +69,10 @@ class ContentLoader:
         db_path = self._root / _DB_BACKEND
         if not db_path.exists():
             return core
+        compose = seam_compose(str(self._root))
         try:
-            section = extract_section(db_path.read_text(encoding="utf-8"), name)
-            return substitute_storage_mechanics(core, section)
+            section = compose.extract_section(db_path.read_text(encoding="utf-8"), name)
+            return compose.substitute_storage_mechanics(core, section)
         except KeyError:
             # No db section for this procedure, or no marker to swap — serve the core.
             return core
