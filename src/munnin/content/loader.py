@@ -30,7 +30,7 @@ _PROMPTS: dict[str, str] = {
     "wrap-up": "procedures/wrap-up.md",
 }
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"
-_TEMPLATES_DIR = "templates"
+_TEMPLATES_DIR = "procedures/memory/resources"
 # Markdown-only file/index scaffold — used by the markdown backend's create-episode `cp`,
 # NOT a DB-world block template. Not served as a resource (a Munnin client never cp's a file).
 _RESOURCE_EXCLUDE = {"episodic-memory-template"}
@@ -79,7 +79,7 @@ class ContentLoader:
     # --- resources (templates, verbatim) ---
 
     def list_resources(self) -> list[str]:
-        """The served template names (file stems under ``templates/``)."""
+        """The served template names (file stems under ``procedures/memory/resources/``)."""
         d = self._root / _TEMPLATES_DIR
         if not d.exists():
             return []

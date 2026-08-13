@@ -39,7 +39,10 @@ def test_prompt_composes_db_mechanics(loader: ContentLoader) -> None:
     assert "date '+%Y-%m-%d %H:%M'" not in text
     # semantic core retained
     assert "carry-forward" in text.lower()
-    assert "Detailed Entry Template" in text
+    assert "Append Sub-Episode" in text
+    # the entry-block template is served as a separate Resource, NOT inlined in the prompt
+    # (§ template seam) — its body must not leak onto the wire
+    assert "Detailed Entry Template" not in text
 
 
 def test_orchestrator_prompt_composes_and_keeps_footer(loader: ContentLoader) -> None:

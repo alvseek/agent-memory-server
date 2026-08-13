@@ -29,7 +29,7 @@ BACKEND = PROC_DIR / "storage-backends"
 # carry all of these.
 CASES: dict[str, dict] = {
     "update-episodic": {
-        "templates": ["templates/episodic-entry-template.md"],
+        "templates": ["procedures/memory/resources/episodic-entry-template.md"],
         "tokens": [
             "date '+%Y-%m-%d %H:%M'",
             "agent-memory-index.md",
@@ -41,28 +41,38 @@ CASES: dict[str, dict] = {
             "lazy",
             "archive/",
             "episodes/",
+            # § template seam → the entry-block template now lives under resources/
+            "procedures/memory/resources/episodic-entry-template.md",
         ],
     },
     "add-reasoning": {
-        "templates": ["templates/reasoning-pattern-template.md"],
-        "tokens": ["agent-core-memory.md", "uuidgen", "/proc/sys/kernel/random/uuid", "NewGuid"],
+        "templates": ["procedures/memory/resources/reasoning-pattern-template.md"],
+        "tokens": [
+            "agent-core-memory.md",
+            "uuidgen",
+            "/proc/sys/kernel/random/uuid",
+            "NewGuid",
+            "procedures/memory/resources/reasoning-pattern-template.md",
+        ],
     },
     "update-emotional": {
-        "templates": ["templates/emotional-moment-template.md"],
+        "templates": ["procedures/memory/resources/emotional-moment-template.md"],
         "tokens": [
             "date '+%Y-%m-%d %H:%M'",
             "agent-core-memory.md",
             "DOMAIN EMOTIONAL MEMORY",
             "NEWEST FIRST",
+            "procedures/memory/resources/emotional-moment-template.md",
         ],
     },
     "update-knowledge": {
-        "templates": ["templates/knowledge-file-template.md"],
+        "templates": ["procedures/memory/resources/knowledge-file-template.md"],
         "tokens": [
             "knowledge-base/research/",
             "agent-memory-index.md",
             "2025-09-11-nestjs-patterns.md",
             "typescript-best-practices.md",
+            "procedures/memory/resources/knowledge-file-template.md",
         ],
     },
     "load-episodic": {
