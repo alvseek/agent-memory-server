@@ -1,0 +1,3 @@
+- control files manual checking
+- DB should be automatic instead of reading file like agents. Agents are working outside of Munnin, so it can't read file manually
+- user profile
