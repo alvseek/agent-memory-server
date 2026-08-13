@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from munnin.business_services.memory_service import MemoryService
 from munnin.data_entities.memory_record import SHARED_AGENT_ID, RecordType
 from munnin.data_migrations.importer import (
     import_agent,
@@ -150,6 +151,52 @@ def test_import_is_idempotent(tmp_path: Path) -> None:
     import_fleet(repo, src)  # re-run
     n2 = len(repo.query(include_archived=True))
     assert n1 == n2  # upsert, no duplicates
+
+
+def test_awaken_latest_episode_is_newest_by_real_date(tmp_path: Path) -> None:
+    """Regression (P8): rich index headers (`📂 YYYY-MM-DD HH.MM (label):`) name
+    THEME-named active episodes (no date filename prefix). Their real index date must
+    flow through to ``created_date`` so awaken's ``latest_episode`` is the genuinely-newest
+    by date — NOT an arbitrary import-time tie among undated rows. Filenames are chosen so
+    the id-tiebreak alone would pick the WRONG (older) episode pre-fix."""
+    src = tmp_path / "src"
+    agent = src / "agent-arch"
+    (agent / "episodes").mkdir(parents=True)
+    (src / "shared-memory").mkdir(parents=True)
+    (src / "shared-memory" / "core-reasoning-memory.md").write_text("# R\n", encoding="utf-8")
+    (src / "shared-memory" / "core-knowledge-memory.md").write_text("# K\n", encoding="utf-8")
+    (agent / "agent-core-memory.md").write_text(
+        "# DOMAIN AGENT IDENTITY\nI am arch.\n", encoding="utf-8"
+    )
+    # a-newest (2026-08-11) sorts BEFORE z-middle (2026-08-10) in the glob → lower id.
+    # Pre-fix both are undated → import-time tie → id-desc tiebreak picks z-middle (WRONG).
+    (agent / "agent-memory-index.md").write_text(
+        "# Recent Context Episodes\n"
+        "## 📅 Interactions List\n"
+        "📂 2026-08-11 10.44 (NEWEST: theme-named, rich header):\n"
+        "- [a-newest.md](episodes/a-newest.md) - newest active\n"
+        "📂 2026-08-10 07.40 (MIDDLE):\n"
+        "- [z-middle.md](episodes/z-middle.md) - middle active\n",
+        encoding="utf-8",
+    )
+    (agent / "episodes" / "a-newest.md").write_text("# Newest\nbody", encoding="utf-8")
+    (agent / "episodes" / "z-middle.md").write_text("# Middle\nbody", encoding="utf-8")
+    # an UNINDEXED theme-named file → archived → must never win latest_episode even though
+    # its created_date defaults to the (lexically-largest) import timestamp.
+    (agent / "episodes" / "orphan.md").write_text("# Orphan\nbody", encoding="utf-8")
+
+    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    import_shared(repo, src)
+    import_agent(repo, src, "arch")
+
+    # (a) active theme-named episodes carry their REAL index date, not the import timestamp
+    active = repo.query(agent_id="arch", record_type=RecordType.episode)
+    assert {e.created_date for e in active} == {"2026-08-11", "2026-08-10"}
+
+    # (b) awaken's latest_episode is the genuinely-newest by real date
+    payload = MemoryService(repo, user_id="alvi").awaken("arch")
+    assert payload["latest_episode"]["title"] == "a-newest"
+    assert payload["latest_episode"]["created_date"] == "2026-08-11"
 
 
 _REAL = Path.home() / ".claude" / "@agent-memory"

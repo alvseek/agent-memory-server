@@ -15,7 +15,12 @@ _NS = _uuidlib.UUID("6f8d2c1a-0000-5000-a000-a6e6d0000001")
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _UUID_IN_BODY = re.compile(r"\*\*UUID\*\*:\s*`?([0-9a-fA-F]{8}-[0-9a-fA-F-]{27})`?")
-_DATE_GROUP = re.compile(r"^(?:📂\s*)?(\d{4}-\d{2}-\d{2}):\s*$")
+# A date-group header: an optional leading marker (📂 / 🔂 / none) then a YYYY-MM-DD.
+# Tolerant of a trailing time + parenthetical label (`📂 2026-08-11 10.44 (LABEL…):`).
+# The leading `(?![-*+>])` rejects list/quote markers so a `- [YYYY-MM-DD…](…)` episode
+# entry (date-PREFIXED filename) is NEVER mistaken for a header; `[^\w\n]*` then eats
+# emoji/space up to the leading date.
+_DATE_GROUP = re.compile(r"^(?![-*+>])[^\w\n]*(\d{4}-\d{2}-\d{2})\b")
 _EPISODE_ENTRY = re.compile(r"^-\s+\[([^\]]+)\]\((episodes/[^)]+)\)\s*-?\s*(.*)$")
 _KNOWLEDGE_ENTRY = re.compile(r"^-\s+\*\*\[([^\]]+)\]\(([^)]+)\)\*\*\s*(.*)$")
 _LEADING_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")

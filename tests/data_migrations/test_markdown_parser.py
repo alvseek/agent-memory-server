@@ -92,6 +92,43 @@ def test_parse_active_episodes_dedup_and_date() -> None:
     assert eps[0]["date"] == "2026-08-09"
 
 
+def test_parse_active_episodes_rich_date_headers() -> None:
+    """Real fleet headers carry a time + parenthetical label after the date, and some use
+    a different leading emoji (🔂) or none at all. The leading date must STILL be extracted
+    — regression for the strict `📂 YYYY-MM-DD:` matcher that dropped these to date=''
+    (breaking awaken's latest_episode chronology, found in P8)."""
+    index = (
+        "# Recent Context Episodes\n"
+        "## 📅 Interactions List\n"
+        "\n"
+        "📂 2026-08-11 10.44 (AQUAZONE: QA ONTOLOGY FIXED — runbook vs playbook):\n"
+        "- [aquazone-qa.md](episodes/aquazone-qa.md) - ontology fix\n"
+        "\n"
+        "📂 2026-08-10 07.40 (AGENT-MEMORY-SERVER: MUNNIN SCAFFOLD):\n"
+        "- [arch.md](episodes/arch.md) - scaffold delta\n"
+        "📂 2026-08-08 11.34 (AGENT-MEMORY: ARCHITECTURE DESIGNED):\n"
+        "- [arch.md](episodes/arch.md) - dup, older ref, ignored\n"
+        "🔂 2026-07-15 09:02 (BRYES: SHELL EFFECTOR):\n"
+        "- [bryes.md](episodes/bryes.md) - effector channel\n"
+        "2026-05-26:\n"
+        "- [bare.md](episodes/bare.md) - bare header, no emoji\n"
+        # a rolling episode file whose FILENAME is date-prefixed: the entry line must NOT
+        # be mistaken for a date-group header just because a date sits after the `- [`.
+        "📂 2026-04-10 09.00 (DATE-PREFIXED ROLLING FILE):\n"
+        "- [2026-05-27-00.10-saas-pivot.md](episodes/2026-05-27-00.10-saas-pivot.md) - rolling\n"
+    )
+    by_file = {e["file"]: e["date"] for e in P.parse_active_episodes(index)}
+    assert by_file["episodes/aquazone-qa.md"] == "2026-08-11"  # rich header: time + label
+    assert by_file["episodes/arch.md"] == "2026-08-10"  # dedup: newest ref wins its date
+    assert by_file["episodes/bryes.md"] == "2026-07-15"  # 🔂 emoji + HH:MM time
+    assert by_file["episodes/bare.md"] == "2026-05-26"  # no emoji at all
+    # date-PREFIXED entry stayed an episode (not swallowed as a header) + took the HEADER's
+    # date (2026-04-10), NOT the 2026-05-27 embedded in its own filename
+    assert by_file["episodes/2026-05-27-00.10-saas-pivot.md"] == "2026-04-10"
+    # every active entry carries a REAL date — none empty
+    assert all(e["date"] for e in P.parse_active_episodes(index))
+
+
 def test_parse_knowledge_index() -> None:
     items = P.parse_knowledge_index(_INDEX)
     assert [i.title for i in items] == ["Pain = Memory", "4-Layer"]
