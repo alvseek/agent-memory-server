@@ -12,7 +12,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 CF = REPO / "control-files"
-_SCRIPT = CF / "procedures" / "setup-scripts" / "compile.py"
+_SCRIPT = CF / "procedures" / "setup-scripts" / "compile-procedures.py"
 
 _spec = importlib.util.spec_from_file_location("cf_compile", _SCRIPT)
 cc = importlib.util.module_from_spec(_spec)
@@ -55,22 +55,25 @@ def test_markdown_and_db_swap_the_right_mechanics(tmp_path: Path) -> None:
     md = (tmp_path / "add-reasoning.markdown.md").read_text(encoding="utf-8")
     db = (tmp_path / "add-reasoning.db.md").read_text(encoding="utf-8")
     # markdown backend = file/shell mechanics; db backend = tool calls.
-    # (assert on the mechanics, not the shared template appendix, which names both worlds)
     assert "agent-core-memory.md" in md
     assert 'powershell -c "[guid]' in md  # markdown-only generate-uuid shell op
     assert "insert(agent_id=" in db  # db-only persist tool call
     assert "insert(agent_id=" not in md
 
 
-def test_template_inlined_and_reference_rewritten_to_anchor(tmp_path: Path) -> None:
+def test_templates_stay_a_reference_not_inlined(tmp_path: Path) -> None:
+    # templates live once as a separate Resource/file; the output references them, never inlines.
     cc.compile_all(CF, tmp_path)
     md = (tmp_path / "add-reasoning.markdown.md").read_text(encoding="utf-8")
-    # the template body is inlined as an appendix under an anchor-able heading
-    assert "## Templates (inlined)" in md
-    assert "### reasoning-pattern-template" in md
-    # the in-body reference points to the in-doc anchor, not an external path
-    assert "(#reasoning-pattern-template)" in md
-    assert "resources/reasoning-pattern-template.md" not in md
+    db = (tmp_path / "add-reasoning.db.md").read_text(encoding="utf-8")
+    for text in (md, db):
+        assert "## Templates (inlined)" not in text
+    # markdown references the template by path; db names it as an MCP Resource
+    assert "resources/reasoning-pattern-template.md" in md
+    assert "reasoning-pattern-template" in db
+    # the template body itself must not be pasted into the procedure
+    assert "[SHORT MEMORABLE TITLE]" not in md
+    assert "[SHORT MEMORABLE TITLE]" not in db
 
 
 def test_strict_exit_is_clean_on_healthy_tree(tmp_path: Path) -> None:
