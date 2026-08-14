@@ -54,10 +54,10 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **roles**: []
 - **status**: useful
 - **tags**: [readme, 7q, project-entry-point, munnin, mcp-server]
-- **last_verified**: "2026-08-13"
-- **verified_by**: "meta / generate-readme session"
+- **last_verified**: "2026-08-14"
+- **verified_by**: "meta / seam-rename session"
 - **update_trigger**: "when tech stack, the tool/endpoint surface, the data model, deploy topology, or known debts change"
-- **notes**: "Full project 7Q README for Munnin — two-adapters-over-one-core architecture, full MCP+HTTP surface, uniform-record data model, RackNerd deploy, ADR-012/013, and the awaken process-instruction gap. Generated 2026-08-13 from code."
+- **notes**: "Full project 7Q README for Munnin — two-adapters-over-one-core architecture, full MCP+HTTP surface, uniform-record data model, RackNerd deploy, ADR-012/013, and the awaken process-instruction gap. Generated 2026-08-13 from code; seam-composition paragraph corrected 2026-08-14 (loader → seam_bridge → control-files seam.py)."
 
 ### `docs/flows/awaken-db.md`
 
