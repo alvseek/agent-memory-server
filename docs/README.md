@@ -123,7 +123,7 @@ All optional — defaults are local-first. Override with `MUNNIN_*`:
 
 ### MCP surface (agent face)
 
-- **Tools** (the generic data primitives): `ping`, `awaken`, `get`, `query`, `search`, `insert`, `edit`, `archive`, `soft_delete`
+- **Tools** (the generic data primitives): `ping`, `awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`
 - **Prompts** (9 memory procedures, composed with the DB backend — the "how-to" before calling the tools): `update-episodic`, `add-reasoning`, `update-emotional`, `update-knowledge`, `load-episodic`, `load-knowledge`, `archive-old-memories`, `update-memory`, `wrap-up`
 - **Resources**: framework block-templates (`episodic-entry`, `reasoning-pattern`, `emotional-moment`, `knowledge-file`)
 
@@ -140,6 +140,9 @@ Each HTTP endpoint is a REST twin of an MCP primitive over the **same** `MemoryS
 | GET | `/api/search?text=` | `search` tool | Full-text (FTS5) search over content + title + tags |
 | POST | `/api/insert` | `insert` tool | Append a new item (record assembled server-side) |
 | POST | `/api/edit` | `edit` tool | Targeted string replace in a record body (Edit-tool parity) |
+| POST | `/api/append` | `append` tool | Add text verbatim to the end of a record body |
+| POST | `/api/prepend` | `prepend` tool | Add text verbatim to the start of a record body |
+| POST | `/api/multi-edit` | `multi_edit` tool | Apply a sequence of edits to one record atomically |
 | POST | `/api/archive` | `archive` tool | Retire a record from the hot index (still searchable) |
 | POST | `/api/soft-delete` | `soft_delete` tool | Tombstone a record (excluded from all reads) |
 | GET | `/api/prompts` · `/api/prompts/{name}` | `prompts/list` · `prompts/get` | List / fetch a served procedure (DB-composed) |
@@ -159,7 +162,7 @@ The `prompts/*` and `resources/*` rows twin MCP's **native prompt/resource primi
 2. **Service** (`business_services/memory_service.py`) — `validate_domain`, then queries the repo for: layer i `__shared__` reasoning + knowledge (whole), layer ii the agent's identity/reasoning/emotional (whole), layer iii knowledge + episode **indexes** (metadata only) + the **latest episode body**.
 3. **Repository** (`data_repositories/sqlite_memory_repository.py`) — hot-read queries (soft-deleted + archived excluded).
 
-Writes follow the same core → repo path with Edit-tool parity (`insert` / `edit` / `archive` / `soft_delete`).
+Writes follow the same core → repo path with Edit-tool parity (`insert` / `edit` / `append` / `prepend` / `multi_edit` / `archive` / `soft_delete`). `append` / `prepend` add text verbatim to a body (caller controls newlines); `multi_edit` applies a sequence of edits to one record atomically (all-or-nothing).
 
 ### Data Model
 

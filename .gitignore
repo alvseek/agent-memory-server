@@ -7,9 +7,7 @@ __pycache__/
 .ruff_cache/
 
 # Runtime data — NEVER commit the database (Valaskjalf/memory)
-data/*.db
-data/*.db-wal
-data/*.db-shm
+data/
 
 # Secrets / host-specific deploy config
 .env

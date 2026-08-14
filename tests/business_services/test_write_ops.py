@@ -74,6 +74,36 @@ def test_edit_errors(tmp_path: Path) -> None:
         svc.edit("k1", "not-present", "b")
 
 
+def test_append_and_prepend(tmp_path: Path) -> None:
+    _repo, svc = _svc(tmp_path)
+    svc.insert(agent_id="meta", record_type="episode", content="middle", uuid="e1")
+    assert svc.append("e1", " end")["content"] == "middle end"
+    assert svc.prepend("e1", "start ")["content"] == "start middle end"
+
+
+def test_append_missing_raises_lookup(tmp_path: Path) -> None:
+    _repo, svc = _svc(tmp_path)
+    with pytest.raises(LookupError):
+        svc.append("nope", "x")
+
+
+def test_multi_edit_atomic_and_ordered(tmp_path: Path) -> None:
+    _repo, svc = _svc(tmp_path)
+    svc.insert(agent_id="meta", record_type="episode", content="one two", uuid="e1")
+    out = svc.multi_edit("e1", [
+        {"old_string": "one", "new_string": "1"},
+        {"old_string": "two", "new_string": "2"},
+    ])
+    assert out["content"] == "1 2"
+
+
+def test_multi_edit_malformed_edit_raises_value(tmp_path: Path) -> None:
+    _repo, svc = _svc(tmp_path)
+    svc.insert(agent_id="meta", record_type="episode", content="body", uuid="e1")
+    with pytest.raises(ValueError, match="old_string"):
+        svc.multi_edit("e1", [{"new_string": "x"}])  # missing old_string
+
+
 def test_archive_drops_from_hot_index_but_searchable(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
     svc.insert(agent_id="meta", record_type="knowledge", content="findable token", uuid="k1")

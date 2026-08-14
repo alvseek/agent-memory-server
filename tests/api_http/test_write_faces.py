@@ -70,6 +70,42 @@ async def test_soft_delete_then_404(tmp_path: Path) -> None:
         assert (await c.get("/api/record/k1")).status_code == 404
 
 
+async def test_append_prepend_faces(tmp_path: Path) -> None:
+    async with _client(tmp_path) as c:
+        await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
+                                          "content": "mid", "uuid": "e1"})
+        a = await c.post("/api/append", json={"uuid": "e1", "text": " end"})
+        assert a.status_code == 200
+        assert a.json()["content"] == "mid end"
+        p = await c.post("/api/prepend", json={"uuid": "e1", "text": "start "})
+        assert p.json()["content"] == "start mid end"
+
+
+async def test_multi_edit_face_atomic(tmp_path: Path) -> None:
+    async with _client(tmp_path) as c:
+        await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
+                                          "content": "one two", "uuid": "e1"})
+        ok = await c.post("/api/multi-edit", json={"uuid": "e1", "edits": [
+            {"old_string": "one", "new_string": "1"},
+            {"old_string": "two", "new_string": "2"},
+        ]})
+        assert ok.status_code == 200
+        assert ok.json()["content"] == "1 2"
+        # a failing edit → 400 and nothing written
+        bad = await c.post("/api/multi-edit", json={"uuid": "e1", "edits": [
+            {"old_string": "1", "new_string": "X"},
+            {"old_string": "nope", "new_string": "Y"},
+        ]})
+        assert bad.status_code == 400
+        assert (await c.get("/api/record/e1")).json()["content"] == "1 2"  # unchanged
+
+
+async def test_append_missing_404(tmp_path: Path) -> None:
+    async with _client(tmp_path) as c:
+        r = await c.post("/api/append", json={"uuid": "nope", "text": "x"})
+        assert r.status_code == 404
+
+
 async def test_insert_bad_record_type_400(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         r = await c.post("/api/insert", json={"agent_id": "meta", "record_type": "bogus",

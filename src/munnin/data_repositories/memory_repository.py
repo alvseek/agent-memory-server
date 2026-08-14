@@ -38,6 +38,28 @@ class MemoryRepository(Protocol):
         replaces every occurrence."""
         ...
 
+    def append(self, uuid: str, text: str) -> MemoryRecord:
+        """Add ``text`` verbatim to the END of a record's ``full_content`` (caller
+        controls any leading newline). Bumps ``modified_date``; raises ``LookupError``
+        if the record is missing/deleted."""
+        ...
+
+    def prepend(self, uuid: str, text: str) -> MemoryRecord:
+        """Add ``text`` verbatim to the START of a record's ``full_content`` (caller
+        controls any trailing newline). Bumps ``modified_date``; raises ``LookupError``
+        if the record is missing/deleted."""
+        ...
+
+    def multi_edit(
+        self, uuid: str, edits: Sequence[tuple[str, str, bool]]
+    ) -> MemoryRecord:
+        """Apply a sequence of ``(old_string, new_string, replace_all)`` edits to one
+        record, in order, **atomically** — each edit operates on the result of the
+        previous, and if ANY edit fails nothing is written. Bumps ``modified_date``.
+        Raises ``LookupError`` if missing/deleted, ``ValueError`` if the list is empty or
+        any edit's ``old_string`` is absent/ambiguous."""
+        ...
+
     def archive(self, uuid: str) -> None:
         """Set ``archived_date`` — out of the hot index, still searchable on demand."""
         ...

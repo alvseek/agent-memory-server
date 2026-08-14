@@ -33,6 +33,22 @@ class EditBody(BaseModel):
     replace_all: bool = False
 
 
+class AppendBody(BaseModel):
+    uuid: str
+    text: str
+
+
+class EditOp(BaseModel):
+    old_string: str
+    new_string: str
+    replace_all: bool = False
+
+
+class MultiEditBody(BaseModel):
+    uuid: str
+    edits: list[EditOp]
+
+
 class UuidBody(BaseModel):
     uuid: str
 
@@ -108,6 +124,32 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
         """Targeted string replace inside a record's body (Edit-tool parity)."""
         try:
             return service.edit(body.uuid, body.old_string, body.new_string, body.replace_all)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.post("/api/append")
+    def append(body: AppendBody) -> dict[str, Any]:
+        """Add text verbatim to the end of a record's body."""
+        try:
+            return service.append(body.uuid, body.text)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @router.post("/api/prepend")
+    def prepend(body: AppendBody) -> dict[str, Any]:
+        """Add text verbatim to the start of a record's body."""
+        try:
+            return service.prepend(body.uuid, body.text)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @router.post("/api/multi-edit")
+    def multi_edit(body: MultiEditBody) -> dict[str, Any]:
+        """Apply a sequence of edits to one record atomically (all-or-nothing)."""
+        try:
+            return service.multi_edit(body.uuid, [op.model_dump() for op in body.edits])
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:

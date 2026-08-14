@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -135,6 +135,47 @@ class SqliteMemoryRepository:
 
         Raises ``LookupError`` if the record is missing/deleted, ``ValueError`` if
         ``old_string`` is not found or (without ``replace_all``) ambiguous."""
+        return self._rewrite(
+            uuid, lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid)
+        )
+
+    def append(self, uuid: str, text: str) -> MemoryRecord:
+        """Add ``text`` verbatim to the END of the body (caller controls newlines).
+        Bumps ``modified_date``; raises ``LookupError`` if missing/deleted."""
+        return self._rewrite(uuid, lambda c: c + text)
+
+    def prepend(self, uuid: str, text: str) -> MemoryRecord:
+        """Add ``text`` verbatim to the START of the body (caller controls newlines).
+        Bumps ``modified_date``; raises ``LookupError`` if missing/deleted."""
+        return self._rewrite(uuid, lambda c: text + c)
+
+    def multi_edit(
+        self, uuid: str, edits: Sequence[tuple[str, str, bool]]
+    ) -> MemoryRecord:
+        """Apply the ``(old_string, new_string, replace_all)`` edits in order,
+        atomically. Each edit sees the result of the previous; if any fails the whole
+        rewrite aborts before the single UPDATE, so nothing is written.
+
+        Raises ``LookupError`` if missing/deleted, ``ValueError`` if ``edits`` is empty
+        or any edit's ``old_string`` is absent/ambiguous (message names the index)."""
+        if not edits:
+            raise ValueError("multi_edit requires at least one edit")
+
+        def _transform(content: str) -> str:
+            for i, (old_string, new_string, replace_all) in enumerate(edits):
+                content = _apply_edit(
+                    content, old_string, new_string, replace_all, uuid, index=i
+                )
+            return content
+
+        return self._rewrite(uuid, _transform)
+
+    def _rewrite(self, uuid: str, transform: Callable[[str], str]) -> MemoryRecord:
+        """Read-modify-write one record's ``full_content`` under a single connection.
+        ``transform`` maps the current body to the new body and may raise ``ValueError``
+        to abort with nothing written (the UPDATE runs only after it returns). Bumps
+        ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger. Raises
+        ``LookupError`` if the record is missing/deleted."""
         with self._conn() as conn:
             row = conn.execute(
                 f"SELECT {_COLUMNS} FROM memory_record "
@@ -143,20 +184,7 @@ class SqliteMemoryRepository:
             ).fetchone()
             if row is None:
                 raise LookupError(f"record not found: {uuid}")
-            content = row["full_content"] or ""
-            count = content.count(old_string)
-            if count == 0:
-                raise ValueError(f"old_string not found in record {uuid}")
-            if count > 1 and not replace_all:
-                raise ValueError(
-                    f"old_string is ambiguous ({count} occurrences) in {uuid}; "
-                    "pass replace_all=True to replace every occurrence"
-                )
-            new_content = (
-                content.replace(old_string, new_string)
-                if replace_all
-                else content.replace(old_string, new_string, 1)
-            )
+            new_content = transform(row["full_content"] or "")
             conn.execute(
                 "UPDATE memory_record SET full_content=?, modified_date=? "
                 "WHERE uuid=? AND user_id=?",
@@ -247,6 +275,34 @@ class SqliteMemoryRepository:
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_record(r) for r in rows]
+
+
+def _apply_edit(
+    content: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool,
+    uuid: str,
+    *,
+    index: int | None = None,
+) -> str:
+    """One Edit-tool-parity string replace over ``content``. Raises ``ValueError``
+    (naming the edit ``index`` when part of a ``multi_edit``) if ``old_string`` is
+    absent, or ambiguous without ``replace_all``."""
+    where = f" (edit {index})" if index is not None else ""
+    count = content.count(old_string)
+    if count == 0:
+        raise ValueError(f"old_string not found in record {uuid}{where}")
+    if count > 1 and not replace_all:
+        raise ValueError(
+            f"old_string is ambiguous ({count} occurrences) in {uuid}{where}; "
+            "pass replace_all=True to replace every occurrence"
+        )
+    return (
+        content.replace(old_string, new_string)
+        if replace_all
+        else content.replace(old_string, new_string, 1)
+    )
 
 
 def _row_to_record(row: sqlite3.Row) -> MemoryRecord:

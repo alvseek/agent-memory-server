@@ -91,6 +91,27 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         return service.edit(uuid, old_string, new_string, replace_all)
 
     @mcp.tool
+    def append(uuid: str, text: str) -> dict[str, Any]:
+        """Add ``text`` to the END of a record's body. Verbatim — include your own
+        leading newline(s) for spacing (e.g. a new sub-episode under a date header)."""
+        return service.append(uuid, text)
+
+    @mcp.tool
+    def prepend(uuid: str, text: str) -> dict[str, Any]:
+        """Add ``text`` to the START of a record's body. Verbatim — include your own
+        trailing newline(s) for spacing."""
+        return service.prepend(uuid, text)
+
+    @mcp.tool
+    def multi_edit(uuid: str, edits: list[dict[str, Any]]) -> dict[str, Any]:
+        """Apply a sequence of string edits to one record atomically (all-or-nothing).
+
+        Each edit is a dict with ``old_string`` + ``new_string`` (+ optional
+        ``replace_all``). Edits apply in order, each to the result of the previous; if
+        any fails, nothing is written."""
+        return service.multi_edit(uuid, edits)
+
+    @mcp.tool
     def archive(uuid: str) -> dict[str, str]:
         """Retire a record from the hot index (still searchable on demand)."""
         return service.archive(uuid)

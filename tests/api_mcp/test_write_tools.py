@@ -22,7 +22,10 @@ def _mcp(tmp_path: Path):
 async def test_tool_surface_present(tmp_path: Path) -> None:
     async with Client(_mcp(tmp_path)) as client:
         names = {t.name for t in await client.list_tools()}
-    assert {"awaken", "insert", "edit", "get", "query", "search", "archive", "soft_delete"} <= names
+    assert {
+        "awaken", "insert", "edit", "append", "prepend", "multi_edit",
+        "get", "query", "search", "archive", "soft_delete",
+    } <= names
 
 
 async def test_insert_get_round_trip(tmp_path: Path) -> None:
@@ -47,6 +50,21 @@ async def test_edit_archive_search(tmp_path: Path) -> None:
         assert (await client.call_tool("query", {"agent_id": "meta"})).data == []
         hits = await client.call_tool("search", {"text": "token"})
         assert [r["uuid"] for r in hits.data] == ["k1"]
+
+
+async def test_append_prepend_multi_edit_tools(tmp_path: Path) -> None:
+    async with Client(_mcp(tmp_path)) as client:
+        await client.call_tool("insert", {"agent_id": "meta", "record_type": "episode",
+                                          "content": "mid", "uuid": "e1"})
+        ap = await client.call_tool("append", {"uuid": "e1", "text": " end"})
+        assert ap.data["content"] == "mid end"
+        pp = await client.call_tool("prepend", {"uuid": "e1", "text": "start "})
+        assert pp.data["content"] == "start mid end"
+        me = await client.call_tool("multi_edit", {"uuid": "e1", "edits": [
+            {"old_string": "start", "new_string": "S"},
+            {"old_string": "end", "new_string": "E"},
+        ]})
+        assert me.data["content"] == "S mid E"
 
 
 async def test_soft_delete(tmp_path: Path) -> None:

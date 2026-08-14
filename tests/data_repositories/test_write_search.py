@@ -81,6 +81,95 @@ def test_edit_archived_record_ok(tmp_path: Path) -> None:
     assert out.full_content == "bye"
 
 
+# --- append / prepend ---
+
+def test_append_adds_to_end_verbatim(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "hello"))
+    out = repo.append("u1", " world")
+    assert out.full_content == "hello world"
+    assert out.modified_date != out.created_date  # bumped
+
+
+def test_prepend_adds_to_start_verbatim(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "world"))
+    out = repo.prepend("u1", "hello ")
+    assert out.full_content == "hello world"
+
+
+def test_append_no_magic_newline(tmp_path: Path) -> None:
+    # verbatim: the caller controls newlines, none injected
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "a"))
+    assert repo.append("u1", "b").full_content == "ab"
+    assert repo.prepend("u1", "c").full_content == "cab"
+
+
+def test_append_missing_or_deleted_raises_lookup(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    with pytest.raises(LookupError):
+        repo.append("nope", "x")
+    repo.insert(_rec("u1", "hi"))
+    repo.soft_delete("u1")
+    with pytest.raises(LookupError):
+        repo.prepend("u1", "x")
+
+
+def test_append_reflected_in_search(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "hello"))
+    repo.append("u1", " goodbye")
+    assert {r.uuid for r in repo.search("goodbye")} == {"u1"}  # FTS re-synced
+
+
+# --- multi_edit ---
+
+def test_multi_edit_applies_in_order(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "one two three"))
+    out = repo.multi_edit("u1", [("one", "1", False), ("three", "3", False)])
+    assert out.full_content == "1 two 3"
+    assert out.modified_date != out.created_date
+
+
+def test_multi_edit_sequential_each_sees_previous(tmp_path: Path) -> None:
+    # second edit operates on the result of the first
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "a"))
+    out = repo.multi_edit("u1", [("a", "b", False), ("b", "c", False)])
+    assert out.full_content == "c"
+
+
+def test_multi_edit_is_atomic_on_failure(tmp_path: Path) -> None:
+    # first edit valid, second fails → NOTHING written
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "keep this"))
+    with pytest.raises(ValueError, match="edit 1"):
+        repo.multi_edit("u1", [("keep", "KEEP", False), ("missing", "x", False)])
+    assert repo.get("u1").full_content == "keep this"  # unchanged
+
+
+def test_multi_edit_empty_list_raises(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "body"))
+    with pytest.raises(ValueError, match="at least one"):
+        repo.multi_edit("u1", [])
+
+
+def test_multi_edit_replace_all_flag(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    repo.insert(_rec("u1", "x x y"))
+    out = repo.multi_edit("u1", [("x", "z", True), ("y", "w", False)])
+    assert out.full_content == "z z w"
+
+
+def test_multi_edit_missing_record_raises_lookup(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    with pytest.raises(LookupError):
+        repo.multi_edit("nope", [("a", "b", False)])
+
+
 # --- archive / soft_delete ---
 
 def test_archive_hides_from_hot_query_but_keeps_in_include_archived(tmp_path: Path) -> None:

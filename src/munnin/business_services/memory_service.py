@@ -186,6 +186,32 @@ class MemoryService:
         (without ``replace_all``) ambiguous."""
         return _record(self._repo.edit(uuid, old_string, new_string, replace_all))
 
+    def append(self, uuid: str, text: str) -> dict[str, Any]:
+        """Add ``text`` verbatim to the end of a record's body (caller controls
+        newlines). Raises ``LookupError`` if missing/deleted."""
+        return _record(self._repo.append(uuid, text))
+
+    def prepend(self, uuid: str, text: str) -> dict[str, Any]:
+        """Add ``text`` verbatim to the start of a record's body (caller controls
+        newlines). Raises ``LookupError`` if missing/deleted."""
+        return _record(self._repo.prepend(uuid, text))
+
+    def multi_edit(self, uuid: str, edits: list[dict[str, Any]]) -> dict[str, Any]:
+        """Apply a sequence of edits to one record atomically. Each edit is a dict with
+        ``old_string`` + ``new_string`` (+ optional ``replace_all``); they apply in order,
+        all-or-nothing. Raises ``LookupError`` if missing/deleted, ``ValueError`` if the
+        list is empty, an edit is malformed, or an ``old_string`` is absent/ambiguous."""
+        try:
+            specs = [
+                (e["old_string"], e["new_string"], bool(e.get("replace_all", False)))
+                for e in edits
+            ]
+        except (KeyError, TypeError) as exc:
+            raise ValueError(
+                "each edit needs 'old_string' and 'new_string'"
+            ) from exc
+        return _record(self._repo.multi_edit(uuid, specs))
+
     def archive(self, uuid: str) -> dict[str, str]:
         """Retire a record from the hot index (still searchable). Raises ``LookupError`` if
         absent."""

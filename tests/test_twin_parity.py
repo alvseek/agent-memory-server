@@ -58,6 +58,22 @@ async def test_insert_mcp_get_http(tmp_path: Path) -> None:
     assert mcp_rec == http_rec
 
 
+async def test_append_http_then_multi_edit_mcp_parity(tmp_path: Path) -> None:
+    db = tmp_path / "m.db"
+    async with _http(db) as http:
+        await http.post("/api/insert", json={
+            "agent_id": "meta", "record_type": "episode", "content": "one", "uuid": "p1",
+        })
+        http_rec = (await http.post("/api/append", json={"uuid": "p1", "text": " two"})).json()
+    async with Client(_mcp(db)) as mcp:
+        mcp_rec = (await mcp.call_tool("multi_edit", {"uuid": "p1", "edits": [
+            {"old_string": "one", "new_string": "1"},
+        ]})).data
+    # both ops went through the same core over the same DB; final read is consistent
+    assert http_rec["content"] == "one two"
+    assert mcp_rec["content"] == "1 two"
+
+
 # --- content surface parity (SP-5): both faces serve the same composed prompts/resources ---
 
 
