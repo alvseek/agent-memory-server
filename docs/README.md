@@ -179,7 +179,7 @@ memory_record(id PK, uuid UNIQUE, user_id, agent_id, record_type,
 
 ### Served Content (storage-backend seam)
 
-The 9 served procedures are storage-agnostic: a semantic core + a `## Storage Mechanics` seam. `content/loader.py` + `content/compose.py` compose **core + `db` backend** live from the submodule at serve time, so a Munnin client is served DB-tool mechanics while the native markdown fleet reads the same core + the `markdown` backend. `push`/`pull`/`refresh`-memory and `awaken-agent` are **not** served (see Debts).
+The 9 served procedures are storage-agnostic: a semantic core + a `## Storage Mechanics` seam. `content/loader.py` composes **core + `db` backend** live from the submodule at serve time — via `content/seam_bridge.py`, which loads the canonical seam logic (`procedures/memory/storage-backends/seam.py`) from control-files (Munnin keeps no copy). So a Munnin client is served DB-tool mechanics while the native markdown fleet reads the same core + the `markdown` backend. `push`/`pull`/`refresh`-memory and `awaken-agent` are **not** served (see Debts).
 
 ### Importer
 

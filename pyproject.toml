@@ -37,4 +37,6 @@ select = ["E", "F", "I"]  # pycodestyle, pyflakes, isort
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+# control-files/tests holds the submodule's own tool tests (e.g. compile-procedures.py);
+# collected here so CI runs them, though the files live with the tool in the submodule.
+testpaths = ["tests", "control-files/tests"]

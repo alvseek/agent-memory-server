@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from munnin.content.seam import seam_compose
+from munnin.content.seam_bridge import seam_compose
 
 # Served memory procedures: prompt name -> path under content_root.
 _PROMPTS: dict[str, str] = {

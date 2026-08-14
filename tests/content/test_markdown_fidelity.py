@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from munnin.content.seam import seam_compose
+from munnin.content.seam_bridge import seam_compose
 
 REPO = Path(__file__).resolve().parents[2]
 CF = REPO / "control-files"
