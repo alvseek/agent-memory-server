@@ -257,8 +257,6 @@ The full ADRs live in the `@agent-memory` repo (`docs/adr/`). Key ones shaping t
   *Why*: idempotent upsert preserves the original creation timestamp by design; correction wasn't a modeled case.
 - **markdown→DB switch enabled-but-not-activated (B′)**: awakening still runs on markdown in production; DB path is proven locally only.
   *Why*: the remote landed 2026-08-14, so the gate is now the RackNerd deploy itself plus the awakening process-instruction gap above.
-- **Munnin's workflow pins deprecated action versions**: `actions/checkout@v4` + `astral-sh/setup-uv@v5` target Node 20 and are being force-run on Node 24. They work today; they break when GitHub drops the fallback.
-  *Why*: written before the deprecation. control-files' workflow already uses current versions (`checkout@v7`, `setup-uv@v10.0.1`) — bump this one to match.
 
 ### Low Priority
 
