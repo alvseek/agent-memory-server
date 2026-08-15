@@ -203,7 +203,9 @@ Both substitutions load through `content/seam_bridge.py` from their single homes
 
 ### CI/CD
 
-GitHub Actions ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) on push + PR: checkout (recursive submodules) → `uv sync` → `uv run ruff check` → `uv run pytest -q`. Remote is `github.com/alvseek/agent-memory-server` (added 2026-08-14), so CI runs. `pytest` collects `tests/` only — the submodule's own tool tests are not gated (see Debts). **No deploy automation** — deploy is manual via `deploy/deploy.sh`.
+GitHub Actions ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) on push + PR: checkout (recursive submodules) → `uv sync` → `uv run ruff check` → `uv run pytest -q`. Remote is `github.com/alvseek/agent-memory-server` (added 2026-08-14).
+
+`pytest` collects `tests/` only, by design: **control-files runs its own CI** on `agent-memory-system` (lint, its 38 tool tests, a strict compile of every seam procedure, and the core-invariant guard). A submodule's tests are gated by the repo that owns them, not by this one. **No deploy automation** — deploy is manual via `deploy/deploy.sh`.
 
 ### Infrastructure
 
@@ -255,8 +257,8 @@ The full ADRs live in the `@agent-memory` repo (`docs/adr/`). Key ones shaping t
   *Why*: idempotent upsert preserves the original creation timestamp by design; correction wasn't a modeled case.
 - **markdown→DB switch enabled-but-not-activated (B′)**: awakening still runs on markdown in production; DB path is proven locally only.
   *Why*: the remote landed 2026-08-14, so the gate is now the RackNerd deploy itself plus the awakening process-instruction gap above.
-- **Framework tool tests run in no CI**: `control-files/tests/` (38 tests over `inline.py`, `seam.py`, the compiler and the installer) gates the very modules `content/loader.py` imports at serve time, but the submodule ships no workflow of its own, so nothing runs them automatically.
-  *Why*: the tests were deliberately moved **into** the submodule so ownership sat with the framework; its CI never followed. The fix belongs in control-files (its own workflow on `agent-memory-system`), **not** in Munnin's `testpaths` — a superproject gating a submodule's tests would make this suite go red for a framework bug it does not own. Munnin's `testpaths = ["tests"]` is correct as-is.
+- **Munnin's workflow pins deprecated action versions**: `actions/checkout@v4` + `astral-sh/setup-uv@v5` target Node 20 and are being force-run on Node 24. They work today; they break when GitHub drops the fallback.
+  *Why*: written before the deprecation. control-files' workflow already uses current versions (`checkout@v7`, `setup-uv@v10.0.1`) — bump this one to match.
 
 ### Low Priority
 
