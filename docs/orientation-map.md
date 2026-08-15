@@ -40,12 +40,12 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **type**: other
 - **scope**: shared
 - **roles**: []
-- **status**: stale-but-valuable
+- **status**: useful
 - **tags**: [overview, entry-point, non-7q, pointer]
-- **last_verified**: "2026-08-13"
-- **verified_by**: "meta / map-orientation create"
-- **update_trigger**: "when setup/deploy invocation changes; slim to a thin pointer to docs/README.md per the placement contract"
-- **notes**: "Root README (non-7Q). Its Status line still says 'Scaffold (Phase 4) — boots + health only' — ~5 phases stale (P5 Core Dev + P6 QA done, P8 proven locally). Should become a thin pointer to docs/README.md (the full 7Q). Decision pending (A/B/C)."
+- **last_verified**: "2026-08-15"
+- **verified_by**: "meta / component-inlining + CI session"
+- **update_trigger**: "when setup/deploy invocation or the served surface changes; slim to a thin pointer to docs/README.md per the placement contract"
+- **notes**: "Root README (non-7Q). Status line corrected 2026-08-15 — it had claimed an empty Phase 4 scaffold 'boots + health only', ~5 phases stale; now states the real surface (11 data tools, 9 Prompts, 4 Resources, importer) with deployment named as the open step, verified by introspection rather than recall. Content is accurate; the structural decision to slim it to a thin pointer at docs/README.md is still pending (A/B/C)."
 
 ### `docs/README.md`
 
@@ -54,10 +54,10 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **roles**: []
 - **status**: useful
 - **tags**: [readme, 7q, project-entry-point, munnin, mcp-server]
-- **last_verified**: "2026-08-14"
-- **verified_by**: "meta / seam-rename session"
+- **last_verified**: "2026-08-15"
+- **verified_by**: "meta / component-inlining + CI session"
 - **update_trigger**: "when tech stack, the tool/endpoint surface, the data model, deploy topology, or known debts change"
-- **notes**: "Full project 7Q README for Munnin — two-adapters-over-one-core architecture, full MCP+HTTP surface, uniform-record data model, RackNerd deploy, ADR-012/013, and the awaken process-instruction gap. Generated 2026-08-13 from code; seam-composition paragraph corrected 2026-08-14 (loader → seam_bridge → control-files seam.py)."
+- **notes**: "Full project 7Q README for Munnin — two-adapters-over-one-core architecture, full MCP+HTTP surface, uniform-record data model, RackNerd deploy, ADR-012/013, and the awaken process-instruction gap. Generated 2026-08-13 from code. 2026-08-15: Served Content section now describes the **two-stage** delivery (component inlining then seam substitution); the closed no-remote debt (D3) retired from Debts, CI/CD, and Rollback; recorded that control-files runs its own CI so this repo's testpaths stays scoped to tests/."
 
 ### `docs/flows/awaken-db.md`
 
