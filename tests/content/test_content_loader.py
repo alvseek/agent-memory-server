@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -92,3 +93,76 @@ def test_missing_submodule_is_graceful() -> None:
     assert loader.available() is False
     assert loader.list_prompts() == []
     assert loader.list_resources() == []
+
+
+# --- component inlining (the pre-seam stage) ---
+#
+# No procedure in the served set references a component today — only `awaken-agent` and
+# `refresh-memory` do, and neither is served. So the shape is exercised on a synthetic
+# control-files tree, which is what would break the day `awaken-agent` becomes the 10th
+# Prompt. Both framework modules are copied in and imported from the tree, never stubbed,
+# so this composes through the same single-homed logic the real submodule serves.
+
+
+def _synthetic_root(tmp_path: Path) -> Path:
+    """A minimal control-files tree whose served procedure inlines a component that
+    brings a storage op of its own."""
+    root = tmp_path / "control-files"
+    proc = root / "procedures" / "memory"
+    comp = root / "procedures" / "components"
+    backends = proc / "storage-backends"
+    for d in (proc, comp, backends):
+        d.mkdir(parents=True, exist_ok=True)
+    shutil.copy(CF / "procedures" / "memory" / "storage-backends" / "seam.py", backends)
+    shutil.copy(CF / "procedures" / "components" / "inline.py", comp)
+
+    (comp / "shared-fragment.md").write_text(
+        "# Shared Fragment\n\nA component, not a standalone skill.\n\n---\n\n"
+        "Do the shared thing (**§ shared-op**).\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (proc / "update-episodic.md").write_text(
+        "# Update Episodic\n\n"
+        "Step 1 — [**Shared step**](components/shared-fragment.md)\n\n"
+        "Step 2 — write it (**§ own-op**).\n\n"
+        "## Storage Mechanics\n\nunsubstituted-placeholder\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (backends / "db.md").write_text(
+        "# DB backend\n\n"
+        "## update-episodic\n\n### § own-op\n\nCall `insert(...)`.\n\n"
+        "## shared-fragment\n\n### § shared-op\n\nCall `query(...)`.\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return root
+
+
+def test_component_is_inlined_and_brings_its_own_backend_ops(tmp_path: Path) -> None:
+    text = ContentLoader(_synthetic_root(tmp_path)).get_prompt("update-episodic")
+
+    # inlined at its reference point, link replaced by its label — the served Prompt is
+    # self-contained and points at no file the client cannot reach
+    assert "Do the shared thing" in text
+    assert "components/shared-fragment.md" not in text
+    assert "**Shared step**" in text
+
+    # the substituted body is the procedure's own section PLUS its component's, so an op
+    # arriving via the component resolves without being restated under the caller
+    assert "insert(" in text  # ## update-episodic
+    assert "query(" in text  # ## shared-fragment — absent under plain extract_section
+    assert "unsubstituted-placeholder" not in text
+
+
+def test_unresolvable_component_leaves_its_reference_visible(tmp_path: Path) -> None:
+    """Nothing fails silently: an absent component keeps its link in the text rather
+    than quietly dropping the step."""
+    root = _synthetic_root(tmp_path)
+    (root / "procedures" / "components" / "shared-fragment.md").unlink()
+
+    text = ContentLoader(root).get_prompt("update-episodic")
+    assert "components/shared-fragment.md" in text
+    assert "insert(" in text  # the procedure's own section still substitutes
+    assert "query(" not in text  # the component contributed nothing

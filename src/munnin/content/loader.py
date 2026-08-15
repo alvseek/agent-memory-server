@@ -9,13 +9,24 @@ seam). ``get_prompt`` composes the core with the **db** backend section so a Mun
 client gets DB-tool mechanics; the native markdown mechanics never reach the wire.
 ``push``/``pull``/``refresh``-memory + ``awaken-agent`` are intentionally NOT served
 (the DB write is durable; awaken is a tool).
+
+A procedure may also reference **components** — shared fragments under
+``procedures/components/`` that are inlined at their reference point so the delivered
+Prompt is self-contained (it never points at a file the client cannot reach). Inlining
+runs **before** the seam, because an ``§ op`` arriving inside a component has to be part
+of the body the backend section is composed for. This mirrors the framework's own
+``compile-procedures.py`` step for step, so an installed slash command and a served
+Prompt are byte-identical.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from munnin.content.seam_bridge import seam_compose
+from munnin.content.seam_bridge import component_inline, seam_compose
+from munnin.logger.logger import get_logger
+
+_log = get_logger("content.loader")
 
 # Served memory procedures: prompt name -> path under content_root.
 _PROMPTS: dict[str, str] = {
@@ -31,6 +42,7 @@ _PROMPTS: dict[str, str] = {
 }
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"
 _TEMPLATES_DIR = "procedures/memory/resources"
+_COMPONENTS_DIR = "procedures/components"
 # Markdown-only file/index scaffold — used by the markdown backend's create-episode `cp`,
 # NOT a DB-world block template. Not served as a resource (a Munnin client never cp's a file).
 _RESOURCE_EXCLUDE = {"episodic-memory-template"}
@@ -55,27 +67,50 @@ class ContentLoader:
         """The served procedure names (only those present on disk)."""
         return sorted(name for name, rel in _PROMPTS.items() if (self._root / rel).exists())
 
-    def get_prompt(self, name: str) -> str:
-        """Return the procedure composed with its db storage-backend section.
+    def _inlined(self, text: str) -> tuple[str, tuple[str, ...]]:
+        """Inline every component reference; returns ``(text, components used)``.
 
-        Falls back to the core verbatim if the procedure has no ``## Storage
-        Mechanics`` marker or no db backend section. Raises ``KeyError`` for an
+        A component that cannot be resolved leaves its reference visible in the text
+        (``inline.py`` never fails silently) and is logged — a served Prompt carrying a
+        dangling link is a real defect, and there is no user on this side to tell.
+        """
+        inline = component_inline(str(self._root))
+        text, missing, used = inline.inline_components(text, self._root / _COMPONENTS_DIR)
+        if missing:
+            _log.warning("unresolved component references: %s", ", ".join(missing))
+        return text, tuple(dict.fromkeys(used))  # de-duplicated, order preserved
+
+    def get_prompt(self, name: str) -> str:
+        """Return the procedure with its components inlined and its db backend section
+        substituted in.
+
+        The backend body is this procedure's own ``## [procedure]`` section plus a
+        ``## [component]`` section for each component inlined into it, so ops arriving
+        via a component resolve without being restated under every caller.
+
+        Falls back to the inlined core if the procedure has no ``## Storage Mechanics``
+        marker or the db backend defines nothing for it. Raises ``KeyError`` for an
         unknown prompt name.
         """
         rel = _PROMPTS.get(name)
         if rel is None:
             raise KeyError(f"unknown prompt: {name}")
-        core = (self._root / rel).read_text(encoding="utf-8")
+        # inline first: a component may be what brings this procedure's ops
+        core, components = self._inlined((self._root / rel).read_text(encoding="utf-8"))
         db_path = self._root / _DB_BACKEND
         if not db_path.exists():
             return core
         compose = seam_compose(str(self._root))
         try:
-            section = compose.extract_section(db_path.read_text(encoding="utf-8"), name)
-            return compose.substitute_storage_mechanics(core, section)
+            section = compose.compose_backend_section(
+                db_path.read_text(encoding="utf-8"), name, components
+            )
+            composed = compose.substitute_storage_mechanics(core, section)
         except KeyError:
             # No db section for this procedure, or no marker to swap — serve the core.
             return core
+        # a backend section may carry component references of its own
+        return self._inlined(composed)[0]
 
     # --- resources (templates, verbatim) ---
 

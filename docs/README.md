@@ -180,9 +180,11 @@ memory_record(id PK, uuid UNIQUE, user_id, agent_id, record_type,
 - `archived_date` non-NULL = out of the hot index but still searchable; `deleted_date` non-NULL = tombstone.
 - `uuid` is the idempotency key (upsert on `uuid`).
 
-### Served Content (storage-backend seam)
+### Served Content (component inlining + storage-backend seam)
 
-The 9 served procedures are storage-agnostic: a semantic core + a `## Storage Mechanics` seam. `content/loader.py` composes **core + `db` backend** live from the submodule at serve time — via `content/seam_bridge.py`, which loads the canonical seam logic (`procedures/memory/storage-backends/seam.py`) from control-files (Munnin keeps no copy). So a Munnin client is served DB-tool mechanics while the native markdown fleet reads the same core + the `markdown` backend. `push`/`pull`/`refresh`-memory and `awaken-agent` are **not** served (see Debts).
+The 9 served procedures are storage-agnostic: a semantic core + a `## Storage Mechanics` seam. `content/loader.py` composes them live from the submodule at serve time, in the framework's two stages — **components inlined** (shared fragments under `procedures/components/`, replaced at their reference point so the Prompt points at no file the client cannot reach), then **core + `db` backend** substituted in. Ops a component brings are defined once under the component's own backend section and composed in alongside the procedure's, so they resolve without being restated under every caller.
+
+Both substitutions load through `content/seam_bridge.py` from their single homes in control-files (`components/inline.py`, `storage-backends/seam.py`) — Munnin keeps no copy of either, which is what makes a served Prompt byte-identical to the slash command `compile-procedures.py` installs. So a Munnin client is served DB-tool mechanics while the native markdown fleet reads the same core + the `markdown` backend. `push`/`pull`/`refresh`-memory and `awaken-agent` are **not** served (see Debts).
 
 ### Importer
 
