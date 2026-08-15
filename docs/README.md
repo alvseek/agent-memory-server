@@ -203,7 +203,7 @@ Both substitutions load through `content/seam_bridge.py` from their single homes
 
 ### CI/CD
 
-GitHub Actions ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) on push + PR: checkout (recursive submodules) → `uv sync` → `uv run ruff check` → `uv run pytest -q`. **No deploy automation** — deploy is manual via `deploy/deploy.sh`. `[TODO: the repo has no GitHub remote yet (D3) — CI does not run anywhere until one exists]`.
+GitHub Actions ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) on push + PR: checkout (recursive submodules) → `uv sync` → `uv run ruff check` → `uv run pytest -q`. Remote is `github.com/alvseek/agent-memory-server` (added 2026-08-14), so CI runs. `pytest` collects `tests/` only — the submodule's own tool tests are not gated (see Debts). **No deploy automation** — deploy is manual via `deploy/deploy.sh`.
 
 ### Infrastructure
 
@@ -213,7 +213,7 @@ GitHub Actions ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) on push
 
 ### Rollback
 
-The markdown fleet remains authoritative; the markdown→DB awakening switch is enabled-but-not-activated, so rollback = keep awakening on markdown. `[TODO: document the service-level rollback (systemctl to a prior venv/commit) once a remote + release flow exist]`.
+The markdown fleet remains authoritative; the markdown→DB awakening switch is enabled-but-not-activated, so rollback = keep awakening on markdown. `[TODO: document the service-level rollback (systemctl to a prior venv/commit) once a release flow exists]`.
 
 ---
 
@@ -246,8 +246,6 @@ The full ADRs live in the `@agent-memory` repo (`docs/adr/`). Key ones shaping t
 
 ### High Priority
 
-- **No GitHub remote (D3)**: all commits are local-only; blocks deploy, CI execution, and pushing work.
-  *Why*: public-vs-private decision deferred to first push.
 - **Awakening process-instruction gap**: the `awaken` tool returns memory **data** only. The awakening **process** (Phase 1/2 flow, sub-agent-read prohibition, report format) lives only in `awaken-agent.md` + `core-instruction-control-files.md`, which are **not imported and not served** — so a pure-DB client gets the records but no process. Confirmed 2026-08-13; see [flows/awaken-db.md](flows/awaken-db.md).
   *Why*: `awaken-agent` was scoped out of SP-5's served set on "awaken is a tool," which only covered the data half.
 
@@ -256,7 +254,9 @@ The full ADRs live in the `@agent-memory` repo (`docs/adr/`). Key ones shaping t
 - **Upsert does not update `created_date`**: a data-correcting re-import needs a **fresh DB rebuild** (delete + import), not an idempotent re-run.
   *Why*: idempotent upsert preserves the original creation timestamp by design; correction wasn't a modeled case.
 - **markdown→DB switch enabled-but-not-activated (B′)**: awakening still runs on markdown in production; DB path is proven locally only.
-  *Why*: activation + deploy gated on the D3 remote.
+  *Why*: the remote landed 2026-08-14, so the gate is now the RackNerd deploy itself plus the awakening process-instruction gap above.
+- **Framework tool tests run in no CI**: `control-files/tests/` (`test_compile_procedures.py`, `test_inline_components.py`, `test_setup_all_claude_code.py`) covers `inline.py` / `seam.py` — the modules `content/loader.py` imports at serve time — but `testpaths` is `["tests"]` and the submodule has no workflow of its own, so nothing gates them automatically.
+  *Why*: `testpaths` briefly included `control-files/tests`; the entry was reverted as collateral in an unrelated `git add -A` and never restored.
 
 ### Low Priority
 

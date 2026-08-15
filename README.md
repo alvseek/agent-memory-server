@@ -29,4 +29,6 @@ RackNerd VPS, **systemd + uv, no Docker**. See `deploy/` (`munnin.service`, `dep
 
 ## Status
 
-Scaffold (Phase 4 of the Rite of Creation). Empty skeleton — boots + health only; memory logic lands in Phase 5 (Core Dev).
+Working locally. The full surface is in place on both faces — **11 data tools** (`awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`) over a SQLite + FTS5 store, plus **9 memory procedures served as MCP Prompts** and **4 templates as Resources**, and a lossless markdown→DB importer.
+
+**Not yet deployed** — the fleet still awakens from markdown; the RackNerd rollout is the remaining step. Full architecture, surface reference, and known debts: [docs/README.md](docs/README.md).
