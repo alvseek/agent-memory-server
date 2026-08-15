@@ -255,8 +255,8 @@ The full ADRs live in the `@agent-memory` repo (`docs/adr/`). Key ones shaping t
   *Why*: idempotent upsert preserves the original creation timestamp by design; correction wasn't a modeled case.
 - **markdown→DB switch enabled-but-not-activated (B′)**: awakening still runs on markdown in production; DB path is proven locally only.
   *Why*: the remote landed 2026-08-14, so the gate is now the RackNerd deploy itself plus the awakening process-instruction gap above.
-- **Framework tool tests run in no CI**: `control-files/tests/` (`test_compile_procedures.py`, `test_inline_components.py`, `test_setup_all_claude_code.py`) covers `inline.py` / `seam.py` — the modules `content/loader.py` imports at serve time — but `testpaths` is `["tests"]` and the submodule has no workflow of its own, so nothing gates them automatically.
-  *Why*: `testpaths` briefly included `control-files/tests`; the entry was reverted as collateral in an unrelated `git add -A` and never restored.
+- **Framework tool tests run in no CI**: `control-files/tests/` (38 tests over `inline.py`, `seam.py`, the compiler and the installer) gates the very modules `content/loader.py` imports at serve time, but the submodule ships no workflow of its own, so nothing runs them automatically.
+  *Why*: the tests were deliberately moved **into** the submodule so ownership sat with the framework; its CI never followed. The fix belongs in control-files (its own workflow on `agent-memory-system`), **not** in Munnin's `testpaths` — a superproject gating a submodule's tests would make this suite go red for a framework bug it does not own. Munnin's `testpaths = ["tests"]` is correct as-is.
 
 ### Low Priority
 
