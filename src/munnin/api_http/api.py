@@ -10,10 +10,20 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from munnin.business_services.memory_service import MemoryService
 from munnin.content.loader import ContentLoader
+
+
+class MarkdownResponse(PlainTextResponse):
+    """A served document, delivered as its own bytes rather than a JSON field.
+
+    Starlette appends ``; charset=utf-8`` for any ``text/*`` media type.
+    """
+
+    media_type = "text/markdown"
 
 
 class InsertBody(BaseModel):
@@ -172,6 +182,10 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     # --- served content (twin of the MCP Prompts/Resources) ---
+    # The two list endpoints answer with JSON, since a list of names is data. A single
+    # prompt or template is a document, so it is returned as raw markdown: an installed
+    # slash command and a served Prompt are byte-identical, and that only holds if the
+    # bytes reach the caller unwrapped. Errors stay JSON — FastAPI's HTTPException shape.
 
     @router.get("/api/prompts")
     def list_prompts() -> dict[str, list[str]]:
@@ -179,13 +193,13 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
         names = content.list_prompts() if content is not None else []
         return {"prompts": names}
 
-    @router.get("/api/prompts/{name}")
-    def get_prompt(name: str) -> dict[str, str]:
+    @router.get("/api/prompts/{name}", response_class=MarkdownResponse)
+    def get_prompt(name: str) -> MarkdownResponse:
         """Return a memory procedure composed with the DB storage backend."""
         if content is None:
             raise HTTPException(status_code=404, detail="content not available")
         try:
-            return {"name": name, "content": content.get_prompt(name)}
+            return MarkdownResponse(content.get_prompt(name))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -195,13 +209,13 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
         names = content.list_resources() if content is not None else []
         return {"resources": names}
 
-    @router.get("/api/resources/{name}")
-    def get_resource(name: str) -> dict[str, str]:
+    @router.get("/api/resources/{name}", response_class=MarkdownResponse)
+    def get_resource(name: str) -> MarkdownResponse:
         """Return a framework template verbatim."""
         if content is None:
             raise HTTPException(status_code=404, detail="content not available")
         try:
-            return {"name": name, "content": content.get_resource(name)}
+            return MarkdownResponse(content.get_resource(name))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

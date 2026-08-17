@@ -26,7 +26,8 @@ async def test_prompts_list_get_404(tmp_path: Path) -> None:
 
         ok = await c.get("/api/prompts/update-episodic")
         assert ok.status_code == 200
-        body = ok.json()["content"]
+        assert ok.headers["content-type"] == "text/markdown; charset=utf-8"
+        body = ok.text
         assert "insert(" in body and "MOVE-TO-TODAY" not in body
 
         assert (await c.get("/api/prompts/does-not-exist")).status_code == 404
@@ -40,6 +41,7 @@ async def test_resources_list_get_404(tmp_path: Path) -> None:
 
         ok = await c.get("/api/resources/reasoning-pattern-template")
         assert ok.status_code == 200
-        assert "Reasoning Pattern Template" in ok.json()["content"]
+        assert ok.headers["content-type"] == "text/markdown; charset=utf-8"
+        assert "Reasoning Pattern Template" in ok.text
 
         assert (await c.get("/api/resources/nope")).status_code == 404

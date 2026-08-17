@@ -83,7 +83,7 @@ async def test_prompt_parity(tmp_path: Path) -> None:
     async with Client(_mcp_content(db)) as mcp:
         mcp_txt = (await mcp.get_prompt("update-episodic")).messages[0].content.text
     async with _http(db) as http:
-        http_txt = (await http.get("/api/prompts/update-episodic")).json()["content"]
+        http_txt = (await http.get("/api/prompts/update-episodic")).text
     assert mcp_txt == expected == http_txt
 
 
@@ -93,7 +93,7 @@ async def test_resource_parity(tmp_path: Path) -> None:
     async with Client(_mcp_content(db)) as mcp:
         mcp_txt = (await mcp.read_resource("resource://templates/episodic-entry-template"))[0].text
     async with _http(db) as http:
-        http_txt = (await http.get("/api/resources/episodic-entry-template")).json()["content"]
+        http_txt = (await http.get("/api/resources/episodic-entry-template")).text
     assert mcp_txt == expected == http_txt
 
 

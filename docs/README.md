@@ -145,10 +145,10 @@ Each HTTP endpoint is a REST twin of an MCP primitive over the **same** `MemoryS
 | POST | `/api/multi-edit` | `multi_edit` tool | Apply a sequence of edits to one record atomically |
 | POST | `/api/archive` | `archive` tool | Retire a record from the hot index (still searchable) |
 | POST | `/api/soft-delete` | `soft_delete` tool | Tombstone a record (excluded from all reads) |
-| GET | `/api/prompts` · `/api/prompts/{name}` | `prompts/list` · `prompts/get` | List / fetch a served procedure (DB-composed) |
-| GET | `/api/resources` · `/api/resources/{name}` | `resources/list` · `resources/read` | List / fetch a served template |
+| GET | `/api/prompts` · `/api/prompts/{name}` | `prompts/list` · `prompts/get` | List names (JSON) / fetch a served procedure, DB-composed, as raw markdown |
+| GET | `/api/resources` · `/api/resources/{name}` | `resources/list` · `resources/read` | List names (JSON) / fetch a served template verbatim, as raw markdown |
 
-The `prompts/*` and `resources/*` rows twin MCP's **native prompt/resource primitives** (not tools); every other row twins a **tool**. Error mapping: `ValueError → 400`, `LookupError → 404`.
+The `prompts/*` and `resources/*` rows twin MCP's **native prompt/resource primitives** (not tools); every other row twins a **tool**. Their response shape splits by what is being returned: a *list* of names is data and arrives as JSON, while a *single* procedure or template is a document and arrives as raw `text/markdown; charset=utf-8` — no enclosing object, so `curl -o update-episodic.md` writes exactly the bytes an installed slash command carries. Errors stay JSON throughout: `ValueError → 400`, `LookupError → 404`.
 
 ---
 
