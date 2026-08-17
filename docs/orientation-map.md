@@ -54,10 +54,10 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **roles**: []
 - **status**: useful
 - **tags**: [readme, 7q, project-entry-point, munnin, mcp-server]
-- **last_verified**: "2026-08-15"
-- **verified_by**: "meta / component-inlining + CI session"
+- **last_verified**: "2026-08-17"
+- **verified_by**: "meta / raw served-content session"
 - **update_trigger**: "when tech stack, the tool/endpoint surface, the data model, deploy topology, or known debts change"
-- **notes**: "Full project 7Q README for Munnin — two-adapters-over-one-core architecture, full MCP+HTTP surface, uniform-record data model, RackNerd deploy, ADR-012/013, and the awaken process-instruction gap. Generated 2026-08-13 from code. 2026-08-15: Served Content section now describes the **two-stage** delivery (component inlining then seam substitution); the closed no-remote debt (D3) retired from Debts, CI/CD, and Rollback; recorded that control-files runs its own CI so this repo's testpaths stays scoped to tests/."
+- **notes**: "Full project 7Q README for Munnin — two-adapters-over-one-core architecture, full MCP+HTTP surface, uniform-record data model, RackNerd deploy, ADR-012/013, and the awaken process-instruction gap. Generated 2026-08-13 from code. 2026-08-15: Served Content section now describes the **two-stage** delivery (component inlining then seam substitution); the closed no-remote debt (D3) retired from Debts, CI/CD, and Rollback; recorded that control-files runs its own CI so this repo's testpaths stays scoped to tests/. 2026-08-17: the HTTP API table + the paragraph under it now state the served-content response split — the two list endpoints answer JSON, a single prompt or template answers raw `text/markdown`."
 
 ### `docs/flows/awaken-db.md`
 
