@@ -20,9 +20,10 @@ def loader() -> ContentLoader:
 
 def test_lists_nine_prompts(loader: ContentLoader) -> None:
     names = loader.list_prompts()
-    assert len(names) == 9
+    assert len(names) == 10
     assert "update-episodic" in names
     assert "wrap-up" in names
+    assert "create-agent" in names
     # intentionally NOT served (git-era / already a tool)
     assert "awaken-agent" not in names
     assert "push-memory" not in names

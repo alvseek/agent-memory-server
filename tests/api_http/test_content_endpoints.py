@@ -21,8 +21,9 @@ def _client(tmp_path: Path) -> httpx.AsyncClient:
 async def test_prompts_list_get_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         prompts = (await c.get("/api/prompts")).json()["prompts"]
-        assert len(prompts) == 9
+        assert len(prompts) == 10
         assert "wrap-up" in prompts
+        assert "create-agent" in prompts
 
         ok = await c.get("/api/prompts/update-episodic")
         assert ok.status_code == 200

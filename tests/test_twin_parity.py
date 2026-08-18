@@ -104,4 +104,4 @@ async def test_prompt_list_parity(tmp_path: Path) -> None:
     async with _http(db) as http:
         http_names = sorted((await http.get("/api/prompts")).json()["prompts"])
     assert mcp_names == http_names
-    assert len(http_names) == 9
+    assert len(http_names) == 10
