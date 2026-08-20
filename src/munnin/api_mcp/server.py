@@ -46,7 +46,9 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         project: str | None = None,
         include_archived: bool = False,
     ) -> list[dict[str, Any]]:
-        """Browse the index projection on demand (filter by agent/type/project)."""
+        """Filter memory by exact field values, returning whole records with bodies.
+        Naming an ``agent_id`` reads that agent alone; omitting it also returns
+        fleet-shared memory, whose rows carry no ``agent_id``."""
         return service.query(
             agent_id=agent_id,
             record_type=record_type,
@@ -66,22 +68,41 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         ``name``/``role`` of ``null`` rather than being omitted."""
         return service.list_agents()
 
+    @mcp.tool
+    def create_agent(
+        agent_id: str,
+        name: str | None = None,
+        role: str | None = None,
+        uuid: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new agent. ``agent_id`` is a kebab domain and must not already exist —
+        creating over a live agent raises rather than overwriting its identity. Call this
+        **before** inserting any of the agent's memory: memory names an owner the store
+        checks, so an insert for an agent with no row is refused. ``uuid`` is the agent's
+        own "digital soul" id from its identity document."""
+        return service.create_agent(agent_id=agent_id, name=name, role=role, uuid=uuid)
+
     # --- writes (Edit-tool parity; record assembled server-side) ---
 
     @mcp.tool
     def insert(
-        agent_id: str,
         record_type: str,
         content: str,
+        agent_id: str | None = None,
+        scope: str = "agent",
         title: str | None = None,
         tags: list[str] | None = None,
         project: str | None = None,
         uuid: str | None = None,
     ) -> dict[str, Any]:
-        """Append a new memory item. ``agent_id`` = a kebab domain or ``__shared__``;
-        ``record_type`` ∈ episode|knowledge|identity|reasoning|emotional."""
+        """Append a new memory item. ``scope="agent"`` (the default) writes memory owned
+        by ``agent_id``, which must be an existing kebab domain; ``scope="shared"`` writes
+        fleet-wide memory owned by nobody and takes no ``agent_id``. ``record_type`` ∈
+        episode|knowledge|identity|reasoning|emotional, and fleet memory may only be
+        reasoning or knowledge."""
         return service.insert(
             agent_id=agent_id,
+            scope=scope,
             record_type=record_type,
             content=content,
             title=title,

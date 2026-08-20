@@ -22,7 +22,17 @@ class MemoryRepository(Protocol):
 
     # --- writes (Edit-tool parity) ---
     def insert(self, record: MemoryRecord) -> MemoryRecord:
-        """Append a new item. Idempotent on ``uuid`` (upsert)."""
+        """Append a new agent-owned item. Idempotent on ``uuid`` (upsert). The named
+        agent must already exist — the store enforces it with a foreign key."""
+        ...
+
+    def insert_shared(self, record: SharedRecord) -> SharedRecord:
+        """Append a new fleet-shared item (reasoning or knowledge, owned by no agent).
+        Idempotent on ``uuid`` (upsert).
+
+        The only write that needs a shared twin: every other write addresses an existing
+        record, whose uuid already says which table holds it, while an insert is choosing
+        where the row goes and nothing in the arguments can imply that."""
         ...
 
     def edit(
@@ -80,18 +90,51 @@ class MemoryRepository(Protocol):
         record_type: RecordType | None = None,
         project: str | None = None,
         include_archived: bool = False,
-    ) -> Sequence[MemoryRecord]:
-        """Browse the index (metadata projection; bodies included)."""
+    ) -> Sequence[SharedRecord]:
+        """Filter memory by exact field values, returning whole records with bodies.
+
+        Naming an ``agent_id`` reads that agent's memory alone; omitting it means all
+        memory this tenant can see, which spans both tables, so fleet-shared rows are
+        included. The result is self-labelling — an agent's row is a ``MemoryRecord``
+        carrying ``agent_id``, a fleet row is a ``SharedRecord`` with no such field."""
+        ...
+
+    def query_shared(
+        self,
+        *,
+        record_type: RecordType | None = None,
+        project: str | None = None,
+        include_archived: bool = False,
+    ) -> Sequence[SharedRecord]:
+        """Fleet-shared memory only, filtered by exact field values, bodies included.
+        There is no ``agent_id`` parameter because the table has no such column."""
         ...
 
     def search(self, text: str, *, include_archived: bool = True) -> Sequence[MemoryRecord]:
-        """Full-text search (FTS5) over content + title + tags."""
+        """Full-text search (FTS5) over agent memory's content + title + tags. Fleet
+        memory has its own index and its own method — FTS5 external-content binds one
+        index to one table, so the caller merges the two groups."""
+        ...
+
+    def search_shared(
+        self, text: str, *, include_archived: bool = True
+    ) -> Sequence[SharedRecord]:
+        """Full-text search (FTS5) over fleet-shared memory. bm25 ranks per corpus, so
+        scores from here are not strictly comparable with ``search``'s."""
         ...
 
     # --- the agent entity ---
     def upsert_agent(self, agent: Agent) -> Agent:
         """Create or update one agent. Idempotent on ``(user_id, agent_id)``, so a
         re-import refreshes name/role/uuid and preserves ``created_date``."""
+        ...
+
+    def create_agent(self, agent: Agent) -> Agent:
+        """Create one agent, raising ``ValueError`` if the domain is already taken.
+
+        The served twin of ``upsert_agent``: upsert refreshes an existing agent, which
+        the importer needs and a caller must not have, or one agent could quietly rewrite
+        another's identity."""
         ...
 
     def list_agents(self) -> Sequence[Agent]:

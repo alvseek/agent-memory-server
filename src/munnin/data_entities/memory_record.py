@@ -1,9 +1,11 @@
-"""The uniform memory record — one shape for every item (ADR-013 D5, arch §3).
+"""The store's entities: an agent, and the memory that belongs to it.
 
-One record = one *item* (one episode / reasoning pattern / emotional moment /
-knowledge entry / identity doc). Metadata columns + a ``full_content`` markdown
-blob. The index is a projection over the metadata (a SELECT), never a hand-edited
-file.
+One memory record = one *item* (one episode / reasoning pattern / emotional moment /
+knowledge entry / identity doc) — metadata columns plus a ``full_content`` markdown
+blob. The index is a projection over that metadata (a SELECT), never a hand-edited file.
+Every item still has one uniform shape; what changed is that an **agent** is no longer
+one of the items. It is an entity with a row of its own, so ``MemoryRecord`` extends
+``SharedRecord`` by exactly the field the two tables differ by — the owner.
 """
 
 from __future__ import annotations
@@ -12,15 +14,10 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
-# TRANSITIONAL — being deleted by this refactor (confirmed decision 10). Fleet-shared
-# memory now lives in `shared_record`, which has no `agent_id`, so this sentinel has no
-# remaining purpose. It survives only until its last three consumers are rewritten in
-# Steps 2.3 / 3.1 / 4.1; Phase 4's exit asserts it is gone from `src/`. Do not use it in
-# new code — a memory record's `agent_id` is always a real, foreign-key-checked domain.
-SHARED_AGENT_ID = "__shared__"
-
 _DOMAIN_RE = re.compile(r"^[a-z0-9-]+$")
 # Kebab-legal but semantically reserved names that must not be used as domains.
+# `shared` is reserved because it names the fleet's own memory scope; the older
+# `__shared__` sentinel is gone entirely, and the kebab rule rejects it anyway.
 _RESERVED_DOMAINS = frozenset({"shared"})
 
 

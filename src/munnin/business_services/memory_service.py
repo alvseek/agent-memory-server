@@ -7,21 +7,21 @@ add_reasoning, ...) land in Phase 5; Phase 4 provides only liveness.
 
 from __future__ import annotations
 
-import re
 import uuid as _uuid
 from typing import Any
 
 from munnin import __version__
 from munnin.data_entities.memory_record import (
-    SHARED_AGENT_ID,
+    Agent,
     MemoryRecord,
     RecordType,
+    SharedRecord,
     validate_domain,
 )
 from munnin.data_repositories.memory_repository import MemoryRepository
 
 
-def _whole(r: MemoryRecord) -> dict[str, Any]:
+def _whole(r: SharedRecord) -> dict[str, Any]:
     """Always-load section item — full body included."""
     return {
         "uuid": r.uuid,
@@ -32,7 +32,7 @@ def _whole(r: MemoryRecord) -> dict[str, Any]:
     }
 
 
-def _index(r: MemoryRecord) -> dict[str, Any]:
+def _index(r: SharedRecord) -> dict[str, Any]:
     """Browse section item — metadata only, no body (fetched on demand)."""
     return {
         "uuid": r.uuid,
@@ -43,12 +43,17 @@ def _index(r: MemoryRecord) -> dict[str, Any]:
     }
 
 
-def _record(r: MemoryRecord) -> dict[str, Any]:
+def _record(r: SharedRecord) -> dict[str, Any]:
     """Full public record projection — the whole item including body. Omits the
-    internal ``id`` (never leaves the store) and ``user_id`` (tenancy-internal)."""
+    internal ``id`` (never leaves the store) and ``user_id`` (tenancy-internal).
+
+    ``agent_id`` appears only on agent-owned memory, because only ``MemoryRecord``
+    has one. That is what makes a merged result **self-labelling**: a caller reading
+    a mixed list can tell fleet memory from an agent's by the field's presence,
+    without an envelope to unpack or a sentinel value to recognise."""
     return {
         "uuid": r.uuid,
-        "agent_id": r.agent_id,
+        **({"agent_id": r.agent_id} if isinstance(r, MemoryRecord) else {}),
         "record_type": r.record_type.value,
         "project": r.project,
         "title": r.title,
@@ -60,31 +65,11 @@ def _record(r: MemoryRecord) -> dict[str, Any]:
     }
 
 
-# Roster fields, read out of an agent's identity body. Matched by line rather than by
-# record title on purpose: a markdown-born agent's identity is titled "Domain Agent
-# Identity" (the importer's `.title()` of the H1) while a DB-born one is titled "Agent
-# Identity" (create-agent's `persist-identity`), so title-matching would see only half
-# the fleet.
-_NAME_RE = re.compile(r"^\*\*Name\*\*:\s*(.+?)\s*$", re.M)
-_ROLE_RE = re.compile(r"^\*\*Role\*\*:\s*(.+?)\s*$", re.M)
-# Fallback for agents predating the `Role` line. Kept as a separate pattern rather than
-# an alternation so precedence is explicit: an alternation would resolve to whichever
-# line appears first in the file, making the answer depend on template ordering.
-_PURPOSE_RE = re.compile(r"^\*\*Main Purpose\*\*:\s*(.+?)\s*$", re.M)
-
-
-def _identity_fields(bodies: list[str]) -> dict[str, str | None]:
-    """First ``**Name**`` / ``**Role**`` found across an agent's identity records.
-    Both ``None`` when the agent has no identity — a real state the caller surfaces
-    as "(no identity recorded)", never as a missing row."""
-    def first(pattern: re.Pattern[str]) -> str | None:
-        for body in bodies:
-            m = pattern.search(body)
-            if m:
-                return m.group(1)
-        return None
-
-    return {"name": first(_NAME_RE), "role": first(_ROLE_RE) or first(_PURPOSE_RE)}
+def _agent(a: Agent) -> dict[str, Any]:
+    """The agent entity's public shape. Carries ``uuid`` where the roster does not: a
+    creation response confirms what was actually stored, while the roster stays three
+    short fields per agent because whole identities overrun the client's output cap."""
+    return {"agent_id": a.agent_id, "name": a.name, "role": a.role, "uuid": a.uuid}
 
 
 class MemoryService:
@@ -104,13 +89,17 @@ class MemoryService:
     def awaken(self, domain: str) -> dict[str, Any]:
         """Assemble an agent's memory payload from the DB (4-layer model, C-2).
 
-        Always-load whole: layer i (``__shared__`` reasoning + knowledge) + layer ii
+        Always-load whole: layer i (fleet-shared reasoning + knowledge) + layer ii
         (domain identity/reasoning/emotional). Index-only: layer iii (domain
         episode/knowledge) + the latest episode body. All reads are hot-read filtered
-        (deleted + archived excluded) by the repository."""
+        (deleted + archived excluded) by the repository.
+
+        Layer i now comes from ``query_shared`` rather than from an agent named
+        ``__shared__``. The payload shape is unchanged — it always was fleet memory;
+        only the place it is stored stopped pretending to be an agent."""
         domain = validate_domain(domain)
 
-        shared = self._repo.query(agent_id=SHARED_AGENT_ID)
+        shared = self._repo.query_shared()
         shared_reasoning = [r for r in shared if r.record_type is RecordType.reasoning]
         shared_knowledge = [r for r in shared if r.record_type is RecordType.knowledge]
 
@@ -158,8 +147,10 @@ class MemoryService:
         project: str | None = None,
         include_archived: bool = False,
     ) -> list[dict[str, Any]]:
-        """Browse the index projection on demand (bodies included). ``record_type`` is a
-        string coerced to the enum (invalid → ``ValueError``)."""
+        """Filter memory by exact field values, whole records including bodies.
+        ``record_type`` is a string coerced to the enum (invalid → ``ValueError``).
+        Naming an ``agent_id`` reads that agent alone; omitting it also returns
+        fleet-shared memory, and those rows carry no ``agent_id`` key."""
         rtype = RecordType(record_type) if record_type else None
         rows = self._repo.query(
             agent_id=agent_id,
@@ -170,28 +161,64 @@ class MemoryService:
         return [_record(r) for r in rows]
 
     def search(self, text: str, *, include_archived: bool = True) -> list[dict[str, Any]]:
-        """Full-text (FTS5) keyword search over content + title + tags. Archived rows are
-        searchable by default; soft-deleted never surface."""
-        return [_record(r) for r in self._repo.search(text, include_archived=include_archived)]
+        """Full-text (FTS5) keyword search over content + title + tags, across **both**
+        corpora. Archived rows are searchable by default; soft-deleted never surface.
+
+        The two groups arrive from two indexes because FTS5 external-content binds one
+        index to one table, and they are concatenated rather than interleaved by score:
+        bm25 ranks per corpus, so the numbers are not comparable across the join. Within
+        each group the ranking is the real one. Agent hits carry ``agent_id``; fleet hits
+        do not, which is the whole labelling the caller needs."""
+        return [
+            _record(r)
+            for r in (
+                *self._repo.search(text, include_archived=include_archived),
+                *self._repo.search_shared(text, include_archived=include_archived),
+            )
+        ]
+
+    def create_agent(
+        self,
+        *,
+        agent_id: str,
+        name: str | None = None,
+        role: str | None = None,
+        uuid: str | None = None,
+    ) -> dict[str, Any]:
+        """Bring a new agent into being — the row its memory will point at.
+
+        An agent has to exist before anything can be written for it, so this is the first
+        call in creating one, not an optional registration step. Refuses an existing
+        domain with ``ValueError`` rather than refreshing it: re-running creation against
+        a live agent is a mistake, and overwriting its name silently would be a worse
+        answer than an error. ``uuid`` is the agent's own "digital soul" id from its
+        identity document — content, not a key."""
+        return _agent(
+            self._repo.create_agent(
+                Agent(
+                    user_id="",  # repo stamps server-side
+                    agent_id=validate_domain(agent_id),
+                    name=name,
+                    role=role,
+                    uuid=uuid,
+                )
+            )
+        )
 
     def list_agents(self) -> list[dict[str, Any]]:
         """The fleet roster: every agent domain plus its display name and one-line role.
 
-        Assembled server-side and returned **without bodies** on purpose. The roster is
-        derivable from ``query(record_type='identity')``, but that projects whole records
-        — identity bodies across a real fleet run well past the MCP output cap, which
-        truncates silently. Reading those bodies here costs nothing and the caller gets
-        three short fields per agent.
+        A plain column read. Name and role are parsed once, at import, and stored on the
+        agent row — so this no longer pulls identity bodies through the service to regex
+        them on every request, and no longer runs past the MCP output cap that truncates
+        silently. An agent is listed because it has a row, which also means a newly
+        created agent with no memory yet appears immediately.
 
-        An agent with no readable identity is kept with ``name``/``role`` of ``None`` —
-        the caller renders it, never drops it, because absent identity is a finding.
-        """
-        identities: dict[str, list[str]] = {}
-        for r in self._repo.query(record_type=RecordType.identity):
-            identities.setdefault(r.agent_id, []).append(r.full_content or "")
+        An agent with no readable identity keeps ``name``/``role`` of ``None`` — the
+        caller renders it, never drops it, because absent identity is a finding."""
         return [
-            {"agent_id": domain, **_identity_fields(identities.get(domain, []))}
-            for domain in self._repo.list_agent_domains()
+            {"agent_id": a.agent_id, "name": a.name, "role": a.role}
+            for a in self._repo.list_agents()
         ]
 
     # --- writes (Edit-tool parity; record assembled server-side) ---
@@ -199,32 +226,56 @@ class MemoryService:
     def insert(
         self,
         *,
-        agent_id: str,
         record_type: str,
         content: str,
+        agent_id: str | None = None,
+        scope: str = "agent",
         title: str | None = None,
         tags: list[str] | None = None,
         project: str | None = None,
         uuid: str | None = None,
     ) -> dict[str, Any]:
-        """Append a new item. Assembles the ``MemoryRecord`` server-side (the repo stamps
-        ``user_id`` + defaults dates); generates a ``uuid`` if absent. Idempotent upsert on
-        ``uuid``. ``agent_id`` must be a real kebab domain — fleet-shared memory is written
-        through its own path, not through a sentinel here; invalid ``agent_id``/``record_type``
-        raise ``ValueError``."""
-        agent = validate_domain(agent_id)
+        """Append a new item. Assembles the record server-side (the repo stamps
+        ``user_id`` + defaults dates); generates a ``uuid`` if absent. Idempotent upsert
+        on ``uuid``.
+
+        ``scope`` decides which table the row goes to, and it has to be explicit: an
+        insert is the one write that chooses *where* — every other write addresses a
+        record that already exists, so its uuid answers the question. ``scope="agent"``
+        (the default) requires a real kebab ``agent_id``; ``scope="shared"`` forbids one,
+        because fleet memory has no owner. Both contradictions raise ``ValueError`` rather
+        than guessing, since either guess would put the row in a table the caller did not
+        mean. An unknown ``scope``, an invalid domain, or an invalid ``record_type`` also
+        raise ``ValueError``.
+
+        A ``scope="shared"`` insert of an agent-only ``record_type`` (an episode, say) is
+        refused by the shared table's own CHECK. That check is deliberately not duplicated
+        here: the schema is the single enforcer of what fleet memory may contain."""
+        if scope not in ("agent", "shared"):
+            raise ValueError(f"invalid scope {scope!r}: expected 'agent' or 'shared'")
         rtype = RecordType(record_type)
-        record = MemoryRecord(
-            uuid=uuid or _uuid.uuid4().hex,
-            user_id="",  # repo stamps server-side
-            agent_id=agent,
-            record_type=rtype,
-            full_content=content,
-            title=title,
-            tags=tags or [],
-            project=project,
+        common: dict[str, Any] = {
+            "uuid": uuid or _uuid.uuid4().hex,
+            "user_id": "",  # repo stamps server-side
+            "record_type": rtype,
+            "full_content": content,
+            "title": title,
+            "tags": tags or [],
+            "project": project,
+        }
+        if scope == "shared":
+            if agent_id is not None:
+                raise ValueError(
+                    "scope='shared' takes no agent_id: fleet memory has no owner"
+                )
+            return _record(self._repo.insert_shared(SharedRecord(**common)))
+        if agent_id is None:
+            raise ValueError("scope='agent' requires an agent_id")
+        return _record(
+            self._repo.insert(
+                MemoryRecord(agent_id=validate_domain(agent_id), **common)
+            )
         )
-        return _record(self._repo.insert(record))
 
     def edit(
         self, uuid: str, old_string: str, new_string: str, replace_all: bool = False

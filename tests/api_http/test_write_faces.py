@@ -12,10 +12,15 @@ from httpx import ASGITransport
 
 from munnin.app import build_app
 from munnin.configuration.config import Config
+from tests.conftest import seed_agent
 
 
 def _client(tmp_path: Path) -> httpx.AsyncClient:
-    app = build_app(Config(db_path=tmp_path / "m.db", user_id="alvi"))
+    db = tmp_path / "m.db"
+    # `meta` has to exist before its memory can be written — the foreign key is the
+    # point of the entity, and these tests go through the real repository.
+    seed_agent(db, "meta", name="Claude Meta", role="Meta Agent")
+    app = build_app(Config(db_path=db, user_id="alvi"))
     return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 

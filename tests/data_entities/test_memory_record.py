@@ -1,20 +1,17 @@
-"""Entity guards — the shared sentinel + domain validation (SP-1 Step 1.1)."""
+"""Entity guards — domain validation.
+
+The `__shared__` sentinel this file once guarded no longer exists: fleet memory lives in
+its own table with no owner column, so there is nothing for a sentinel to stand in for.
+Its rejection is still asserted below, alongside the other illegal domains — a name that
+was reserved for years may well be typed again, and it must fail as a *domain*, not
+because a constant happens to remember it.
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from munnin.data_entities.memory_record import (
-    SHARED_AGENT_ID,
-    validate_domain,
-)
-
-
-def test_shared_sentinel_is_not_a_legal_domain() -> None:
-    # underscores fail the kebab rule, so no agent can ever collide with it
-    assert SHARED_AGENT_ID == "__shared__"
-    with pytest.raises(ValueError):
-        validate_domain(SHARED_AGENT_ID)
+from munnin.data_entities.memory_record import validate_domain
 
 
 @pytest.mark.parametrize("name", ["meta", "backend-nestjs", "uiux-designer", "aquazone"])

@@ -46,13 +46,18 @@ _SHARED_COLUMNS = ", ".join(_SHARED_COL)
 # the lookup order for `_locate`; values are interpolated into SQL, so this mapping is the
 # whitelist that keeps that safe — a table name can never be parameterised in SQLite.
 _TABLES: dict[str, str] = {"memory_record": _COLUMNS, "shared_record": _SHARED_COLUMNS}
+# What `shared_record`'s CHECK admits. Kept here only to name the legal values in the
+# error message — the schema remains the enforcer, this is not a second copy of the rule.
+_SHARED_RECORD_TYPES = "'reasoning' or 'knowledge'"
 # The agent entity's column order — one source of truth, same discipline as _COL.
 _AGENT_COL = ("user_id", "agent_id", "name", "role", "uuid", "created_date")
 _AGENT_COLUMNS = ", ".join(_AGENT_COL)
 # Insert set = every column except the autoincrement id.
 _INSERT_COLUMNS = ", ".join(_COL[1:])
-# Alias-prefixed list for joins (e.g. the FTS search join on `m`).
+_SHARED_INSERT_COLUMNS = ", ".join(_SHARED_COL[1:])
+# Alias-prefixed lists for joins (the FTS search joins, on `m` and `s`).
 _M_COLUMNS = ", ".join(f"m.{c}" for c in _COL)
+_S_COLUMNS = ", ".join(f"s.{c}" for c in _SHARED_COL)
 
 
 def _now() -> str:
@@ -98,7 +103,7 @@ class SqliteMemoryRepository:
         finally:
             conn.close()
 
-    # --- writes (SP-1: insert only) ---
+    # --- writes (Edit-tool parity) ---
 
     def insert(self, record: MemoryRecord) -> MemoryRecord:
         """Append a new item. Idempotent UPSERT on ``uuid`` — a re-import of the
@@ -141,6 +146,66 @@ class SqliteMemoryRepository:
                 (record.uuid, self._user_id),
             ).fetchone()
         return _row_to_record(row)
+
+    def insert_shared(self, record: SharedRecord) -> SharedRecord:
+        """Append a new fleet-shared item. Same idempotent UPSERT-on-``uuid`` contract as
+        ``insert``, against the table that has no owner column.
+
+        This is the one operation that genuinely needs a shared twin. Every other
+        write addresses a record that already exists, so its uuid says which table to
+        use; an insert is deciding *where the row goes*, and nothing in the arguments
+        can imply that. ``record_type`` is enforced by the table's own CHECK — passing
+        an episode is refused rather than silently accepted into a table that is only
+        ever reasoning and knowledge.
+
+        The schema stays the single enforcer of that rule — it is not restated here —
+        but its rejection is translated into ``ValueError`` so both faces can report it
+        the way they report every other bad input. An untranslated ``IntegrityError``
+        reaches an agent as an opaque database string and an HTTP caller as a 500."""
+        created = record.created_date or _now()
+        modified = record.modified_date or created
+        with self._conn() as conn:
+            try:
+                conn.execute(
+                    f"""
+                INSERT INTO shared_record
+                    ({_SHARED_INSERT_COLUMNS})
+                VALUES (:uuid, :user_id, :record_type, :project, :title,
+                        :tags, :created_date, :modified_date, :archived_date,
+                        :deleted_date, :full_content)
+                ON CONFLICT(uuid) DO UPDATE SET
+                    record_type=excluded.record_type,
+                    project=excluded.project, title=excluded.title, tags=excluded.tags,
+                    modified_date=excluded.modified_date, archived_date=excluded.archived_date,
+                    deleted_date=excluded.deleted_date, full_content=excluded.full_content
+                """,
+                    {
+                        "uuid": record.uuid,
+                        "user_id": self._user_id,
+                        "record_type": record.record_type.value,
+                        "project": record.project,
+                        "title": record.title,
+                        "tags": json.dumps(record.tags or []),
+                        "created_date": created,
+                        "modified_date": modified,
+                        "archived_date": record.archived_date,
+                        "deleted_date": record.deleted_date,
+                        "full_content": record.full_content,
+                    },
+                )
+            except sqlite3.IntegrityError as exc:
+                if "CHECK constraint failed" not in str(exc):
+                    raise
+                raise ValueError(
+                    f"fleet-shared memory cannot be {record.record_type.value!r}: "
+                    f"it may only be {_SHARED_RECORD_TYPES}. Memory of any other kind "
+                    "belongs to an agent — insert it with that agent's id instead."
+                ) from exc
+            row = conn.execute(
+                f"SELECT {_SHARED_COLUMNS} FROM shared_record WHERE uuid=? AND user_id=?",
+                (record.uuid, self._user_id),
+            ).fetchone()
+        return _row_to_shared(row)
 
     def edit(
         self,
@@ -255,14 +320,21 @@ class SqliteMemoryRepository:
             ).fetchone()
         return _row_from(table, row)
 
-    def query(
+    def _filtered_sql(
         self,
+        table: str,
         *,
-        agent_id: str | None = None,
-        record_type: RecordType | None = None,
-        project: str | None = None,
-        include_archived: bool = False,
-    ) -> Sequence[MemoryRecord]:
+        agent_id: str | None,
+        record_type: RecordType | None,
+        project: str | None,
+        include_archived: bool,
+    ) -> tuple[str, list[object]]:
+        """Build the ``(sql, params)`` for a field-filtered read of one memory table.
+
+        Shared by ``query`` and ``query_shared`` so the tenancy and lifecycle invariants
+        are written once and cannot drift apart between the two tables. ``table`` comes
+        from the ``_TABLES`` whitelist; ``agent_id`` is only ever passed for
+        ``memory_record``, the only table that has the column."""
         # Tenancy + lifecycle invariants injected on every read.
         where = ["user_id = ?", "deleted_date IS NULL"]
         params: list[object] = [self._user_id]
@@ -277,33 +349,134 @@ class SqliteMemoryRepository:
         if project is not None:
             where.append("project = ?")
             params.append(project)
-        sql = (
-            f"SELECT {_COLUMNS} FROM memory_record "
-            f"WHERE {' AND '.join(where)} ORDER BY id"
+        return (
+            f"SELECT {_TABLES[table]} FROM {table} "
+            f"WHERE {' AND '.join(where)} ORDER BY id",
+            params,
+        )
+
+    def query(
+        self,
+        *,
+        agent_id: str | None = None,
+        record_type: RecordType | None = None,
+        project: str | None = None,
+        include_archived: bool = False,
+    ) -> Sequence[SharedRecord]:
+        """Filter memory by exact field values, returning whole records including bodies.
+
+        Naming an ``agent_id`` reads that agent's memory alone. Leaving it out means "all
+        memory this tenant can see", which now spans two tables, so the fleet-shared rows
+        are read too and appended after the agent rows — each mapped by its own table's
+        mapper, so the result stays self-labelling (a ``MemoryRecord`` carries
+        ``agent_id``; a ``SharedRecord`` has no such attribute). The alternative, a SQL
+        ``UNION`` selecting ``NULL AS agent_id``, would hand every shared row a fake owner
+        — the exact sentinel shape this model exists to remove.
+
+        Ordering is per table (insertion order within each), not global: the two ``id``
+        sequences are independent, so interleaving them would imply a chronology neither
+        column carries."""
+        sql, params = self._filtered_sql(
+            "memory_record",
+            agent_id=agent_id,
+            record_type=record_type,
+            project=project,
+            include_archived=include_archived,
+        )
+        with self._conn() as conn:
+            records: list[SharedRecord] = [
+                _row_to_record(r) for r in conn.execute(sql, params).fetchall()
+            ]
+            if agent_id is None:
+                shared_sql, shared_params = self._filtered_sql(
+                    "shared_record",
+                    agent_id=None,
+                    record_type=record_type,
+                    project=project,
+                    include_archived=include_archived,
+                )
+                records += [
+                    _row_to_shared(r)
+                    for r in conn.execute(shared_sql, shared_params).fetchall()
+                ]
+        return records
+
+    def query_shared(
+        self,
+        *,
+        record_type: RecordType | None = None,
+        project: str | None = None,
+        include_archived: bool = False,
+    ) -> Sequence[SharedRecord]:
+        """Fleet-shared memory only, filtered by exact field values, bodies included.
+        No ``agent_id`` parameter exists because the table has no such column — this
+        memory belongs to the fleet, not to an agent."""
+        sql, params = self._filtered_sql(
+            "shared_record",
+            agent_id=None,
+            record_type=record_type,
+            project=project,
+            include_archived=include_archived,
         )
         with self._conn() as conn:
             rows = conn.execute(sql, params).fetchall()
-        return [_row_to_record(r) for r in rows]
+        return [_row_to_shared(r) for r in rows]
 
     def search(self, text: str, *, include_archived: bool = True) -> Sequence[MemoryRecord]:
-        """Full-text search (FTS5) over content + title + tags. Safe plain-text
-        (see ``_to_fts_query``); ``user_id``-stamped; soft-deleted excluded; archived
-        included by default (still searchable). Ranked most-relevant-first (bm25)."""
+        """Full-text search (FTS5) over agent memory's content + title + tags. Safe
+        plain-text (see ``_to_fts_query``); ``user_id``-stamped; soft-deleted excluded;
+        archived included by default (still searchable). Ranked most-relevant-first (bm25).
+
+        Fleet memory is **not** included — it has its own index and its own method.
+        FTS5 external-content binds one index to one content table, so the split is the
+        schema's, not a choice made here; the caller merges the two groups."""
+        rows = self._search_rows(
+            "memory_record", "memory_fts", "m", _M_COLUMNS, text,
+            include_archived=include_archived,
+        )
+        return [_row_to_record(r) for r in rows]
+
+    def search_shared(
+        self, text: str, *, include_archived: bool = True
+    ) -> Sequence[SharedRecord]:
+        """Full-text search over fleet-shared memory. Same contract as ``search`` against
+        the other corpus. Note that bm25 ranks **per corpus**, so a score from here is not
+        strictly comparable with one from ``search`` — accepted, because nothing reads the
+        scores and the two groups are merged by the caller, not interleaved by rank."""
+        rows = self._search_rows(
+            "shared_record", "shared_fts", "s", _S_COLUMNS, text,
+            include_archived=include_archived,
+        )
+        return [_row_to_shared(r) for r in rows]
+
+    def _search_rows(
+        self,
+        table: str,
+        index: str,
+        alias: str,
+        columns: str,
+        text: str,
+        *,
+        include_archived: bool,
+    ) -> list[sqlite3.Row]:
+        """One FTS5 corpus search, returning raw rows for the caller to map — which is
+        what keeps each result the type its own table implies. Table, index and alias are
+        literal constants from the two callers above, never caller input, because SQLite
+        cannot parameterise them."""
         match = _to_fts_query(text)
         if not match:
             return []
-        where = ["memory_fts MATCH ?", "m.user_id = ?", "m.deleted_date IS NULL"]
+        where = [f"{index} MATCH ?", f"{alias}.user_id = ?", f"{alias}.deleted_date IS NULL"]
         params: list[object] = [match, self._user_id]
         if not include_archived:
-            where.append("m.archived_date IS NULL")
+            where.append(f"{alias}.archived_date IS NULL")
         sql = (
-            f"SELECT {_M_COLUMNS} FROM memory_fts "
-            "JOIN memory_record m ON m.id = memory_fts.rowid "
-            f"WHERE {' AND '.join(where)} ORDER BY memory_fts.rank"
+            f"SELECT {columns} FROM {index} "
+            f"JOIN {table} {alias} ON {alias}.id = {index}.rowid "
+            f"WHERE {' AND '.join(where)} ORDER BY {index}.rank"
         )
         with self._conn() as conn:
-            rows = conn.execute(sql, params).fetchall()
-        return [_row_to_record(r) for r in rows]
+            return conn.execute(sql, params).fetchall()
 
     # --- addressing a record by uuid, across both memory tables ---
 
@@ -355,6 +528,47 @@ class SqliteMemoryRepository:
             row = conn.execute(
                 f"SELECT {_AGENT_COLUMNS} FROM agent WHERE user_id=? AND agent_id=?",
                 (self._user_id, agent.agent_id),
+            ).fetchone()
+        return _row_to_agent(row)
+
+    def create_agent(self, agent: Agent) -> Agent:
+        """Create one agent, refusing to touch an existing one.
+
+        The strict twin of ``upsert_agent``, and the only one of the two that belongs on
+        a served surface. Upsert refreshes name and role by design — which is right for a
+        re-import replaying the markdown source, and wrong for an agent calling a tool,
+        because it would let one agent silently rewrite another's identity with no error
+        and nothing to audit. Creation should also be honestly non-idempotent: re-running
+        it against an existing domain is a mistake worth hearing about, not a no-op to
+        absorb. Raises ``ValueError`` if the domain is taken."""
+        created = agent.created_date or _now()
+        domain = validate_domain(agent.agent_id)
+        with self._conn() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO agent (user_id, agent_id, name, role, uuid, created_date)
+                    VALUES (:user_id, :agent_id, :name, :role, :uuid, :created_date)
+                    """,
+                    {
+                        "user_id": self._user_id,
+                        "agent_id": domain,
+                        "name": agent.name,
+                        "role": agent.role,
+                        "uuid": agent.uuid,
+                        "created_date": created,
+                    },
+                )
+            except sqlite3.IntegrityError as exc:
+                # Narrow deliberately. The primary key is the only constraint that can
+                # fire here today, so a blanket catch would be right by luck — and would
+                # start reporting some future column's violation as a duplicate.
+                if "UNIQUE constraint failed" not in str(exc):
+                    raise
+                raise ValueError(f"agent already exists: {domain}") from exc
+            row = conn.execute(
+                f"SELECT {_AGENT_COLUMNS} FROM agent WHERE user_id=? AND agent_id=?",
+                (self._user_id, domain),
             ).fetchone()
         return _row_to_agent(row)
 

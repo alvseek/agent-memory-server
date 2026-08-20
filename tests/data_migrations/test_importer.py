@@ -11,8 +11,9 @@ from pathlib import Path
 import pytest
 
 from munnin.business_services.memory_service import MemoryService
-from munnin.data_entities.memory_record import SHARED_AGENT_ID, RecordType
+from munnin.data_entities.memory_record import RecordType
 from munnin.data_migrations.importer import (
+    ImportAborted,
     import_agent,
     import_fleet,
     import_shared,
@@ -25,7 +26,7 @@ def _fake_source(root: Path) -> Path:
     (agent / "episodes").mkdir(parents=True)
     (root / "shared-memory").mkdir(parents=True)
     (agent / "agent-core-memory.md").write_text(
-        "# DOMAIN AGENT IDENTITY\nI am meta.\n"
+        "# DOMAIN AGENT IDENTITY\nI am meta.\n**Name**: Claude Meta\n**Role**: Meta Agent\n"
         "# DOMAIN CORE KNOWLEDGE\ncore\n"
         "# DOMAIN RAS\ntrig\n"
         "# DOMAIN REASONING MEMORY\n<!-- content here -->\n"
@@ -62,7 +63,7 @@ def _fake_source(root: Path) -> Path:
     foo = root / "agent-foo"
     foo.mkdir(parents=True)
     (foo / "agent-core-memory.md").write_text(
-        "# DOMAIN AGENT IDENTITY\nI am foo.\n", encoding="utf-8"
+        "# DOMAIN AGENT IDENTITY\nI am foo.\n**Name**: Agent Foo\n", encoding="utf-8"
     )
     # shared always-load layer
     (root / "shared-memory" / "core-reasoning-memory.md").write_text(
@@ -86,8 +87,8 @@ def test_import_fake_tree_counts_and_layers(tmp_path: Path) -> None:
     assert counts["meta/identity"] == 3
     assert "meta/reasoning" not in counts  # empty domain reasoning
     assert counts["meta/emotional"] == 2
-    assert shared[f"{SHARED_AGENT_ID}/reasoning"] == 1
-    assert shared[f"{SHARED_AGENT_ID}/knowledge"] == 1
+    assert shared["shared/reasoning"] == 1
+    assert shared["shared/knowledge"] == 1
     assert counts["meta/knowledge"] == 2  # 1 active (pain) + 1 archived (orphan); proj.md skipped
     assert counts["meta/episode"] == 3  # 2 active + 1 archived
 
@@ -139,7 +140,7 @@ def test_import_fleet_imports_all_agents_shared_once(tmp_path: Path) -> None:
     assert totals["meta/identity"] == 3
     assert totals["foo/identity"] == 1
     # shared imported exactly once (2 rows total), not once-per-agent
-    shared_rows = repo.query(agent_id=SHARED_AGENT_ID, include_archived=True)
+    shared_rows = repo.query_shared(include_archived=True)
     assert len(shared_rows) == 2
 
 
@@ -166,7 +167,7 @@ def test_awaken_latest_episode_is_newest_by_real_date(tmp_path: Path) -> None:
     (src / "shared-memory" / "core-reasoning-memory.md").write_text("# R\n", encoding="utf-8")
     (src / "shared-memory" / "core-knowledge-memory.md").write_text("# K\n", encoding="utf-8")
     (agent / "agent-core-memory.md").write_text(
-        "# DOMAIN AGENT IDENTITY\nI am arch.\n", encoding="utf-8"
+        "# DOMAIN AGENT IDENTITY\nI am arch.\n**Name**: Claude Arch\n", encoding="utf-8"
     )
     # a-newest (2026-08-11) sorts BEFORE z-middle (2026-08-10) in the glob → lower id.
     # Pre-fix both are undated → import-time tie → id-desc tiebreak picks z-middle (WRONG).
@@ -209,9 +210,71 @@ def test_import_real_agent_meta(tmp_path: Path) -> None:
     counts = import_agent(repo, _REAL, "meta")
     assert counts["meta/identity"] == 3
     assert counts["meta/emotional"] >= 10
-    assert shared[f"{SHARED_AGENT_ID}/reasoning"] >= 10
+    assert shared["shared/reasoning"] >= 10
     assert counts["meta/episode"] >= 100  # active + archived
     active = repo.query(agent_id="meta", record_type=RecordType.episode)
     allep = repo.query(agent_id="meta", record_type=RecordType.episode, include_archived=True)
     assert len(active) < len(allep)  # archived split holds
     assert len(allep) == counts["meta/episode"]
+
+
+# --- pass 1: the agent table, and the abort that protects it ---
+
+
+def test_import_fleet_creates_agent_rows_with_their_fields(tmp_path: Path) -> None:
+    """Pass 1's product. Name, role and the agent's own uuid are read once, here, and
+    stored as columns — which is what turns the roster into a plain SELECT."""
+    src = _fake_source(tmp_path / "src")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    import_fleet(repo, src)
+    roster = {a.agent_id: a for a in repo.list_agents()}
+    assert sorted(roster) == ["foo", "meta"]
+    assert roster["meta"].name == "Claude Meta"
+    assert roster["meta"].role == "Meta Agent"
+    assert roster["foo"].role is None  # a real agent that simply states no role
+
+
+def test_pass_one_aborts_before_writing_anything(tmp_path: Path) -> None:
+    """The success criterion for the two-pass split: a bad folder leaves the database
+    **empty**, not partially filled. Skipping the folder and carrying on is what let
+    five agents import as hollow shells for months while every run reported success."""
+    src = _fake_source(tmp_path / "src")
+    broken = src / "agent-broken"
+    broken.mkdir()
+    (broken / "agent-core-memory.md").write_text(
+        "# DOMAIN AGENT IDENTITY\nno name line here\n", encoding="utf-8"
+    )
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+
+    with pytest.raises(ImportAborted, match="broken: identity has no"):
+        import_fleet(repo, src)
+
+    assert list(repo.list_agents()) == []
+    assert list(repo.query(include_archived=True)) == []
+    assert list(repo.query_shared(include_archived=True)) == []
+
+
+def test_pass_one_reports_every_bad_folder_not_just_the_first(tmp_path: Path) -> None:
+    """One run, one list. Surfacing them one at a time would mean one full re-run per
+    broken agent, and the check costs a single pass over a few dozen small files."""
+    src = _fake_source(tmp_path / "src")
+    for name in ("agent-alpha", "agent-omega"):
+        d = src / name
+        d.mkdir()
+        (d / "agent-core-memory.md").write_text("# DOMAIN AGENT IDENTITY\nx\n", encoding="utf-8")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+
+    with pytest.raises(ImportAborted) as exc:
+        import_fleet(repo, src)
+    assert "alpha:" in str(exc.value)
+    assert "omega:" in str(exc.value)
+    assert "2 agent folder(s)" in str(exc.value)
+
+
+def test_a_missing_core_file_is_also_an_abort(tmp_path: Path) -> None:
+    src = _fake_source(tmp_path / "src")
+    (src / "agent-empty").mkdir()
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    with pytest.raises(ImportAborted, match="empty: no agent-core-memory.md"):
+        import_fleet(repo, src)
+    assert list(repo.list_agents()) == []

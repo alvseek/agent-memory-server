@@ -1,4 +1,5 @@
-"""The agent entity — `upsert_agent` and `list_agents` against the real repository.
+"""The agent entity — `create_agent`, `upsert_agent` and `list_agents`, against the real
+repository.
 
 Deliberately does **not** use the `AutoAgentRepository` double from conftest: these tests
 are about who creates agent rows and what the roster contains, so a repository that
@@ -7,6 +8,7 @@ creates them as a side effect would prove nothing.
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -103,3 +105,97 @@ def test_archiving_all_of_an_agents_memory_leaves_the_agent(tmp_path: Path) -> N
     )
     repo.archive("e1")
     assert [a.agent_id for a in repo.list_agents()] == ["linux"]
+
+
+def test_soft_deleting_all_of_an_agents_memory_leaves_the_agent(tmp_path: Path) -> None:
+    """A deliberate reversal, recorded here so it cannot be mistaken for a regression.
+
+    Under the old `SELECT DISTINCT` enumeration, tombstoning an agent's last record made
+    the agent itself vanish from the roster — existence was inferred from memory, so
+    deleting the memory deleted the agent. It now has a row, and nothing in the system
+    retires an agent (decision 8), so an agent whose memory is entirely tombstoned is
+    still an agent. Erasing an entity was never what `soft_delete` was asked to do."""
+    repo = _repo(tmp_path)
+    repo.upsert_agent(_agent("ghost", name="Claude Ghost"))
+    repo.insert(
+        MemoryRecord(
+            uuid="e1", user_id="", agent_id="ghost",
+            record_type=RecordType.episode, full_content="x",
+        )
+    )
+    repo.soft_delete("e1")
+    assert list(repo.query(agent_id="ghost")) == []  # the memory is gone
+    assert [a.agent_id for a in repo.list_agents()] == ["ghost"]  # the agent is not
+
+
+# --- create_agent: the strict twin, and the only one fit for a served surface ---
+
+
+def test_create_agent_returns_the_stored_entity(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    made = repo.create_agent(_agent("newborn", name="Claude Newborn", role="Test Agent"))
+    assert made.agent_id == "newborn"
+    assert made.user_id == "alvi"  # server-stamped
+    assert made.created_date
+    assert [a.agent_id for a in repo.list_agents()] == ["newborn"]
+
+
+def test_create_agent_refuses_an_existing_domain(tmp_path: Path) -> None:
+    """Creation is honestly non-idempotent. Upsert refreshes name and role by design,
+    which is right for a re-import replaying the source and wrong for a caller — it would
+    let one agent silently rewrite another's identity with nothing raised to notice."""
+    repo = _repo(tmp_path)
+    repo.create_agent(_agent("meta", name="Claude Meta"))
+    with pytest.raises(ValueError, match="agent already exists: meta"):
+        repo.create_agent(_agent("meta", name="Impostor"))
+    (only,) = repo.list_agents()
+    assert only.name == "Claude Meta"  # untouched
+
+
+def test_create_agent_rejects_an_illegal_domain(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="invalid agent domain"):
+        _repo(tmp_path).create_agent(_agent("Not A Domain"))
+
+
+def test_create_agent_is_tenancy_scoped(tmp_path: Path) -> None:
+    """The same domain under two tenants is two agents, so neither blocks the other."""
+    db = tmp_path / "m.db"
+    SqliteMemoryRepository(db, user_id="alvi").create_agent(_agent("meta"))
+    other = SqliteMemoryRepository(db, user_id="someone-else")
+    other.create_agent(_agent("meta"))  # must not raise
+    assert [a.agent_id for a in other.list_agents()] == ["meta"]
+
+
+def test_create_then_insert_is_the_working_order(tmp_path: Path) -> None:
+    """The whole reason this tool exists: memory names an owner the store checks, so
+    creation has to come first. Before `create_agent` there was no way to do this at all
+    through a face, which quietly broke `/create-agent` on the DB backend."""
+    repo = _repo(tmp_path)
+    with pytest.raises(sqlite3.IntegrityError):
+        repo.insert(
+            MemoryRecord(
+                uuid="i1", user_id="", agent_id="newborn",
+                record_type=RecordType.identity, full_content="x",
+            )
+        )
+    repo.create_agent(_agent("newborn", name="Claude Newborn"))
+    saved = repo.insert(
+        MemoryRecord(
+            uuid="i1", user_id="", agent_id="newborn",
+            record_type=RecordType.identity, full_content="x",
+        )
+    )
+    assert saved.agent_id == "newborn"
+
+
+def test_create_agent_does_not_mislabel_other_integrity_failures(tmp_path: Path) -> None:
+    """The duplicate message is narrowed to the primary key on purpose. Today that is
+    the only constraint reachable on this INSERT, so a blanket catch would be right by
+    luck — and would start calling some future column's violation a duplicate."""
+    repo = _repo(tmp_path)
+    with pytest.raises(sqlite3.IntegrityError, match="NOT NULL constraint failed"):
+        with repo._conn() as conn:  # noqa: SLF001 — reaching past the API is the point
+            conn.execute(
+                "INSERT INTO agent (user_id, agent_id, created_date) VALUES (?,?,NULL)",
+                ("alvi", "nulldate"),
+            )

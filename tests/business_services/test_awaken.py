@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from munnin.business_services.memory_service import MemoryService
-from munnin.data_entities.memory_record import SHARED_AGENT_ID, MemoryRecord, RecordType
+from munnin.data_entities.memory_record import MemoryRecord, RecordType, SharedRecord
 from tests.conftest import AutoAgentRepository
 
 
@@ -25,11 +25,26 @@ def _rec(uuid: str, agent_id: str, rtype: RecordType, **kw: object) -> MemoryRec
     return MemoryRecord(**base)  # type: ignore[arg-type]
 
 
+def _shared(uuid: str, rtype: RecordType, **kw: object) -> SharedRecord:
+    base = dict(
+        uuid=uuid,
+        user_id="",
+        record_type=rtype,
+        full_content=f"body-{uuid}",
+        title=uuid,
+        created_date="2026-01-01",
+    )
+    base.update(kw)
+    return SharedRecord(**base)  # type: ignore[arg-type]
+
+
 def _service(tmp_path: Path) -> MemoryService:
     repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
-    # layer i (shared)
-    repo.insert(_rec("sr1", SHARED_AGENT_ID, RecordType.reasoning))
-    repo.insert(_rec("sk1", SHARED_AGENT_ID, RecordType.knowledge))
+    # layer i (shared) — its own table now, seeded through its own write path. The
+    # assertions below are untouched: what changed is where fleet memory is stored,
+    # not what awaken returns.
+    repo.insert_shared(_shared("sr1", RecordType.reasoning))
+    repo.insert_shared(_shared("sk1", RecordType.knowledge))
     # layer ii (domain)
     repo.insert(_rec("id1", "meta", RecordType.identity))
     repo.insert(_rec("em1", "meta", RecordType.emotional))

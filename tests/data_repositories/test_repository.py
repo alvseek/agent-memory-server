@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from munnin.data_entities.memory_record import SHARED_AGENT_ID, MemoryRecord, RecordType
+from munnin.data_entities.memory_record import MemoryRecord, RecordType, SharedRecord
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 from tests.conftest import AutoAgentRepository
 
@@ -51,13 +51,22 @@ def test_insert_is_idempotent_upsert_on_uuid(tmp_path: Path) -> None:
 
 
 def test_query_filters_agent_and_type_and_shared(tmp_path: Path) -> None:
+    """Fleet memory is no longer an agent named `__shared__`; it is a row in another
+    table, reached by leaving `agent_id` out rather than by naming a sentinel."""
     repo = _repo(tmp_path)
     repo.insert(_rec("u1", agent_id="meta", record_type=RecordType.identity))
     repo.insert(_rec("u2", agent_id="meta", record_type=RecordType.emotional))
-    repo.insert(_rec("u3", agent_id=SHARED_AGENT_ID, record_type=RecordType.reasoning))
+    repo.insert_shared(
+        SharedRecord(
+            uuid="u3", user_id="ignored", record_type=RecordType.reasoning,
+            full_content="body", created_date="2026-01-01",
+        )
+    )
     assert {r.uuid for r in repo.query(agent_id="meta")} == {"u1", "u2"}
     assert {r.uuid for r in repo.query(agent_id="meta", record_type=RecordType.identity)} == {"u1"}
-    assert {r.uuid for r in repo.query(agent_id=SHARED_AGENT_ID)} == {"u3"}
+    assert {r.uuid for r in repo.query_shared()} == {"u3"}
+    # Naming no agent means all memory this tenant can see — both tables.
+    assert {r.uuid for r in repo.query()} == {"u1", "u2", "u3"}
 
 
 def test_archived_and_deleted_excluded_by_default(tmp_path: Path) -> None:

@@ -26,10 +26,18 @@ class MarkdownResponse(PlainTextResponse):
     media_type = "text/markdown"
 
 
-class InsertBody(BaseModel):
+class CreateAgentBody(BaseModel):
     agent_id: str
+    name: str | None = None
+    role: str | None = None
+    uuid: str | None = None
+
+
+class InsertBody(BaseModel):
     record_type: str
     content: str
+    agent_id: str | None = None
+    scope: str = "agent"
     title: str | None = None
     tags: list[str] | None = None
     project: str | None = None
@@ -95,7 +103,8 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
         project: str | None = None,
         include_archived: bool = False,
     ) -> list[dict[str, Any]]:
-        """Browse the index projection on demand."""
+        """Filter memory by exact field values (bodies included). Omitting ``agent_id``
+        also returns fleet-shared memory, whose rows carry no ``agent_id``."""
         try:
             return service.query(
                 agent_id=agent_id,
@@ -118,12 +127,25 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
 
     # --- writes ---
 
+    @router.post("/api/agents")
+    def create_agent(body: CreateAgentBody) -> dict[str, Any]:
+        """Create a new agent. 400 if the domain is invalid or already taken — creation
+        never overwrites a live agent's identity."""
+        try:
+            return service.create_agent(
+                agent_id=body.agent_id, name=body.name, role=body.role, uuid=body.uuid
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @router.post("/api/insert")
     def insert(body: InsertBody) -> dict[str, Any]:
-        """Append a new item (record assembled server-side)."""
+        """Append a new item (record assembled server-side). ``scope="agent"`` (default)
+        needs an ``agent_id`` that already exists; ``scope="shared"`` takes none."""
         try:
             return service.insert(
                 agent_id=body.agent_id,
+                scope=body.scope,
                 record_type=body.record_type,
                 content=body.content,
                 title=body.title,

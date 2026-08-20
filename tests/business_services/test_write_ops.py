@@ -38,10 +38,33 @@ def test_insert_is_idempotent_upsert(tmp_path: Path) -> None:
     assert rows[0]["content"] == "B"
 
 
-def test_insert_accepts_shared_sentinel(tmp_path: Path) -> None:
+def test_insert_shared_scope_writes_fleet_memory(tmp_path: Path) -> None:
+    """Fleet memory is written by naming a scope, not by naming a fake agent. The
+    returned projection carries **no** ``agent_id`` — that absence is the label."""
     _repo, svc = _svc(tmp_path)
-    out = svc.insert(agent_id="__shared__", record_type="reasoning", content="pattern")
-    assert out["agent_id"] == "__shared__"
+    out = svc.insert(scope="shared", record_type="reasoning", content="pattern")
+    assert "agent_id" not in out
+    assert out["content"] == "pattern"
+
+
+def test_insert_agent_scope_without_an_agent_id_is_refused(tmp_path: Path) -> None:
+    """Neither contradiction may be resolved by guessing: either guess would put the
+    row in a table the caller did not mean, and an insert cannot be undone by retrying."""
+    _repo, svc = _svc(tmp_path)
+    with pytest.raises(ValueError, match="requires an agent_id"):
+        svc.insert(record_type="episode", content="x")
+
+
+def test_insert_shared_scope_with_an_agent_id_is_refused(tmp_path: Path) -> None:
+    _repo, svc = _svc(tmp_path)
+    with pytest.raises(ValueError, match="no agent_id"):
+        svc.insert(scope="shared", agent_id="meta", record_type="reasoning", content="x")
+
+
+def test_insert_rejects_an_unknown_scope(tmp_path: Path) -> None:
+    _repo, svc = _svc(tmp_path)
+    with pytest.raises(ValueError, match="invalid scope"):
+        svc.insert(scope="fleet", record_type="reasoning", content="x")
 
 
 def test_insert_rejects_bad_agent_and_type(tmp_path: Path) -> None:

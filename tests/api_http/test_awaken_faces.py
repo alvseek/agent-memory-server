@@ -14,7 +14,7 @@ from munnin.api_mcp.server import build_mcp
 from munnin.app import build_app
 from munnin.business_services.memory_service import MemoryService
 from munnin.configuration.config import Config
-from munnin.data_entities.memory_record import SHARED_AGENT_ID, MemoryRecord, RecordType
+from munnin.data_entities.memory_record import MemoryRecord, RecordType, SharedRecord
 from tests.conftest import AutoAgentRepository
 
 
@@ -33,7 +33,12 @@ def _mk(uuid: str, agent: str, rtype: RecordType, content: str, date: str) -> Me
 def _seed(db: Path) -> None:
     repo = AutoAgentRepository(db, user_id="alvi")
     repo.insert(_mk("id1", "meta", RecordType.identity, "I am meta", "2026-01-01"))
-    repo.insert(_mk("sr1", SHARED_AGENT_ID, RecordType.reasoning, "go slow", "2026-01-01"))
+    repo.insert_shared(
+        SharedRecord(
+            uuid="sr1", user_id="", record_type=RecordType.reasoning,
+            title="sr1", full_content="go slow", created_date="2026-01-01",
+        )
+    )
     repo.insert(_mk("ep1", "meta", RecordType.episode, "episode body", "2026-08-09"))
 
 

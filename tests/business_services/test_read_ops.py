@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from munnin.business_services.memory_service import MemoryService
-from munnin.data_entities.memory_record import MemoryRecord, RecordType
+from munnin.data_entities.memory_record import MemoryRecord, RecordType, SharedRecord
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 from tests.conftest import AutoAgentRepository
 
@@ -71,3 +71,41 @@ def test_search_finds_by_text(tmp_path: Path) -> None:
 
     hits = svc.search("inverted")
     assert [r["uuid"] for r in hits] == ["kn1"]
+
+
+def _shared(uuid: str, rtype: RecordType, content: str, **kw: object) -> SharedRecord:
+    return SharedRecord(
+        uuid=uuid, user_id="", record_type=rtype, full_content=content, **kw
+    )
+
+
+def test_search_spans_both_corpora(tmp_path: Path) -> None:
+    """`search` is the one read that has to put the two indexes back together. FTS5
+    external-content binds one index to one table, so a caller searching "memory" would
+    silently miss every fleet-wide pattern if the service returned only its own half."""
+    repo, svc = _svc(tmp_path)
+    repo.insert(_mk("kn1", "meta", RecordType.knowledge, "a shibboleth I learned"))
+    repo.insert_shared(_shared("sr1", RecordType.reasoning, "a shibboleth we all follow"))
+
+    assert {r["uuid"] for r in svc.search("shibboleth")} == {"kn1", "sr1"}
+
+
+def test_search_hits_are_self_labelling(tmp_path: Path) -> None:
+    """No envelope and no sentinel: the caller tells the groups apart because only an
+    agent's hit carries `agent_id`."""
+    repo, svc = _svc(tmp_path)
+    repo.insert(_mk("kn1", "meta", RecordType.knowledge, "a shibboleth I learned"))
+    repo.insert_shared(_shared("sr1", RecordType.reasoning, "a shibboleth we all follow"))
+
+    by_uuid = {r["uuid"]: r for r in svc.search("shibboleth")}
+    assert by_uuid["kn1"]["agent_id"] == "meta"
+    assert "agent_id" not in by_uuid["sr1"]
+
+
+def test_query_without_an_agent_spans_both_corpora(tmp_path: Path) -> None:
+    repo, svc = _svc(tmp_path)
+    repo.insert(_mk("kn1", "meta", RecordType.knowledge, "mine"))
+    repo.insert_shared(_shared("sr1", RecordType.reasoning, "ours"))
+
+    assert {r["uuid"] for r in svc.query()} == {"kn1", "sr1"}
+    assert {r["uuid"] for r in svc.query(agent_id="meta")} == {"kn1"}

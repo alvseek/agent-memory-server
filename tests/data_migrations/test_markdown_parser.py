@@ -229,3 +229,65 @@ def test_parse_shared_knowledge_splits_entries_and_respects_fences() -> None:
     items = P.parse_shared_knowledge(_SHARED_KNOWLEDGE)
     assert [i.title for i in items] == ["**Line Ending Rule**", "**Fenced Example**"]
     assert "trailing prose after the fence" in items[1].body
+
+
+# --- the agent entity: Name / Role read out of an identity body ---
+IDENTITY = """# DOMAIN AGENT IDENTITY
+
+## Agent Identity
+**Name**: Claude Meta
+**Role**: Meta Agent for Alvi
+**Folder**: `claude-meta/`
+"""
+
+
+def test_identity_fields_reads_name_and_role() -> None:
+    assert P.parse_identity_fields([IDENTITY]) == {
+        "name": "Claude Meta",
+        "role": "Meta Agent for Alvi",
+        "uuid": None,
+    }
+
+
+def test_identity_fields_reads_the_agents_own_uuid() -> None:
+    """The agent's "digital soul" id is content — a human maintains it on a markdown
+    line — which is exactly why the table is keyed on (user_id, agent_id) instead."""
+    body = IDENTITY + "**UUID**: `fbb2d630-ea37-4f18-93f7-69c241ad2c1d`\n"
+    assert P.parse_identity_fields([body])["uuid"] == "fbb2d630-ea37-4f18-93f7-69c241ad2c1d"
+
+
+def test_identity_fields_are_none_when_there_is_no_identity() -> None:
+    """Never drop an agent silently — absent identity is a finding, not an absence.
+    The importer stores these as NULL columns and the roster renders the agent anyway."""
+    assert P.parse_identity_fields(["just an episode"]) == {
+        "name": None, "role": None, "uuid": None,
+    }
+
+
+def test_identity_fields_do_not_depend_on_the_record_title() -> None:
+    """create-agent titles its record "Agent Identity"; the importer titles it "Domain
+    Agent Identity". Matching by line rather than title is what keeps both visible —
+    the parser never sees a title at all, which is the point."""
+    body = IDENTITY.replace("# DOMAIN AGENT IDENTITY", "# AGENT IDENTITY")
+    assert P.parse_identity_fields([body])["name"] == "Claude Meta"
+
+
+def test_main_purpose_is_the_role_fallback() -> None:
+    body = "# DOMAIN AGENT IDENTITY\n**Name**: Claude Old\n**Main Purpose**: Legacy duty\n"
+    assert P.parse_identity_fields([body])["role"] == "Legacy duty"
+
+
+def test_role_wins_over_main_purpose_regardless_of_order() -> None:
+    """Precedence must come from the rule, not from which line the file happens to put
+    first — an alternation regex would return whichever appeared earlier."""
+    body = (
+        "# DOMAIN AGENT IDENTITY\n**Name**: Claude Odd\n"
+        "**Main Purpose**: the long purpose paragraph\n**Role**: The Role\n"
+    )
+    assert P.parse_identity_fields([body])["role"] == "The Role"
+
+
+def test_identity_searched_across_all_records() -> None:
+    """An agent has three identity records; Name/Role live in only one of them."""
+    ras = "# DOMAIN RAS\ntriggers"
+    assert P.parse_identity_fields([ras, IDENTITY])["role"] == "Meta Agent for Alvi"

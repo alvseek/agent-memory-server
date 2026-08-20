@@ -116,6 +116,46 @@ def _patterns(text: str, record_type: str) -> list[ParsedItem]:
     return items
 
 
+# --- the agent entity's own fields (read here, stored as columns) ---
+
+# Roster fields, read out of an agent's identity body. Matched by line rather than by
+# record title on purpose: a markdown-born agent's identity is titled "Domain Agent
+# Identity" (the importer's `.title()` of the H1) while a DB-born one is titled "Agent
+# Identity" (create-agent's `persist-identity`), so title-matching would see only half
+# the fleet.
+_NAME_RE = re.compile(r"^\*\*Name\*\*:\s*(.+?)\s*$", re.M)
+_ROLE_RE = re.compile(r"^\*\*Role\*\*:\s*(.+?)\s*$", re.M)
+# Fallback for agents predating the `Role` line. Kept as a separate pattern rather than
+# an alternation so precedence is explicit: an alternation would resolve to whichever
+# line appears first in the file, making the answer depend on template ordering.
+_PURPOSE_RE = re.compile(r"^\*\*Main Purpose\*\*:\s*(.+?)\s*$", re.M)
+
+
+def parse_identity_fields(bodies: list[str]) -> dict[str, str | None]:
+    """The agent entity's three content fields, read across its identity records:
+    first ``**Name**``, first ``**Role**`` (falling back to ``**Main Purpose**``), and
+    the agent's own ``**UUID**`` — its "digital soul" id, which is content rather than
+    a key, so it is read here like any other field. All ``None`` when the agent has no
+    identity — a real state the caller surfaces as "(no identity recorded)", never as a
+    missing row.
+
+    Translating markdown into stored values is this module's job, not the service's.
+    The roster is now a plain column read, so this runs **once at import** to fill
+    ``agent.name`` / ``agent.role`` / ``agent.uuid`` instead of on every request."""
+    def first(pattern: re.Pattern[str]) -> str | None:
+        for body in bodies:
+            m = pattern.search(body)
+            if m:
+                return m.group(1)
+        return None
+
+    return {
+        "name": first(_NAME_RE),
+        "role": first(_ROLE_RE) or first(_PURPOSE_RE),
+        "uuid": first(_UUID_IN_BODY),
+    }
+
+
 # --- shared-memory (layer i) ---
 
 
