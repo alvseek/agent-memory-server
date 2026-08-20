@@ -43,12 +43,19 @@ class ParsedItem:
 
 def split_sections(text: str, level: int) -> list[tuple[str, str]]:
     """Return ``[(title, body)]`` for headings at exactly ``level``. A higher-level
-    heading (fewer ``#``) closes the current section; deeper headings are body."""
+    heading (fewer ``#``) closes the current section; deeper headings are body.
+
+    Lines inside a fenced code block are never headings: a shell comment in a bash
+    block starts with ``#`` too, and treating it as a boundary silently truncates
+    the section at that line."""
     out: list[tuple[str, str]] = []
     title: str | None = None
     buf: list[str] = []
+    fenced = False
     for line in text.splitlines():
-        m = _HEADING.match(line)
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        m = None if fenced else _HEADING.match(line)
         if m:
             hlevel = len(m.group(1))
             if hlevel == level:

@@ -171,3 +171,61 @@ def test_date_from_filename() -> None:
     assert P.date_from_filename("2026-03-04-02.04-foo.md") == "2026-03-04"
     assert P.date_from_filename("agent-memory-mcp-server-build.md") is None
     assert P.date_from_filename("no-date.md") is None
+
+
+_FENCED_CORE = """\
+# DOMAIN AGENT IDENTITY
+I am admiral.
+
+# DOMAIN CORE KNOWLEDGE
+Fleet orchestration runbook:
+
+```bash
+# 1. generate a session
+ID=$(uuidgen)
+# 2. awaken the agent
+claude --resume $ID
+```
+
+CRITICAL: never resume a dead session.
+
+# DOMAIN RAS
+## Trigger
+do the thing
+"""
+
+_SHARED_KNOWLEDGE = """\
+# KNOWLEDGE MEMORY
+## FUNDAMENTALS
+### **Line Ending Rule**
+always LF
+### **Fenced Example**
+```bash
+# not a heading
+echo hi
+```
+trailing prose after the fence
+"""
+
+
+def test_fenced_comments_are_not_section_boundaries() -> None:
+    """A ``#`` comment inside a bash block is content, not a heading — otherwise the
+    section is silently truncated at that line (agent-admiral, 2026-08-19)."""
+    titles = [t for t, _ in P.split_sections(_FENCED_CORE, 1)]
+    assert titles == ["DOMAIN AGENT IDENTITY", "DOMAIN CORE KNOWLEDGE", "DOMAIN RAS"]
+    assert "1. generate a session" not in titles
+
+
+def test_parse_agent_core_keeps_content_after_a_fenced_block() -> None:
+    ac = P.parse_agent_core(_FENCED_CORE)
+    assert len(ac["identity"]) == 3
+    ck = next(i for i in ac["identity"] if i.key == "core-knowledge")
+    # the whole block survives, comments included, and so does the prose below it
+    assert "# 1. generate a session" in ck.body
+    assert "CRITICAL: never resume a dead session." in ck.body
+
+
+def test_parse_shared_knowledge_splits_entries_and_respects_fences() -> None:
+    items = P.parse_shared_knowledge(_SHARED_KNOWLEDGE)
+    assert [i.title for i in items] == ["**Line Ending Rule**", "**Fenced Example**"]
+    assert "trailing prose after the fence" in items[1].body
