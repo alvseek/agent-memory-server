@@ -20,7 +20,13 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from munnin.data_entities.memory_record import MemoryRecord, RecordType
+from munnin.data_entities.memory_record import (
+    Agent,
+    MemoryRecord,
+    RecordType,
+    SharedRecord,
+    validate_domain,
+)
 
 _SCHEMA_SQL = (
     Path(__file__).resolve().parent.parent / "data_entities" / "schema.sql"
@@ -33,6 +39,16 @@ _COL = (
     "full_content",
 )
 _COLUMNS = ", ".join(_COL)
+# shared_record is memory_record minus its owner — the same difference the dataclasses have.
+_SHARED_COL = tuple(c for c in _COL if c != "agent_id")
+_SHARED_COLUMNS = ", ".join(_SHARED_COL)
+# The two tables a uuid can live in, with the column list to read each. Iteration order is
+# the lookup order for `_locate`; values are interpolated into SQL, so this mapping is the
+# whitelist that keeps that safe — a table name can never be parameterised in SQLite.
+_TABLES: dict[str, str] = {"memory_record": _COLUMNS, "shared_record": _SHARED_COLUMNS}
+# The agent entity's column order — one source of truth, same discipline as _COL.
+_AGENT_COL = ("user_id", "agent_id", "name", "role", "uuid", "created_date")
+_AGENT_COLUMNS = ", ".join(_AGENT_COL)
 # Insert set = every column except the autoincrement id.
 _INSERT_COLUMNS = ", ".join(_COL[1:])
 # Alias-prefixed list for joins (e.g. the FTS search join on `m`).
@@ -69,6 +85,10 @@ class SqliteMemoryRepository:
         conn = sqlite3.connect(self._db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
+        # Per-connection, and SQLite defaults it OFF — without this the memory_record →
+        # agent foreign key is declared but never enforced, so every insert succeeds and
+        # the constraint fails silently. Connection-per-operation means it must be set here.
+        conn.execute("PRAGMA foreign_keys = ON")
         if not self._ensured:
             conn.executescript(_SCHEMA_SQL)
             self._ensured = True
@@ -128,7 +148,7 @@ class SqliteMemoryRepository:
         old_string: str,
         new_string: str,
         replace_all: bool = False,
-    ) -> MemoryRecord:
+    ) -> SharedRecord:
         """Edit-tool-parity content edit. Unique-replace by default (raises if the
         substring is absent or ambiguous); ``replace_all=True`` replaces every
         occurrence. Bumps ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger.
@@ -139,19 +159,19 @@ class SqliteMemoryRepository:
             uuid, lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid)
         )
 
-    def append(self, uuid: str, text: str) -> MemoryRecord:
+    def append(self, uuid: str, text: str) -> SharedRecord:
         """Add ``text`` verbatim to the END of the body (caller controls newlines).
         Bumps ``modified_date``; raises ``LookupError`` if missing/deleted."""
         return self._rewrite(uuid, lambda c: c + text)
 
-    def prepend(self, uuid: str, text: str) -> MemoryRecord:
+    def prepend(self, uuid: str, text: str) -> SharedRecord:
         """Add ``text`` verbatim to the START of the body (caller controls newlines).
         Bumps ``modified_date``; raises ``LookupError`` if missing/deleted."""
         return self._rewrite(uuid, lambda c: text + c)
 
     def multi_edit(
         self, uuid: str, edits: Sequence[tuple[str, str, bool]]
-    ) -> MemoryRecord:
+    ) -> SharedRecord:
         """Apply the ``(old_string, new_string, replace_all)`` edits in order,
         atomically. Each edit sees the result of the previous; if any fails the whole
         rewrite aborts before the single UPDATE, so nothing is written.
@@ -170,31 +190,31 @@ class SqliteMemoryRepository:
 
         return self._rewrite(uuid, _transform)
 
-    def _rewrite(self, uuid: str, transform: Callable[[str], str]) -> MemoryRecord:
+    def _rewrite(self, uuid: str, transform: Callable[[str], str]) -> SharedRecord:
         """Read-modify-write one record's ``full_content`` under a single connection.
         ``transform`` maps the current body to the new body and may raise ``ValueError``
         to abort with nothing written (the UPDATE runs only after it returns). Bumps
         ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger. Raises
         ``LookupError`` if the record is missing/deleted."""
         with self._conn() as conn:
+            table = self._locate(conn, uuid)
+            if table is None:
+                raise LookupError(f"record not found: {uuid}")
             row = conn.execute(
-                f"SELECT {_COLUMNS} FROM memory_record "
-                "WHERE uuid=? AND user_id=? AND deleted_date IS NULL",
+                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
             ).fetchone()
-            if row is None:
-                raise LookupError(f"record not found: {uuid}")
             new_content = transform(row["full_content"] or "")
             conn.execute(
-                "UPDATE memory_record SET full_content=?, modified_date=? "
+                f"UPDATE {table} SET full_content=?, modified_date=? "
                 "WHERE uuid=? AND user_id=?",
                 (new_content, _now(), uuid, self._user_id),
             )
             updated = conn.execute(
-                f"SELECT {_COLUMNS} FROM memory_record WHERE uuid=? AND user_id=?",
+                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
             ).fetchone()
-        return _row_to_record(updated)
+        return _row_from(table, updated)
 
     def archive(self, uuid: str) -> None:
         """Set ``archived_date`` (idempotent — first timestamp preserved)."""
@@ -205,26 +225,35 @@ class SqliteMemoryRepository:
         self._set_lifecycle("deleted_date", uuid)
 
     def _set_lifecycle(self, column: str, uuid: str) -> None:
-        # `column` is a literal constant from archive/soft_delete, never caller input.
+        # `column` is a literal constant from archive/soft_delete, never caller input;
+        # `table` comes from the _TABLES whitelist. Neither can be parameterised in SQLite.
+        # Already-deleted rows stay addressable so soft_delete keeps its idempotency.
         with self._conn() as conn:
-            cur = conn.execute(
-                f"UPDATE memory_record SET {column}=COALESCE({column}, ?) "
+            table = self._locate(conn, uuid, include_deleted=True)
+            if table is None:
+                raise LookupError(f"record not found: {uuid}")
+            conn.execute(
+                f"UPDATE {table} SET {column}=COALESCE({column}, ?) "
                 "WHERE uuid=? AND user_id=?",
                 (_now(), uuid, self._user_id),
             )
-            if cur.rowcount == 0:
-                raise LookupError(f"record not found: {uuid}")
 
     # --- reads ---
 
-    def get(self, uuid: str) -> MemoryRecord | None:
+    def get(self, uuid: str) -> SharedRecord | None:
+        """Load one record by uuid from whichever memory table holds it. Returns a
+        ``MemoryRecord`` for agent memory and a ``SharedRecord`` for fleet memory — the
+        caller can tell them apart by the presence of ``agent_id``, so the result is
+        self-labelling and needs no wrapper."""
         with self._conn() as conn:
+            table = self._locate(conn, uuid)
+            if table is None:
+                return None
             row = conn.execute(
-                f"SELECT {_COLUMNS} FROM memory_record "
-                "WHERE uuid=? AND user_id=? AND deleted_date IS NULL",
+                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
             ).fetchone()
-        return _row_to_record(row) if row else None
+        return _row_from(table, row)
 
     def query(
         self,
@@ -276,6 +305,70 @@ class SqliteMemoryRepository:
             rows = conn.execute(sql, params).fetchall()
         return [_row_to_record(r) for r in rows]
 
+    # --- addressing a record by uuid, across both memory tables ---
+
+    def _locate(
+        self, conn: sqlite3.Connection, uuid: str, *, include_deleted: bool = False
+    ) -> str | None:
+        """Which table holds this uuid, or ``None`` if neither does.
+
+        A uuid identifies one row across both tables by construction — `stable_uuid`
+        derives it from a scope token plus the record's key, so an agent record and a
+        shared record can never collide. That is what lets the seven uuid-addressed
+        operations keep a single signature instead of growing shared twins: the caller
+        already carries enough information to find the row, so asking them which table
+        it lives in would be asking for something the id contains."""
+        tail = "" if include_deleted else " AND deleted_date IS NULL"
+        for table in _TABLES:
+            found = conn.execute(
+                f"SELECT 1 FROM {table} WHERE uuid=? AND user_id=?{tail}",
+                (uuid, self._user_id),
+            ).fetchone()
+            if found:
+                return table
+        return None
+
+    # --- the agent entity ---
+
+    def upsert_agent(self, agent: Agent) -> Agent:
+        """Create or update one agent. Idempotent on ``(user_id, agent_id)`` so a
+        re-import refreshes name/role/uuid without disturbing ``created_date``.
+        ``user_id`` is stamped server-side and ignored on the passed entity."""
+        created = agent.created_date or _now()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO agent (user_id, agent_id, name, role, uuid, created_date)
+                VALUES (:user_id, :agent_id, :name, :role, :uuid, :created_date)
+                ON CONFLICT(user_id, agent_id) DO UPDATE SET
+                    name=excluded.name, role=excluded.role, uuid=excluded.uuid
+                """,
+                {
+                    "user_id": self._user_id,
+                    "agent_id": validate_domain(agent.agent_id),
+                    "name": agent.name,
+                    "role": agent.role,
+                    "uuid": agent.uuid,
+                    "created_date": created,
+                },
+            )
+            row = conn.execute(
+                f"SELECT {_AGENT_COLUMNS} FROM agent WHERE user_id=? AND agent_id=?",
+                (self._user_id, agent.agent_id),
+            ).fetchone()
+        return _row_to_agent(row)
+
+    def list_agents(self) -> Sequence[Agent]:
+        """Every agent in this tenant, sorted by domain. Reads the entity table — an
+        agent is listed because it has a row, never because memory happens to mention
+        it, so a brand-new agent with no memory yet is still a real agent here."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT {_AGENT_COLUMNS} FROM agent WHERE user_id=? ORDER BY agent_id",
+                (self._user_id,),
+            ).fetchall()
+        return [_row_to_agent(r) for r in rows]
+
 
 def _apply_edit(
     content: str,
@@ -302,6 +395,39 @@ def _apply_edit(
         content.replace(old_string, new_string)
         if replace_all
         else content.replace(old_string, new_string, 1)
+    )
+
+
+def _row_from(table: str, row: sqlite3.Row) -> SharedRecord:
+    """Map a row to the type its table implies — the two are kept in step by `_TABLES`."""
+    return _row_to_record(row) if table == "memory_record" else _row_to_shared(row)
+
+
+def _row_to_shared(row: sqlite3.Row) -> SharedRecord:
+    return SharedRecord(
+        id=row["id"],
+        uuid=row["uuid"],
+        user_id=row["user_id"],
+        record_type=RecordType(row["record_type"]),
+        project=row["project"],
+        title=row["title"],
+        tags=json.loads(row["tags"]) if row["tags"] else [],
+        created_date=row["created_date"],
+        modified_date=row["modified_date"],
+        archived_date=row["archived_date"],
+        deleted_date=row["deleted_date"],
+        full_content=row["full_content"],
+    )
+
+
+def _row_to_agent(row: sqlite3.Row) -> Agent:
+    return Agent(
+        user_id=row["user_id"],
+        agent_id=row["agent_id"],
+        name=row["name"],
+        role=row["role"],
+        uuid=row["uuid"],
+        created_date=row["created_date"],
     )
 
 

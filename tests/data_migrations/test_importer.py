@@ -17,7 +17,7 @@ from munnin.data_migrations.importer import (
     import_fleet,
     import_shared,
 )
-from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 
 def _fake_source(root: Path) -> Path:
@@ -79,7 +79,7 @@ def _fake_source(root: Path) -> Path:
 
 def test_import_fake_tree_counts_and_layers(tmp_path: Path) -> None:
     src = _fake_source(tmp_path / "src")
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     shared = import_shared(repo, src)
     counts = import_agent(repo, src, "meta")
 
@@ -101,7 +101,7 @@ def test_import_fake_tree_counts_and_layers(tmp_path: Path) -> None:
 
 def test_active_knowledge_uses_real_file_body(tmp_path: Path) -> None:
     src = _fake_source(tmp_path / "src")
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     import_agent(repo, src, "meta")
     active_kn = repo.query(agent_id="meta", record_type=RecordType.knowledge)
     pain = next(k for k in active_kn if k.title == "Pain")
@@ -110,7 +110,7 @@ def test_active_knowledge_uses_real_file_body(tmp_path: Path) -> None:
 
 def test_archived_episode_split(tmp_path: Path) -> None:
     src = _fake_source(tmp_path / "src")
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     import_agent(repo, src, "meta")
     hot = repo.query(agent_id="meta", record_type=RecordType.episode)  # active only
     allep = repo.query(agent_id="meta", record_type=RecordType.episode, include_archived=True)
@@ -124,7 +124,7 @@ def test_archived_episode_split(tmp_path: Path) -> None:
 
 def test_project_knowledge_skipped(tmp_path: Path) -> None:
     src = _fake_source(tmp_path / "src")
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     import_agent(repo, src, "meta")
     allkn = repo.query(agent_id="meta", record_type=RecordType.knowledge, include_archived=True)
     assert not any("project knowledge" in (k.full_content or "") for k in allkn)
@@ -134,7 +134,7 @@ def test_project_knowledge_skipped(tmp_path: Path) -> None:
 
 def test_import_fleet_imports_all_agents_shared_once(tmp_path: Path) -> None:
     src = _fake_source(tmp_path / "src")
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     totals = import_fleet(repo, src)
     assert totals["meta/identity"] == 3
     assert totals["foo/identity"] == 1
@@ -145,7 +145,7 @@ def test_import_fleet_imports_all_agents_shared_once(tmp_path: Path) -> None:
 
 def test_import_is_idempotent(tmp_path: Path) -> None:
     src = _fake_source(tmp_path / "src")
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     import_fleet(repo, src)
     n1 = len(repo.query(include_archived=True))
     import_fleet(repo, src)  # re-run
@@ -185,7 +185,7 @@ def test_awaken_latest_episode_is_newest_by_real_date(tmp_path: Path) -> None:
     # its created_date defaults to the (lexically-largest) import timestamp.
     (agent / "episodes" / "orphan.md").write_text("# Orphan\nbody", encoding="utf-8")
 
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     import_shared(repo, src)
     import_agent(repo, src, "arch")
 
@@ -204,7 +204,7 @@ _REAL = Path.home() / ".claude" / "@agent-memory"
 
 @pytest.mark.skipif(not _REAL.exists(), reason="real @agent-memory source not present")
 def test_import_real_agent_meta(tmp_path: Path) -> None:
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     shared = import_shared(repo, _REAL)
     counts = import_agent(repo, _REAL, "meta")
     assert counts["meta/identity"] == 3

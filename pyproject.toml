@@ -40,3 +40,5 @@ asyncio_mode = "auto"
 # The control-files submodule owns and runs its own tool tests (its own pyproject);
 # Munnin no longer collects them here.
 testpaths = ["tests"]
+# repo root on sys.path so tests can import the shared test double from tests/conftest.py
+pythonpath = ["."]

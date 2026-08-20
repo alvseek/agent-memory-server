@@ -40,6 +40,7 @@ _PROMPTS: dict[str, str] = {
     "update-memory": "procedures/memory/update-memory.md",
     "wrap-up": "procedures/wrap-up.md",
     "create-agent": "procedures/create-agent.md",
+    "list-agents": "procedures/list-agents.md",
 }
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"
 _TEMPLATES_DIR = "procedures/memory/resources"

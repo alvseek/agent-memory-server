@@ -17,6 +17,7 @@ from munnin.data_entities.memory_record import RecordType
 from munnin.data_migrations import markdown_parser as P
 from munnin.data_migrations.importer import import_agent, import_fleet, import_shared
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 _REAL = Path.home() / ".claude" / "@agent-memory"
 _UUID_RE = re.compile(r"\*\*UUID\*\*:\s*`?([0-9a-fA-F]{8}-[0-9a-fA-F-]{27})`?")
@@ -25,7 +26,7 @@ pytestmark = pytest.mark.skipif(not _REAL.exists(), reason="real @agent-memory s
 
 
 def _awaken_meta(tmp_path: Path) -> dict:
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     import_shared(repo, _REAL)
     import_agent(repo, _REAL, "meta")
     return MemoryService(repo, user_id="alvi").awaken("meta")
@@ -78,7 +79,7 @@ def _fleet() -> _Fleet:
     import tempfile
 
     db = Path(tempfile.mkdtemp(prefix="munnin-fleet-")) / "m.db"
-    repo = SqliteMemoryRepository(db, user_id="alvi")
+    repo = AutoAgentRepository(db, user_id="alvi")
     import_fleet(repo, _REAL)
     return MemoryService(repo, user_id="alvi"), repo, db
 
@@ -118,7 +119,7 @@ def test_fleet_active_archived_split(_fleet: _Fleet) -> None:
 
 
 def test_fleet_import_idempotent(tmp_path: Path) -> None:
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     import_fleet(repo, _REAL)
     n1 = len(repo.query(include_archived=True))
     import_fleet(repo, _REAL)  # re-run over the real fleet

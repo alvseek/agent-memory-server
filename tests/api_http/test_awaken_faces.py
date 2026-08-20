@@ -15,7 +15,7 @@ from munnin.app import build_app
 from munnin.business_services.memory_service import MemoryService
 from munnin.configuration.config import Config
 from munnin.data_entities.memory_record import SHARED_AGENT_ID, MemoryRecord, RecordType
-from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 
 def _mk(uuid: str, agent: str, rtype: RecordType, content: str, date: str) -> MemoryRecord:
@@ -31,7 +31,7 @@ def _mk(uuid: str, agent: str, rtype: RecordType, content: str, date: str) -> Me
 
 
 def _seed(db: Path) -> None:
-    repo = SqliteMemoryRepository(db, user_id="alvi")
+    repo = AutoAgentRepository(db, user_id="alvi")
     repo.insert(_mk("id1", "meta", RecordType.identity, "I am meta", "2026-01-01"))
     repo.insert(_mk("sr1", SHARED_AGENT_ID, RecordType.reasoning, "go slow", "2026-01-01"))
     repo.insert(_mk("ep1", "meta", RecordType.episode, "episode body", "2026-08-09"))
@@ -65,7 +65,7 @@ async def test_http_awaken_invalid_domain_400(tmp_path: Path) -> None:
 async def test_mcp_awaken_tool(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     _seed(db)
-    service = MemoryService(SqliteMemoryRepository(db, user_id="alvi"), user_id="alvi")
+    service = MemoryService(AutoAgentRepository(db, user_id="alvi"), user_id="alvi")
     mcp = build_mcp(service)
     async with Client(mcp) as client:
         tools = {t.name for t in await client.list_tools()}

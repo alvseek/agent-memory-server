@@ -111,6 +111,11 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
         """Full-text (FTS5) keyword search."""
         return service.search(text, include_archived=include_archived)
 
+    @router.get("/api/agents")
+    def list_agents() -> list[dict[str, Any]]:
+        """The fleet roster — ``agent_id`` + name + role, metadata only."""
+        return service.list_agents()
+
     # --- writes ---
 
     @router.post("/api/insert")

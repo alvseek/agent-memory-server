@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from munnin.data_entities.memory_record import MemoryRecord, RecordType
+from munnin.data_entities.memory_record import Agent, MemoryRecord, RecordType, SharedRecord
 
 
 class MemoryRepository(Protocol):
@@ -31,20 +31,20 @@ class MemoryRepository(Protocol):
         old_string: str,
         new_string: str,
         replace_all: bool = False,
-    ) -> MemoryRecord:
+    ) -> SharedRecord:
         """Targeted string replace inside a record's ``full_content`` (server-side
         read-replace-write). Per-word/line granularity — token-identical to the Edit tool.
         Unique-replace by default (raises if absent/ambiguous); ``replace_all=True``
         replaces every occurrence."""
         ...
 
-    def append(self, uuid: str, text: str) -> MemoryRecord:
+    def append(self, uuid: str, text: str) -> SharedRecord:
         """Add ``text`` verbatim to the END of a record's ``full_content`` (caller
         controls any leading newline). Bumps ``modified_date``; raises ``LookupError``
         if the record is missing/deleted."""
         ...
 
-    def prepend(self, uuid: str, text: str) -> MemoryRecord:
+    def prepend(self, uuid: str, text: str) -> SharedRecord:
         """Add ``text`` verbatim to the START of a record's ``full_content`` (caller
         controls any trailing newline). Bumps ``modified_date``; raises ``LookupError``
         if the record is missing/deleted."""
@@ -52,7 +52,7 @@ class MemoryRepository(Protocol):
 
     def multi_edit(
         self, uuid: str, edits: Sequence[tuple[str, str, bool]]
-    ) -> MemoryRecord:
+    ) -> SharedRecord:
         """Apply a sequence of ``(old_string, new_string, replace_all)`` edits to one
         record, in order, **atomically** — each edit operates on the result of the
         previous, and if ANY edit fails nothing is written. Bumps ``modified_date``.
@@ -69,7 +69,7 @@ class MemoryRepository(Protocol):
         ...
 
     # --- reads ---
-    def get(self, uuid: str) -> MemoryRecord | None:
+    def get(self, uuid: str) -> SharedRecord | None:
         """Fetch one record by uuid (excludes soft-deleted)."""
         ...
 
@@ -86,4 +86,17 @@ class MemoryRepository(Protocol):
 
     def search(self, text: str, *, include_archived: bool = True) -> Sequence[MemoryRecord]:
         """Full-text search (FTS5) over content + title + tags."""
+        ...
+
+    # --- the agent entity ---
+    def upsert_agent(self, agent: Agent) -> Agent:
+        """Create or update one agent. Idempotent on ``(user_id, agent_id)``, so a
+        re-import refreshes name/role/uuid and preserves ``created_date``."""
+        ...
+
+    def list_agents(self) -> Sequence[Agent]:
+        """Every agent in this tenant, sorted by domain. Reads the entity table: an
+        agent is listed because it has a row, not because memory mentions it — so a
+        newly created agent with no memory yet still appears, and enumeration no
+        longer depends on a DISTINCT over memory items."""
         ...

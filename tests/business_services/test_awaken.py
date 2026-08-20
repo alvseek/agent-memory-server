@@ -8,7 +8,7 @@ import pytest
 
 from munnin.business_services.memory_service import MemoryService
 from munnin.data_entities.memory_record import SHARED_AGENT_ID, MemoryRecord, RecordType
-from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 
 def _rec(uuid: str, agent_id: str, rtype: RecordType, **kw: object) -> MemoryRecord:
@@ -26,7 +26,7 @@ def _rec(uuid: str, agent_id: str, rtype: RecordType, **kw: object) -> MemoryRec
 
 
 def _service(tmp_path: Path) -> MemoryService:
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     # layer i (shared)
     repo.insert(_rec("sr1", SHARED_AGENT_ID, RecordType.reasoning))
     repo.insert(_rec("sk1", SHARED_AGENT_ID, RecordType.knowledge))

@@ -1,0 +1,97 @@
+"""The three-table schema — structure, idempotency, and the two constraints it adds.
+
+These tests exercise the DDL directly against a bare sqlite3 connection, deliberately
+not through the repository: they answer "does the schema declare the constraint", while
+`tests/data_repositories/test_foreign_keys.py` answers the separate question "does the
+repository turn it on". A constraint that is declared but never enabled passes one and
+fails the other, which is exactly the failure mode worth keeping apart.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+_DDL = (
+    Path(__file__).resolve().parents[2]
+    / "src" / "munnin" / "data_entities" / "schema.sql"
+).read_text(encoding="utf-8")
+
+_INSERT_SHARED = (
+    "INSERT INTO shared_record (uuid,user_id,record_type,created_date,modified_date,full_content)"
+    " VALUES (?,?,?,'d','d','body')"
+)
+_INSERT_MEMORY = (
+    "INSERT INTO memory_record (uuid,user_id,agent_id,record_type,created_date,modified_date,"
+    "full_content) VALUES (?,?,?,?,'d','d','body')"
+)
+
+
+def _db() -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(_DDL)
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute(
+        "INSERT INTO agent VALUES ('alvi','meta','Claude Meta','Meta Agent','u1','2026-08-20')"
+    )
+    return conn
+
+
+def _names(conn: sqlite3.Connection, kind: str) -> set[str]:
+    return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type=?", (kind,))}
+
+
+def test_three_tables_and_two_fts_indexes() -> None:
+    conn = _db()
+    tables = _names(conn, "table")
+    assert {"agent", "shared_record", "memory_record"} <= tables
+    assert {"memory_fts", "shared_fts"} <= tables
+    assert {"idx_memory_browse", "idx_shared_browse"} <= _names(conn, "index")
+    # one insert/delete/update trigger per memory table
+    assert len({t for t in _names(conn, "trigger") if t.endswith(("_ai", "_ad", "_au"))}) == 6
+
+
+def test_schema_is_idempotent() -> None:
+    """Applied on every repository init, so a second run must be a no-op, not an error."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(_DDL)
+    conn.executescript(_DDL)
+    assert {"agent", "shared_record", "memory_record"} <= _names(conn, "table")
+
+
+@pytest.mark.parametrize("rtype", ["reasoning", "knowledge"])
+def test_shared_accepts_its_two_record_types(rtype: str) -> None:
+    _db().execute(_INSERT_SHARED, (f"s-{rtype}", "alvi", rtype))
+
+
+@pytest.mark.parametrize("rtype", ["episode", "identity", "emotional"])
+def test_shared_rejects_agent_only_record_types(rtype: str) -> None:
+    """Shared memory has always been reasoning + knowledge; now the schema says so."""
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
+        _db().execute(_INSERT_SHARED, (f"s-{rtype}", "alvi", rtype))
+
+
+def test_memory_accepts_a_record_for_a_known_agent() -> None:
+    _db().execute(_INSERT_MEMORY, ("m1", "alvi", "meta", "episode"))
+
+
+def test_memory_rejects_a_record_for_an_unknown_agent() -> None:
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+        _db().execute(_INSERT_MEMORY, ("m2", "alvi", "ghost", "episode"))
+
+
+def test_memory_rejects_a_known_agent_under_another_tenant() -> None:
+    """The composite key means the FK enforces tenancy, not just existence."""
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+        _db().execute(_INSERT_MEMORY, ("m3", "someone-else", "meta", "episode"))
+
+
+def test_each_fts_index_tracks_only_its_own_table() -> None:
+    conn = _db()
+    conn.execute(_INSERT_SHARED, ("s1", "alvi", "reasoning"))
+    conn.execute(_INSERT_MEMORY, ("m1", "alvi", "meta", "episode"))
+    hits = lambda t: conn.execute(f"SELECT rowid FROM {t} WHERE {t} MATCH 'body'").fetchall()  # noqa: E731
+    assert len(hits("shared_fts")) == 1
+    assert len(hits("memory_fts")) == 1

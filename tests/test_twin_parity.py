@@ -15,18 +15,18 @@ from munnin.app import build_app
 from munnin.business_services.memory_service import MemoryService
 from munnin.configuration.config import Config
 from munnin.content.loader import ContentLoader
-from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 CF = Path(__file__).resolve().parents[1] / "control-files"
 
 
 def _mcp(db: Path):
-    return build_mcp(MemoryService(SqliteMemoryRepository(db, user_id="alvi"), user_id="alvi"))
+    return build_mcp(MemoryService(AutoAgentRepository(db, user_id="alvi"), user_id="alvi"))
 
 
 def _mcp_content(db: Path):
     return build_mcp(
-        MemoryService(SqliteMemoryRepository(db, user_id="alvi"), user_id="alvi"),
+        MemoryService(AutoAgentRepository(db, user_id="alvi"), user_id="alvi"),
         ContentLoader(CF),
     )
 
@@ -74,6 +74,26 @@ async def test_append_http_then_multi_edit_mcp_parity(tmp_path: Path) -> None:
     assert mcp_rec["content"] == "1 two"
 
 
+async def test_list_agents_parity(tmp_path: Path) -> None:
+    db = tmp_path / "m.db"
+    identity = "# DOMAIN AGENT IDENTITY\n**Name**: Claude Meta\n**Role**: Meta Agent for Alvi\n"
+    async with _http(db) as http:
+        await http.post("/api/insert", json={
+            "agent_id": "meta", "record_type": "identity", "content": identity, "uuid": "i1",
+        })
+        await http.post("/api/insert", json={
+            "agent_id": "linux", "record_type": "episode", "content": "no identity", "uuid": "e1",
+        })
+        http_roster = (await http.get("/api/agents")).json()
+    async with Client(_mcp(db)) as mcp:
+        mcp_roster = (await mcp.call_tool("list_agents", {})).data
+    assert http_roster == mcp_roster
+    assert http_roster == [
+        {"agent_id": "linux", "name": None, "role": None},
+        {"agent_id": "meta", "name": "Claude Meta", "role": "Meta Agent for Alvi"},
+    ]
+
+
 # --- content surface parity (SP-5): both faces serve the same composed prompts/resources ---
 
 
@@ -104,4 +124,5 @@ async def test_prompt_list_parity(tmp_path: Path) -> None:
     async with _http(db) as http:
         http_names = sorted((await http.get("/api/prompts")).json()["prompts"])
     assert mcp_names == http_names
-    assert len(http_names) == 10
+    assert len(http_names) == 11
+    assert "list-agents" in http_names

@@ -8,10 +8,11 @@ import pytest
 
 from munnin.data_entities.memory_record import MemoryRecord, RecordType
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 
 def _repo(tmp_path: Path, user_id: str = "alvi") -> SqliteMemoryRepository:
-    return SqliteMemoryRepository(tmp_path / "mem.db", user_id=user_id)
+    return AutoAgentRepository(tmp_path / "mem.db", user_id=user_id)
 
 
 def _rec(uuid: str, content: str, **kw: object) -> MemoryRecord:
@@ -254,8 +255,8 @@ def test_search_empty_query_returns_empty(tmp_path: Path) -> None:
 
 def test_search_is_tenant_scoped(tmp_path: Path) -> None:
     db = tmp_path / "shared.db"
-    a = SqliteMemoryRepository(db, user_id="alvi")
-    b = SqliteMemoryRepository(db, user_id="other")
+    a = AutoAgentRepository(db, user_id="alvi")
+    b = AutoAgentRepository(db, user_id="other")
     a.insert(_rec("u1", "secret memory"))
     assert {r.uuid for r in a.search("memory")} == {"u1"}
     assert b.search("memory") == []

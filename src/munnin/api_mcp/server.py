@@ -59,6 +59,13 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         """Full-text (FTS5) keyword search over content + title + tags."""
         return service.search(text, include_archived=include_archived)
 
+    @mcp.tool
+    def list_agents() -> list[dict[str, Any]]:
+        """List every agent in the fleet: ``agent_id`` + display name + one-line role.
+        Metadata only, no bodies. An agent with no identity recorded comes back with
+        ``name``/``role`` of ``null`` rather than being omitted."""
+        return service.list_agents()
+
     # --- writes (Edit-tool parity; record assembled server-side) ---
 
     @mcp.tool

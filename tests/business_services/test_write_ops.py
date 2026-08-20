@@ -12,10 +12,11 @@ import pytest
 from munnin.business_services.memory_service import MemoryService
 from munnin.data_entities.memory_record import MemoryRecord, RecordType
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 
 def _svc(tmp_path: Path) -> tuple[SqliteMemoryRepository, MemoryService]:
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     return repo, MemoryService(repo, user_id="alvi")
 
 

@@ -1,34 +1,83 @@
--- Valaskjalf/memory schema — one uniform record per item (ADR-013 D5, arch §3).
--- Applied on repository init (idempotent). FTS5 external-content keeps the index
--- without duplicating the blob; browse index serves the metadata reads.
+-- Valaskjalf/memory schema — three tables (arch §3; amends ADR-013 D5 for entities).
+--
+--   agent          the entity. An agent exists because it has a row.
+--   shared_record  fleet memory, owned by no agent.
+--   memory_record  shared_record + agent_id, with the owner enforced by a foreign key.
+--
+-- Applied on repository init (idempotent). FTS5 external-content indexes each memory
+-- table without duplicating its blob; a browse index serves the metadata reads.
+-- NOTE: the foreign key below only fires when `PRAGMA foreign_keys = ON` is set on the
+-- connection — SQLite defaults it OFF, so the repository sets it in `_conn()`.
 
-CREATE TABLE IF NOT EXISTS memory_record (
-  id            INTEGER PRIMARY KEY,            -- internal rowid; storage + FTS5 link (never leaves the store)
-  uuid          TEXT    NOT NULL UNIQUE,        -- global/portable identity; the idempotency key
-  user_id       TEXT    NOT NULL,               -- tenant; stamped server-side, never from caller
-  agent_id      TEXT    NOT NULL,               -- agent domain (kebab) OR the '__shared__' sentinel
-  record_type   TEXT    NOT NULL,               -- episode | knowledge | identity | reasoning | emotional
-  project       TEXT,                           -- nullable; set on project-scoped items
-  title         TEXT,                           -- index line: summary / topic / doc-name
-  tags          TEXT,                           -- JSON array (stored as text)
-  created_date  TEXT    NOT NULL,
-  modified_date TEXT    NOT NULL,               -- = created on insert; bumped on edit (staleness signal)
-  archived_date TEXT,                           -- non-NULL = out of hot index, still searchable
-  deleted_date  TEXT,                           -- non-NULL = tombstone, excluded from all reads
-  full_content  TEXT                            -- markdown item body; last column (overflow-friendly)
+-- The agent entity. No lifecycle columns: nothing in the system retires an agent.
+CREATE TABLE IF NOT EXISTS agent (
+  user_id      TEXT NOT NULL,           -- tenant; stamped server-side, never from caller
+  agent_id     TEXT NOT NULL,           -- kebab domain; equals the agent-[domain]/ folder name
+  name         TEXT,                    -- **Name** from the identity document
+  role         TEXT,                    -- **Role**, falling back to **Main Purpose**
+  uuid         TEXT,                    -- the agent's own "digital soul" id — content, never a key
+  created_date TEXT NOT NULL,
+  PRIMARY KEY (user_id, agent_id)
 );
 
--- Browse/metadata index (the awakening + load reads).
+-- Fleet-shared memory. No agent_id at all — this memory has no owner, which is why it
+-- cannot live in memory_record without weakening that table's foreign key. The CHECK
+-- enforces what used to be convention only: shared memory is reasoning + knowledge.
+CREATE TABLE IF NOT EXISTS shared_record (
+  id            INTEGER PRIMARY KEY,    -- internal rowid; storage + FTS5 link (never leaves the store)
+  uuid          TEXT    NOT NULL UNIQUE,-- global/portable identity; the idempotency key
+  user_id       TEXT    NOT NULL,
+  record_type   TEXT    NOT NULL CHECK (record_type IN ('reasoning','knowledge')),
+  project       TEXT,                   -- reserved for Hermod's project scope; unused by Munnin
+  title         TEXT,
+  tags          TEXT,                   -- JSON array (stored as text)
+  created_date  TEXT    NOT NULL,
+  modified_date TEXT    NOT NULL,
+  archived_date TEXT,                   -- non-NULL = out of hot index, still searchable
+  deleted_date  TEXT,                   -- non-NULL = tombstone, excluded from all reads
+  full_content  TEXT                    -- markdown item body; last column (overflow-friendly)
+);
+
+-- Agent-scoped memory = shared_record + agent_id. The composite foreign key means a
+-- memory item can never name an owner that does not exist, and cannot reach across tenants.
+CREATE TABLE IF NOT EXISTS memory_record (
+  id            INTEGER PRIMARY KEY,
+  uuid          TEXT    NOT NULL UNIQUE,
+  user_id       TEXT    NOT NULL,
+  agent_id      TEXT    NOT NULL,       -- always a real agent; no sentinel value exists
+  record_type   TEXT    NOT NULL,       -- episode | knowledge | identity | reasoning | emotional
+  project       TEXT,
+  title         TEXT,
+  tags          TEXT,
+  created_date  TEXT    NOT NULL,
+  modified_date TEXT    NOT NULL,
+  archived_date TEXT,
+  deleted_date  TEXT,
+  full_content  TEXT,
+  FOREIGN KEY (user_id, agent_id) REFERENCES agent(user_id, agent_id)
+);
+
+-- Browse/metadata indexes (the awakening + load reads).
 CREATE INDEX IF NOT EXISTS idx_memory_browse
   ON memory_record (user_id, agent_id, record_type, project, created_date);
+CREATE INDEX IF NOT EXISTS idx_shared_browse
+  ON shared_record (user_id, record_type, project, created_date);
 
--- Full-text index (external-content) over body + title + tags. Replaces cross-repo grep.
+-- Full-text indexes (external-content) over body + title + tags — one per memory table.
 -- External-content mode indexes without duplicating; search never scans the blobs.
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
   full_content,
   title,
   tags,
   content='memory_record',
+  content_rowid='id'
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS shared_fts USING fts5(
+  full_content,
+  title,
+  tags,
+  content='shared_record',
   content_rowid='id'
 );
 
@@ -47,5 +96,23 @@ CREATE TRIGGER IF NOT EXISTS memory_record_au AFTER UPDATE ON memory_record BEGI
   INSERT INTO memory_fts(memory_fts, rowid, full_content, title, tags)
   VALUES ('delete', old.id, old.full_content, old.title, old.tags);
   INSERT INTO memory_fts(rowid, full_content, title, tags)
+  VALUES (new.id, new.full_content, new.title, new.tags);
+END;
+
+-- The same three, for shared_record / shared_fts.
+CREATE TRIGGER IF NOT EXISTS shared_record_ai AFTER INSERT ON shared_record BEGIN
+  INSERT INTO shared_fts(rowid, full_content, title, tags)
+  VALUES (new.id, new.full_content, new.title, new.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS shared_record_ad AFTER DELETE ON shared_record BEGIN
+  INSERT INTO shared_fts(shared_fts, rowid, full_content, title, tags)
+  VALUES ('delete', old.id, old.full_content, old.title, old.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS shared_record_au AFTER UPDATE ON shared_record BEGIN
+  INSERT INTO shared_fts(shared_fts, rowid, full_content, title, tags)
+  VALUES ('delete', old.id, old.full_content, old.title, old.tags);
+  INSERT INTO shared_fts(rowid, full_content, title, tags)
   VALUES (new.id, new.full_content, new.title, new.tags);
 END;

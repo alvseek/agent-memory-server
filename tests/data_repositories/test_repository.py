@@ -8,10 +8,11 @@ from pathlib import Path
 
 from munnin.data_entities.memory_record import SHARED_AGENT_ID, MemoryRecord, RecordType
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 
 def _repo(tmp_path: Path, user_id: str = "alvi") -> SqliteMemoryRepository:
-    return SqliteMemoryRepository(tmp_path / "mem.db", user_id=user_id)
+    return AutoAgentRepository(tmp_path / "mem.db", user_id=user_id)
 
 
 def _rec(uuid: str, **kw: object) -> MemoryRecord:
@@ -74,8 +75,8 @@ def test_archived_and_deleted_excluded_by_default(tmp_path: Path) -> None:
 
 def test_tenancy_isolation(tmp_path: Path) -> None:
     db = tmp_path / "shared.db"
-    a = SqliteMemoryRepository(db, user_id="alvi")
-    b = SqliteMemoryRepository(db, user_id="other")
+    a = AutoAgentRepository(db, user_id="alvi")
+    b = AutoAgentRepository(db, user_id="other")
     a.insert(_rec("u1"))
     assert {r.uuid for r in a.query()} == {"u1"}
     assert list(b.query()) == []  # other tenant cannot see alvi's row

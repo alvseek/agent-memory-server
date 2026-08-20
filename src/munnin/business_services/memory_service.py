@@ -7,6 +7,7 @@ add_reasoning, ...) land in Phase 5; Phase 4 provides only liveness.
 
 from __future__ import annotations
 
+import re
 import uuid as _uuid
 from typing import Any
 
@@ -16,7 +17,6 @@ from munnin.data_entities.memory_record import (
     MemoryRecord,
     RecordType,
     validate_domain,
-    validate_write_agent,
 )
 from munnin.data_repositories.memory_repository import MemoryRepository
 
@@ -58,6 +58,33 @@ def _record(r: MemoryRecord) -> dict[str, Any]:
         "archived_date": r.archived_date,
         "content": r.full_content,
     }
+
+
+# Roster fields, read out of an agent's identity body. Matched by line rather than by
+# record title on purpose: a markdown-born agent's identity is titled "Domain Agent
+# Identity" (the importer's `.title()` of the H1) while a DB-born one is titled "Agent
+# Identity" (create-agent's `persist-identity`), so title-matching would see only half
+# the fleet.
+_NAME_RE = re.compile(r"^\*\*Name\*\*:\s*(.+?)\s*$", re.M)
+_ROLE_RE = re.compile(r"^\*\*Role\*\*:\s*(.+?)\s*$", re.M)
+# Fallback for agents predating the `Role` line. Kept as a separate pattern rather than
+# an alternation so precedence is explicit: an alternation would resolve to whichever
+# line appears first in the file, making the answer depend on template ordering.
+_PURPOSE_RE = re.compile(r"^\*\*Main Purpose\*\*:\s*(.+?)\s*$", re.M)
+
+
+def _identity_fields(bodies: list[str]) -> dict[str, str | None]:
+    """First ``**Name**`` / ``**Role**`` found across an agent's identity records.
+    Both ``None`` when the agent has no identity — a real state the caller surfaces
+    as "(no identity recorded)", never as a missing row."""
+    def first(pattern: re.Pattern[str]) -> str | None:
+        for body in bodies:
+            m = pattern.search(body)
+            if m:
+                return m.group(1)
+        return None
+
+    return {"name": first(_NAME_RE), "role": first(_ROLE_RE) or first(_PURPOSE_RE)}
 
 
 class MemoryService:
@@ -147,6 +174,26 @@ class MemoryService:
         searchable by default; soft-deleted never surface."""
         return [_record(r) for r in self._repo.search(text, include_archived=include_archived)]
 
+    def list_agents(self) -> list[dict[str, Any]]:
+        """The fleet roster: every agent domain plus its display name and one-line role.
+
+        Assembled server-side and returned **without bodies** on purpose. The roster is
+        derivable from ``query(record_type='identity')``, but that projects whole records
+        — identity bodies across a real fleet run well past the MCP output cap, which
+        truncates silently. Reading those bodies here costs nothing and the caller gets
+        three short fields per agent.
+
+        An agent with no readable identity is kept with ``name``/``role`` of ``None`` —
+        the caller renders it, never drops it, because absent identity is a finding.
+        """
+        identities: dict[str, list[str]] = {}
+        for r in self._repo.query(record_type=RecordType.identity):
+            identities.setdefault(r.agent_id, []).append(r.full_content or "")
+        return [
+            {"agent_id": domain, **_identity_fields(identities.get(domain, []))}
+            for domain in self._repo.list_agent_domains()
+        ]
+
     # --- writes (Edit-tool parity; record assembled server-side) ---
 
     def insert(
@@ -162,9 +209,10 @@ class MemoryService:
     ) -> dict[str, Any]:
         """Append a new item. Assembles the ``MemoryRecord`` server-side (the repo stamps
         ``user_id`` + defaults dates); generates a ``uuid`` if absent. Idempotent upsert on
-        ``uuid``. ``agent_id`` accepts a kebab domain or ``__shared__``; invalid
-        ``agent_id``/``record_type`` raise ``ValueError``."""
-        agent = validate_write_agent(agent_id)
+        ``uuid``. ``agent_id`` must be a real kebab domain — fleet-shared memory is written
+        through its own path, not through a sentinel here; invalid ``agent_id``/``record_type``
+        raise ``ValueError``."""
+        agent = validate_domain(agent_id)
         rtype = RecordType(record_type)
         record = MemoryRecord(
             uuid=uuid or _uuid.uuid4().hex,

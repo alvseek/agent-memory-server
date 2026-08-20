@@ -11,11 +11,11 @@ from fastmcp import Client
 
 from munnin.api_mcp.server import build_mcp
 from munnin.business_services.memory_service import MemoryService
-from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 
 def _mcp(tmp_path: Path):
-    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     return build_mcp(MemoryService(repo, user_id="alvi"))
 
 

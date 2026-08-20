@@ -14,7 +14,7 @@ from munnin.api_mcp.server import build_mcp
 from munnin.app import build_app
 from munnin.business_services.memory_service import MemoryService
 from munnin.configuration.config import load_config
-from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import AutoAgentRepository
 
 
 async def test_health_endpoint() -> None:
@@ -30,7 +30,7 @@ async def test_health_endpoint() -> None:
 
 def _service() -> MemoryService:
     config = load_config()
-    repo = SqliteMemoryRepository(config.db_path, user_id=config.user_id)
+    repo = AutoAgentRepository(config.db_path, user_id=config.user_id)
     return MemoryService(repo, user_id=config.user_id)
 
 
