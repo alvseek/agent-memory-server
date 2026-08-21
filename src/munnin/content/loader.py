@@ -7,8 +7,11 @@ submodule on each request — single source of truth, no re-import on edit.
 Each served procedure is storage-agnostic (a semantic core + a ``## Storage Mechanics``
 seam). ``get_prompt`` composes the core with the **db** backend section so a Munnin
 client gets DB-tool mechanics; the native markdown mechanics never reach the wire.
-``push``/``pull``/``refresh``-memory + ``awaken-agent`` are intentionally NOT served
-(the DB write is durable; awaken is a tool).
+``push``/``pull``/``refresh``-memory are not served: the DB write is durable, so there
+is nothing to push or pull, and recovering after compaction is another ``awaken`` call
+rather than a procedure. ``awaken-agent`` **is** served — ``awaken`` returns the memory,
+but the protocol for processing it (the phased identity load, the load-integrity check,
+the first-run user-profile ask) is not a record, so it rides in the Prompt.
 
 A procedure may also reference **components** — shared fragments under
 ``procedures/components/`` that are inlined at their reference point so the delivered
@@ -41,6 +44,7 @@ _PROMPTS: dict[str, str] = {
     "wrap-up": "procedures/wrap-up.md",
     "create-agent": "procedures/create-agent.md",
     "list-agents": "procedures/list-agents.md",
+    "awaken-agent": "procedures/awaken-agent.md",
 }
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"
 _TEMPLATES_DIR = "procedures/memory/resources"

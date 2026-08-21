@@ -123,8 +123,8 @@ All optional — defaults are local-first. Override with `MUNNIN_*`:
 
 ### MCP surface (agent face)
 
-- **Tools** (the generic data primitives): `ping`, `awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`
-- **Prompts** (9 memory procedures, composed with the DB backend — the "how-to" before calling the tools): `update-episodic`, `add-reasoning`, `update-emotional`, `update-knowledge`, `load-episodic`, `load-knowledge`, `archive-old-memories`, `update-memory`, `wrap-up`
+- **Tools** (14 — data primitives plus agent lifecycle): `ping`, `awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`, `create_agent`, `list_agents`
+- **Prompts** (12 procedures, composed with the DB backend — the "how-to" before calling the tools): `update-episodic`, `add-reasoning`, `update-emotional`, `update-knowledge`, `load-episodic`, `load-knowledge`, `archive-old-memories`, `update-memory`, `wrap-up`, `create-agent`, `list-agents`, `awaken-agent` — the last carrying the awakening protocol itself, since `awaken` returns the memory but not the process for using it
 - **Resources**: framework block-templates (`episodic-entry`, `reasoning-pattern`, `emotional-moment`, `knowledge-file`)
 
 ### HTTP API (REST twin)

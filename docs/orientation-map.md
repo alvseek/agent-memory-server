@@ -45,7 +45,7 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **last_verified**: "2026-08-15"
 - **verified_by**: "meta / component-inlining + CI session"
 - **update_trigger**: "when setup/deploy invocation or the served surface changes; slim to a thin pointer to docs/README.md per the placement contract"
-- **notes**: "Root README (non-7Q). Status line corrected 2026-08-15 — it had claimed an empty Phase 4 scaffold 'boots + health only', ~5 phases stale; now states the real surface (11 data tools, 9 Prompts, 4 Resources, importer) with deployment named as the open step, verified by introspection rather than recall. Content is accurate; the structural decision to slim it to a thin pointer at docs/README.md is still pending (A/B/C)."
+- **notes**: "Root README (non-7Q). Status line corrected 2026-08-15 — it had claimed an empty Phase 4 scaffold 'boots + health only', ~5 phases stale; now states the real surface (11 data tools, 12 Prompts, 4 Resources, importer) with deployment named as the open step, verified by introspection rather than recall. Content is accurate; the structural decision to slim it to a thin pointer at docs/README.md is still pending (A/B/C)."
 
 ### `docs/README.md`
 

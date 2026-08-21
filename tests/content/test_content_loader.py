@@ -20,13 +20,14 @@ def loader() -> ContentLoader:
 
 def test_lists_served_prompts(loader: ContentLoader) -> None:
     names = loader.list_prompts()
-    assert len(names) == 11
+    assert len(names) == 12
     assert "update-episodic" in names
     assert "wrap-up" in names
     assert "create-agent" in names
     assert "list-agents" in names
-    # intentionally NOT served (git-era / already a tool)
-    assert "awaken-agent" not in names
+    # the awakening protocol is not a record, so it rides in a Prompt
+    assert "awaken-agent" in names
+    # intentionally NOT served (the DB write is durable / markdown-recovery)
     assert "push-memory" not in names
     assert "refresh-memory" not in names
 
@@ -97,12 +98,36 @@ def test_missing_submodule_is_graceful() -> None:
     assert loader.list_resources() == []
 
 
+def test_awaken_agent_prompt_stands_alone(loader: ContentLoader) -> None:
+    """Prompt 12. ``awaken`` returns the memory; this Prompt carries the protocol for
+    using it — so the served text has to work with no filesystem and no dangling links.
+
+    Its ops arrive through an inlined component rather than a ``## awaken-agent`` backend
+    section (the backend has none), which is the composition path no other served
+    procedure takes.
+    """
+    text = loader.get_prompt("awaken-agent")
+    # db mechanics arrived via the inlined component's own backend section
+    assert "awaken(" in text
+    assert "§ load-user-profile" in text
+    assert "§ persist-user-profile" in text
+    # seam scaffolding fully consumed
+    assert "## Storage Mechanics" not in text
+    assert "[STORAGE-BACKENDS-PATH]" not in text
+    # components inlined, not pointed at — a served client cannot fetch control-files
+    assert "](components/" not in text
+    # markdown-path mechanics must not reach the wire: there are no files to Read here,
+    # while the rule the sentence carries (never delegate the load) still must
+    assert "Read tool" not in text
+    assert "delegate it to a sub-agent" in text
+
+
 # --- component inlining (the pre-seam stage) ---
 #
-# No procedure in the served set references a component today — only `awaken-agent` and
-# `refresh-memory` do, and neither is served. So the shape is exercised on a synthetic
-# control-files tree, which is what would break the day `awaken-agent` becomes the 10th
-# Prompt. Both framework modules are copied in and imported from the tree, never stubbed,
+# `awaken-agent` exercises this for real against the submodule (see the served-text test
+# above); the synthetic tree here isolates the shape from that one procedure's content, so
+# a change to the awakening protocol cannot quietly take the mechanism's only coverage
+# with it. Both framework modules are copied in and imported from the tree, never stubbed,
 # so this composes through the same single-homed logic the real submodule serves.
 
 

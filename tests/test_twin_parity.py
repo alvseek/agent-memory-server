@@ -165,8 +165,9 @@ async def test_prompt_list_parity(tmp_path: Path) -> None:
     async with _http(db) as http:
         http_names = sorted((await http.get("/api/prompts")).json()["prompts"])
     assert mcp_names == http_names
-    assert len(http_names) == 11
+    assert len(http_names) == 12
     assert "list-agents" in http_names
+    assert "awaken-agent" in http_names  # Prompt 12 — reaches both faces off one map
 
 
 async def test_create_agent_parity(tmp_path: Path) -> None:
