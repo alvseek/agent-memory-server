@@ -55,6 +55,17 @@ class RecordType(str, Enum):
     user_profile = "user_profile"
 
 
+#: The record types ``shared_record``'s CHECK admits, in the order the schema lists them.
+#: The schema remains the enforcer — this exists so a refusal can *name* the legal values
+#: without a second copy of the rule drifting from the first. ``test_schema.py`` pins the
+#: two together, which is the only thing that makes naming them here safe.
+SHARED_RECORD_TYPES: tuple[RecordType, ...] = (
+    RecordType.reasoning,
+    RecordType.knowledge,
+    RecordType.user_profile,
+)
+
+
 @dataclass(kw_only=True)
 class Agent:
     """An agent — the entity memory belongs to, not a memory item.

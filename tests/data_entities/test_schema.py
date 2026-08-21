@@ -87,6 +87,17 @@ def test_only_one_user_profile_per_tenant() -> None:
         conn.execute(_INSERT_SHARED, ("s-up2", "alvi", "user_profile"))
 
 
+def test_the_declared_shared_types_match_the_schema_check() -> None:
+    """`SHARED_RECORD_TYPES` exists so a refusal can name the legal values. That is only
+    safe while it agrees with the CHECK, and nothing else would notice if it stopped —
+    the drift is invisible until a caller reads a message listing the wrong set."""
+    from munnin.data_entities.memory_record import SHARED_RECORD_TYPES
+
+    check = _DDL.split("record_type   TEXT    NOT NULL CHECK (record_type IN (")[1]
+    declared_in_schema = [v.strip().strip("'") for v in check.split("))")[0].split(",")]
+    assert [t.value for t in SHARED_RECORD_TYPES] == declared_in_schema
+
+
 def test_the_profile_limit_does_not_constrain_the_other_shared_types() -> None:
     """A partial index, not a blanket one: fleet reasoning and knowledge are many-per-tenant
     and must stay that way."""

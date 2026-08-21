@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from munnin.data_entities.memory_record import (
+    SHARED_RECORD_TYPES,
     Agent,
     MemoryRecord,
     RecordType,
@@ -46,9 +47,16 @@ _SHARED_COLUMNS = ", ".join(_SHARED_COL)
 # the lookup order for `_locate`; values are interpolated into SQL, so this mapping is the
 # whitelist that keeps that safe — a table name can never be parameterised in SQLite.
 _TABLES: dict[str, str] = {"memory_record": _COLUMNS, "shared_record": _SHARED_COLUMNS}
-# What `shared_record`'s CHECK admits. Kept here only to name the legal values in the
-# error message — the schema remains the enforcer, this is not a second copy of the rule.
-_SHARED_RECORD_TYPES = "'reasoning' or 'knowledge'"
+# What `shared_record`'s CHECK admits, rendered for the error message. Derived from the
+# entity's declared set rather than retyped, because the previous hardcoded string went on
+# saying "reasoning or knowledge" for as long as `user_profile` had been legal — and the
+# test that should have caught it was asserting the stale string instead.
+_SHARED_TYPE_NAMES = [f"{t.value!r}" for t in SHARED_RECORD_TYPES]
+_SHARED_RECORD_TYPES = (
+    " or ".join(_SHARED_TYPE_NAMES)
+    if len(_SHARED_TYPE_NAMES) < 3
+    else f"{', '.join(_SHARED_TYPE_NAMES[:-1])} or {_SHARED_TYPE_NAMES[-1]}"
+)
 # The agent entity's column order — one source of truth, same discipline as _COL.
 _AGENT_COL = ("user_id", "agent_id", "name", "role", "uuid", "created_date")
 _AGENT_COLUMNS = ", ".join(_AGENT_COL)
@@ -194,13 +202,26 @@ class SqliteMemoryRepository:
                     },
                 )
             except sqlite3.IntegrityError as exc:
-                if "CHECK constraint failed" not in str(exc):
-                    raise
-                raise ValueError(
-                    f"fleet-shared memory cannot be {record.record_type.value!r}: "
-                    f"it may only be {_SHARED_RECORD_TYPES}. Memory of any other kind "
-                    "belongs to an agent — insert it with that agent's id instead."
-                ) from exc
+                msg = str(exc)
+                if "CHECK constraint failed" in msg:
+                    raise ValueError(
+                        f"fleet-shared memory cannot be {record.record_type.value!r}: "
+                        f"it may only be {_SHARED_RECORD_TYPES}. Memory of any other kind "
+                        "belongs to an agent — insert it with that agent's id instead."
+                    ) from exc
+                # The partial unique index on (user_id) WHERE record_type='user_profile'.
+                # A uuid collision cannot reach here — ON CONFLICT(uuid) upserts it — so
+                # this names the only UNIQUE the table can actually refuse. Left as an
+                # IntegrityError it surfaced as an unhandled 500, which reads as a broken
+                # server rather than what it is: a caller asking for a second profile.
+                if "UNIQUE constraint failed: shared_record.user_id" in msg:
+                    raise ValueError(
+                        "this tenant already has a user profile: only one 'user_profile' "
+                        "record may exist per user, because awaken answers \"has anyone "
+                        "been asked yet\" with the presence of a row. Edit the existing "
+                        "record instead of inserting a second one."
+                    ) from exc
+                raise
             row = conn.execute(
                 f"SELECT {_SHARED_COLUMNS} FROM shared_record WHERE uuid=? AND user_id=?",
                 (record.uuid, self._user_id),

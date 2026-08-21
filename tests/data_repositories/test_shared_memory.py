@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from munnin.data_entities.memory_record import (
+    SHARED_RECORD_TYPES,
     Agent,
     MemoryRecord,
     RecordType,
@@ -115,11 +116,28 @@ def test_insert_shared_rejects_agent_only_record_types(
 def test_shared_type_rejection_names_what_is_allowed(tmp_path: Path) -> None:
     """The schema does the enforcing; this only gives its refusal a shape the faces can
     report. An untranslated IntegrityError reaches an agent as an opaque database string
-    and an HTTP caller as a 500."""
+    and an HTTP caller as a 500.
+
+    Asserted against the declared set rather than a literal: the previous version of this
+    test hardcoded "'reasoning' or 'knowledge'", so when `user_profile` became legal the
+    message kept naming two of three types and the test held it there."""
     with pytest.raises(ValueError) as exc:
         _repo(tmp_path).insert_shared(_shared("s1", record_type=RecordType.episode))
-    assert "'reasoning' or 'knowledge'" in str(exc.value)
+    for rtype in SHARED_RECORD_TYPES:
+        assert repr(rtype.value) in str(exc.value)
     assert "episode" in str(exc.value)
+
+
+def test_a_second_profile_is_refused_as_a_caller_error_not_a_crash(tmp_path: Path) -> None:
+    """The partial unique index already stopped the write; this pins how the refusal is
+    *reported*. Only `CHECK constraint failed` was translated, so a second profile raised a
+    bare IntegrityError and surfaced over HTTP as a 500 — a broken-server answer to what is
+    really a caller asking for something the model forbids."""
+    repo = _repo(tmp_path)
+    repo.insert_shared(_shared("p1", record_type=RecordType.user_profile))
+    with pytest.raises(ValueError, match="already has a user profile"):
+        repo.insert_shared(_shared("p2", record_type=RecordType.user_profile))
+    assert len([r for r in repo.query_shared() if r.record_type is RecordType.user_profile]) == 1
 
 
 # --- isolation and union ---
