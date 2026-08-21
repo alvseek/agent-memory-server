@@ -1,6 +1,6 @@
 # User Profile as Fleet Memory — QA Checklist
 
-**Source**: [plans/2026-08-21-agent-memory-server-user-profile-record.md](../../plans/2026-08-21-agent-memory-server-user-profile-record.md)
+**Source**: [plans/completed/2026-08-21-agent-memory-server-user-profile-record.md](../../plans/completed/2026-08-21-agent-memory-server-user-profile-record.md) — archived 2026-08-21 on completion
 **Purpose**: confirm an agent awakening from the database learns who the user is — and, more importantly, that nothing which already worked stopped working when a sixth record type was admitted to a shared table.
 **Apps under test**: Munnin (`data_entities`, `data_migrations`, `business_services`, `api_mcp`) · `control-files` (both storage backends, the awakening component, the two configurator scripts, the profile template).
 **Deliberately NOT touched**: the `user` table / Authentra auth · login and multi-tenant `user_id` · B′ activation · agent-scoped record paths · the `edit`/`append`/`archive`/`soft_delete` write ops.
