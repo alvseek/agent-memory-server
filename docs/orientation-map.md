@@ -42,8 +42,8 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **roles**: []
 - **status**: useful
 - **tags**: [overview, entry-point, non-7q, pointer]
-- **last_verified**: "2026-08-15"
-- **verified_by**: "meta / component-inlining + CI session"
+- **last_verified**: "2026-08-21"
+- **verified_by**: "meta / awaken-agent served-prompt session"
 - **update_trigger**: "when setup/deploy invocation or the served surface changes; slim to a thin pointer to docs/README.md per the placement contract"
 - **notes**: "Root README (non-7Q). Status line corrected 2026-08-15 — it had claimed an empty Phase 4 scaffold 'boots + health only', ~5 phases stale; now states the real surface (11 data tools, 12 Prompts, 4 Resources, importer) with deployment named as the open step, verified by introspection rather than recall. Content is accurate; the structural decision to slim it to a thin pointer at docs/README.md is still pending (A/B/C)."
 
@@ -54,8 +54,8 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **roles**: []
 - **status**: useful
 - **tags**: [readme, 7q, project-entry-point, munnin, mcp-server]
-- **last_verified**: "2026-08-17"
-- **verified_by**: "meta / raw served-content session"
+- **last_verified**: "2026-08-21"
+- **verified_by**: "meta / awaken-agent served-prompt session"
 - **update_trigger**: "when tech stack, the tool/endpoint surface, the data model, deploy topology, or known debts change"
 - **notes**: "Full project 7Q README for Munnin — two-adapters-over-one-core architecture, full MCP+HTTP surface, uniform-record data model, RackNerd deploy, ADR-012/013, and the awaken process-instruction gap. Generated 2026-08-13 from code. 2026-08-15: Served Content section now describes the **two-stage** delivery (component inlining then seam substitution); the closed no-remote debt (D3) retired from Debts, CI/CD, and Rollback; recorded that control-files runs its own CI so this repo's testpaths stays scoped to tests/. 2026-08-17: the HTTP API table + the paragraph under it now state the served-content response split — the two list endpoints answer JSON, a single prompt or template answers raw `text/markdown`."
 
@@ -90,8 +90,8 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **roles**: []
 - **status**: unverified
 - **tags**: [qa, runbook, awaken, served-content, http-face]
-- **last_verified**: ""
-- **verified_by**: ""
+- **last_verified**: "2026-08-21"
+- **verified_by**: "meta / awaken-agent served-prompt session"
 - **update_trigger**: "when the QA flow or the qa/ instrument changes"
 - **notes**: "QA runbook — bring Munnin up on a clean seeded DB, then verify the data read path (awaken) and the served content surface (prompts/resources) over the live HTTP face. Single-app project — carries the whole QA story (qa/checklists, qa/fixtures, qa/config are instrument-internal scaffolding, not indexed)."
 
