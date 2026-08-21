@@ -44,8 +44,8 @@
 
 ## Verdict
 
-**A wired rig with its first tests on it.** All four loop phases resolve from the `qa/README.md` index, and the test layer now holds one checklist and one fixture rather than none of either. The instrument is usable end to end; what it lacks is coverage, not machinery.
+**A wired rig with its first tests on it.** All four loop phases resolve from the `qa/README.md` index, and the test layer now holds two checklists, a module scenario and one fixture rather than none of any. The instrument is usable end to end; what it lacks is coverage, not machinery.
 
 - **Rig gaps (`/build-qa-bench`)**: `qa/seeds/` still holds no seed source — the real INJECT source is the markdown store outside this repo, which is worth stating rather than materialising; and the five `data/valaskjalf-memory.db.bak-*` snapshots (~76 MB) still have no retention policy.
-- **Test gaps (`/build-qa-test`)**: the user-profile checklist is written and **still not run** — its first-run-bootstrap items need a fresh agent session and its pipeline items need the configurator run for real. Every shipped change before 2026-08-21 remains uncovered. One fixture now exists, covering one stage of one flow; the four precondition-builders inlined in `tests/` are still inlined.
+- **Test gaps (`/build-qa-test`)**: the awaken-agent-prompt checklist is written and **not yet run**; the user-profile checklist was run 2026-08-21 and is **not signed off** — its first-run-bootstrap items need a fresh agent session and its pipeline items need the configurator run for real. Every shipped change before 2026-08-21 remains uncovered. One fixture now exists, covering one stage of one flow; the four precondition-builders inlined in `tests/` are still inlined.
 - **Nothing diverged**: all four index links resolve and each agrees with what this scan independently identified for that role.
