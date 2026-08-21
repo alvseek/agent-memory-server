@@ -89,10 +89,16 @@ class MemoryService:
     def awaken(self, domain: str) -> dict[str, Any]:
         """Assemble an agent's memory payload from the DB (4-layer model, C-2).
 
-        Always-load whole: layer i (fleet-shared reasoning + knowledge) + layer ii
-        (domain identity/reasoning/emotional). Index-only: layer iii (domain
-        episode/knowledge) + the latest episode body. All reads are hot-read filtered
-        (deleted + archived excluded) by the repository.
+        Always-load whole: layer i (fleet-shared reasoning, knowledge and the user
+        profile) + layer ii (domain identity/reasoning/emotional). Index-only: layer iii
+        (domain episode/knowledge) + the latest episode body. All reads are hot-read
+        filtered (deleted + archived excluded) by the repository.
+
+        ``shared.user_profile`` is a single record or ``None`` — who the user is does not
+        vary by agent, so it is fleet memory rather than anyone's identity. ``None`` is a
+        real answer meaning nobody has been asked yet, and it is what tells the awakening
+        protocol to run its first-run bootstrap; a blank *field* inside a present record
+        is a deliberate blank and must not trigger it.
 
         Layer i now comes from ``query_shared`` rather than from an agent named
         ``__shared__``. The payload shape is unchanged — it always was fleet memory;
@@ -102,6 +108,8 @@ class MemoryService:
         shared = self._repo.query_shared()
         shared_reasoning = [r for r in shared if r.record_type is RecordType.reasoning]
         shared_knowledge = [r for r in shared if r.record_type is RecordType.knowledge]
+        # Filtered from the same fetch rather than re-queried — layer i is one round trip.
+        profile = next((r for r in shared if r.record_type is RecordType.user_profile), None)
 
         identity = self._repo.query(agent_id=domain, record_type=RecordType.identity)
         reasoning = self._repo.query(agent_id=domain, record_type=RecordType.reasoning)
@@ -121,6 +129,7 @@ class MemoryService:
             "shared": {
                 "reasoning": [_whole(r) for r in shared_reasoning],
                 "knowledge": [_whole(r) for r in shared_knowledge],
+                "user_profile": _whole(profile) if profile else None,
             },
             # layer ii — this agent's identity
             "identity": [_whole(r) for r in identity],

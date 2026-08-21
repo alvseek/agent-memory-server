@@ -37,14 +37,22 @@ def validate_domain(name: str) -> str:
 
 
 class RecordType(str, Enum):
-    """Drives the two read patterns: identity/reasoning/emotional are loaded whole
-    at awaken; episode/knowledge are browsed via the index, bodies on demand."""
+    """Drives the two read patterns: identity/reasoning/emotional — and the fleet's
+    ``user_profile`` — are loaded whole at awaken; episode/knowledge are browsed via
+    the index, bodies on demand.
+
+    ``user_profile`` is fleet memory rather than an agent's: who the user is does not
+    vary by agent, so it lives in ``shared_record`` alongside reasoning and knowledge.
+    It is deliberately *not* the auth identity — that belongs to a future ``user`` table
+    fed by verified token claims, and the two hold different facts (an account name vs
+    what the user wants agents to call them)."""
 
     episode = "episode"
     knowledge = "knowledge"
     identity = "identity"
     reasoning = "reasoning"
     emotional = "emotional"
+    user_profile = "user_profile"
 
 
 @dataclass(kw_only=True)

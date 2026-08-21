@@ -150,11 +150,17 @@ def parse_fleet_agents(source_root: Path | str) -> list[Agent]:
 
 
 def import_shared(repo: MemoryRepository, source_root: Path | str) -> dict[str, int]:
-    """Import the fleet-shared always-load layer (core-reasoning + core-knowledge) into
-    ``shared_record``. Call **once** per DB — ``import_fleet`` does. Returns a count map.
+    """Import the fleet-shared always-load layer (core-reasoning, core-knowledge, and the
+    user profile) into ``shared_record``. Call **once** per DB — ``import_fleet`` does.
+    Returns a count map.
 
     Needs no agent to exist: this memory belongs to the fleet, which is the whole reason
-    it stopped living under a sentinel owner."""
+    it stopped living under a sentinel owner.
+
+    Reasoning and knowledge are framework invariants and their absence is a broken store,
+    so they are read unguarded. The profile is not: it is a fact about a person who may
+    simply not have been asked yet, so a missing file skips quietly and leaves that record
+    to the first-run bootstrap at awakening."""
     root = Path(source_root)
     counts: Counter[str] = Counter()
     sr = _read(root / "shared-memory" / "core-reasoning-memory.md")
@@ -165,6 +171,13 @@ def import_shared(repo: MemoryRepository, source_root: Path | str) -> dict[str, 
     for it in P.parse_shared_knowledge(sk):
         repo.insert_shared(_to_shared_record(it, RecordType.knowledge))
         counts[f"{_SHARED_UUID_SCOPE}/knowledge"] += 1
+    profile_path = root / "shared-memory" / "user-profile.md"
+    if profile_path.exists():
+        for it in P.parse_shared_profile(_read(profile_path)):
+            repo.insert_shared(_to_shared_record(it, RecordType.user_profile))
+            counts[f"{_SHARED_UUID_SCOPE}/user_profile"] += 1
+    else:
+        _log.info("import shared: no user-profile.md — the first-run ask owns that record")
     _log.info("import shared: %s", dict(counts))
     return dict(counts)
 

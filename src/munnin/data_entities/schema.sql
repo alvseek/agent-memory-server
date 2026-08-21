@@ -22,12 +22,14 @@ CREATE TABLE IF NOT EXISTS agent (
 
 -- Fleet-shared memory. No agent_id at all — this memory has no owner, which is why it
 -- cannot live in memory_record without weakening that table's foreign key. The CHECK
--- enforces what used to be convention only: shared memory is reasoning + knowledge.
+-- enforces what used to be convention only: shared memory is reasoning, knowledge, and
+-- the user profile — never an episode, an identity or an emotional moment, all of which
+-- belong to some particular agent.
 CREATE TABLE IF NOT EXISTS shared_record (
   id            INTEGER PRIMARY KEY,    -- internal rowid; storage + FTS5 link (never leaves the store)
   uuid          TEXT    NOT NULL UNIQUE,-- global/portable identity; the idempotency key
   user_id       TEXT    NOT NULL,
-  record_type   TEXT    NOT NULL CHECK (record_type IN ('reasoning','knowledge')),
+  record_type   TEXT    NOT NULL CHECK (record_type IN ('reasoning','knowledge','user_profile')),
   project       TEXT,                   -- reserved for Hermod's project scope; unused by Munnin
   title         TEXT,
   tags          TEXT,                   -- JSON array (stored as text)
@@ -62,6 +64,14 @@ CREATE INDEX IF NOT EXISTS idx_memory_browse
   ON memory_record (user_id, agent_id, record_type, project, created_date);
 CREATE INDEX IF NOT EXISTS idx_shared_browse
   ON shared_record (user_id, record_type, project, created_date);
+
+-- Exactly one user profile per tenant. The CHECK above says a profile MAY live in this
+-- table; this says only one may. `awaken` answers "has anyone been asked yet" with the
+-- presence of a row, so a second profile would satisfy that question with whichever row
+-- came first and leave the other invisible — the wrong answer, arrived at silently.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_one_user_profile_per_tenant
+  ON shared_record (user_id)
+  WHERE record_type = 'user_profile' AND deleted_date IS NULL;
 
 -- Full-text indexes (external-content) over body + title + tags — one per memory table.
 -- External-content mode indexes without duplicating; search never scans the blobs.

@@ -40,6 +40,13 @@ def _seed(db: Path) -> None:
         )
     )
     repo.insert(_mk("ep1", "meta", RecordType.episode, "episode body", "2026-08-09"))
+    repo.insert_shared(
+        SharedRecord(
+            uuid="up1", user_id="", record_type=RecordType.user_profile,
+            title="User Profile", full_content="- **[USER-NAME]** = Alvi",
+            created_date="2026-01-01",
+        )
+    )
 
 
 async def test_http_awaken(tmp_path: Path) -> None:
@@ -80,3 +87,24 @@ async def test_mcp_awaken_tool(tmp_path: Path) -> None:
     assert data is not None
     assert data["agent_id"] == "meta"
     assert data["identity"][0]["content"] == "I am meta"
+
+
+async def test_both_faces_carry_the_same_user_profile(tmp_path: Path) -> None:
+    """Twin parity for the new payload key. The faces are thin adapters over one service,
+    so this is really asserting that neither of them filters or reshapes layer i on the
+    way out — which is the only way they could diverge."""
+    db = tmp_path / "m.db"
+    _seed(db)
+
+    app = build_app(Config(db_path=db, user_id="alvi"))
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        http_payload = (await client.get("/api/awaken", params={"agent_id": "meta"})).json()
+
+    service = MemoryService(AutoAgentRepository(db, user_id="alvi"), user_id="alvi")
+    async with Client(build_mcp(service)) as client:
+        mcp_payload = (await client.call_tool("awaken", {"domain": "meta"})).data
+
+    assert http_payload["shared"]["user_profile"] == mcp_payload["shared"]["user_profile"]
+    assert http_payload["shared"]["user_profile"]["uuid"] == "up1"
+    assert "[USER-NAME]" in http_payload["shared"]["user_profile"]["content"]

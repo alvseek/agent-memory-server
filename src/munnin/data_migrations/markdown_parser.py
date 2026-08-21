@@ -170,6 +170,34 @@ def parse_shared_knowledge(text: str) -> list[ParsedItem]:
     return items
 
 
+# The line marker the profile is recognized by. It is also what `user-profile-claude.sh`
+# greps, which makes this string a contract between bash and Python with no shared
+# schema to enforce it — hence the round-trip test rather than trust.
+_PROFILE_MARKER = "[USER-NAME]"
+
+
+def parse_shared_profile(text: str) -> list[ParsedItem]:
+    """The user profile — **one** item carrying the whole file, not one per field.
+
+    Presence is the only question the first-run bootstrap asks, and one record answers it
+    with a row count; three would admit partial states with no rule for resolving them. A
+    field the user deliberately left blank stays blank *inside* the body, which is what
+    lets the bootstrap distinguish "never told us" from "told us nothing".
+
+    Returns **empty** when the file carries no ``[USER-NAME]`` marker. A file without it is
+    not a profile, and importing it anyway would store noise under a name that promises
+    meaning — the same reasoning that makes the fleet importer refuse an unparseable
+    identity rather than write a half-agent.
+
+    The body is ``strip()``ed, so the stored record is a trailing newline shorter than the
+    file it came from. Deliberate, but it means a byte comparison of store against file
+    needs the same strip on both sides or it will report a difference that is not one.
+    """
+    if _PROFILE_MARKER not in text:
+        return []
+    return [ParsedItem(title="User Profile", body=text.strip(), key="user-profile")]
+
+
 # --- agent-memory-index.md (layer iii: knowledge index + active episodes) ---
 
 

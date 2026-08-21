@@ -61,16 +61,46 @@ def test_schema_is_idempotent() -> None:
     assert {"agent", "shared_record", "memory_record"} <= _names(conn, "table")
 
 
-@pytest.mark.parametrize("rtype", ["reasoning", "knowledge"])
-def test_shared_accepts_its_two_record_types(rtype: str) -> None:
+@pytest.mark.parametrize("rtype", ["reasoning", "knowledge", "user_profile"])
+def test_shared_accepts_its_three_record_types(rtype: str) -> None:
+    """Fleet memory is two kinds of shared thinking plus one fact about the user."""
     _db().execute(_INSERT_SHARED, (f"s-{rtype}", "alvi", rtype))
 
 
 @pytest.mark.parametrize("rtype", ["episode", "identity", "emotional"])
 def test_shared_rejects_agent_only_record_types(rtype: str) -> None:
-    """Shared memory has always been reasoning + knowledge; now the schema says so."""
+    """Admitting the user profile widened the CHECK without loosening what it guards:
+    these three each belong to some particular agent, so an ownerless table still
+    refuses them. A constraint that accepts everything would pass the test above and
+    mean nothing."""
     with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed"):
         _db().execute(_INSERT_SHARED, (f"s-{rtype}", "alvi", rtype))
+
+
+def test_only_one_user_profile_per_tenant() -> None:
+    """`awaken` answers "has anyone been asked yet" with the presence of a row, so a second
+    profile would answer it with whichever came first and hide the other — the wrong answer,
+    arrived at silently. The CHECK says a profile *may* live here; this says only one may."""
+    conn = _db()
+    conn.execute(_INSERT_SHARED, ("s-up1", "alvi", "user_profile"))
+    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE constraint failed"):
+        conn.execute(_INSERT_SHARED, ("s-up2", "alvi", "user_profile"))
+
+
+def test_the_profile_limit_does_not_constrain_the_other_shared_types() -> None:
+    """A partial index, not a blanket one: fleet reasoning and knowledge are many-per-tenant
+    and must stay that way."""
+    conn = _db()
+    for i in range(3):
+        conn.execute(_INSERT_SHARED, (f"s-r{i}", "alvi", "reasoning"))
+        conn.execute(_INSERT_SHARED, (f"s-k{i}", "alvi", "knowledge"))
+
+
+def test_a_second_tenant_may_have_their_own_profile() -> None:
+    """The index is keyed on user_id, so the limit is per tenant — not one profile globally."""
+    conn = _db()
+    conn.execute(_INSERT_SHARED, ("s-up-a", "alvi", "user_profile"))
+    conn.execute(_INSERT_SHARED, ("s-up-b", "someone-else", "user_profile"))
 
 
 def test_memory_accepts_a_record_for_a_known_agent() -> None:

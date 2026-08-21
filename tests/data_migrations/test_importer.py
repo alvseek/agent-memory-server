@@ -278,3 +278,68 @@ def test_a_missing_core_file_is_also_an_abort(tmp_path: Path) -> None:
     with pytest.raises(ImportAborted, match="empty: no agent-core-memory.md"):
         import_fleet(repo, src)
     assert list(repo.list_agents()) == []
+
+
+_PROFILE_FILE = (
+    "## AI Agent - User Profile\n"
+    "\n"
+    "- **[USER-NAME]** = Alvi\n"
+    "- **[USER-PHILOSOPHY]** = ship something that works\n"
+    "- **[USER-AGENT-VISION]** = a fleet that remembers\n"
+)
+
+
+def test_shared_import_creates_exactly_one_profile_row(tmp_path: Path) -> None:
+    src = _fake_source(tmp_path / "src")
+    (src / "shared-memory" / "user-profile.md").write_text(_PROFILE_FILE, encoding="utf-8")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+
+    shared = import_shared(repo, src)
+
+    assert shared["shared/user_profile"] == 1
+    rows = repo.query_shared(record_type=RecordType.user_profile)
+    assert len(rows) == 1
+    assert "[USER-NAME]" in rows[0].full_content
+
+
+def test_a_missing_profile_file_imports_quietly(tmp_path: Path) -> None:
+    """The fleet fixture ships no profile. Reasoning and knowledge are invariants whose
+    absence is a broken store; a profile is a fact about someone who may not have been
+    asked yet, so its absence must not raise."""
+    src = _fake_source(tmp_path / "src")
+    assert not (src / "shared-memory" / "user-profile.md").exists()
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+
+    shared = import_shared(repo, src)
+
+    assert "shared/user_profile" not in shared
+    assert shared["shared/reasoning"] == 1  # the rest of the layer still landed
+    assert repo.query_shared(record_type=RecordType.user_profile) == []
+
+
+def test_a_profile_file_without_the_marker_imports_nothing(tmp_path: Path) -> None:
+    src = _fake_source(tmp_path / "src")
+    (src / "shared-memory" / "user-profile.md").write_text("# not a profile\n", encoding="utf-8")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+
+    shared = import_shared(repo, src)
+
+    assert "shared/user_profile" not in shared
+    assert repo.query_shared(record_type=RecordType.user_profile) == []
+
+
+def test_reimporting_the_profile_updates_rather_than_duplicates(tmp_path: Path) -> None:
+    src = _fake_source(tmp_path / "src")
+    path = src / "shared-memory" / "user-profile.md"
+    path.write_text(_PROFILE_FILE, encoding="utf-8")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    import_shared(repo, src)
+    first = repo.query_shared(record_type=RecordType.user_profile)[0]
+
+    path.write_text(_PROFILE_FILE.replace("Alvi", "Alvi Widiasto"), encoding="utf-8")
+    import_shared(repo, src)
+    rows = repo.query_shared(record_type=RecordType.user_profile)
+
+    assert len(rows) == 1, "an edited profile must update the row, not add a second"
+    assert rows[0].uuid == first.uuid
+    assert "Alvi Widiasto" in rows[0].full_content

@@ -98,8 +98,9 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         """Append a new memory item. ``scope="agent"`` (the default) writes memory owned
         by ``agent_id``, which must be an existing kebab domain; ``scope="shared"`` writes
         fleet-wide memory owned by nobody and takes no ``agent_id``. ``record_type`` ∈
-        episode|knowledge|identity|reasoning|emotional, and fleet memory may only be
-        reasoning or knowledge."""
+        episode|knowledge|identity|reasoning|emotional|user_profile, and fleet memory may
+        only be reasoning, knowledge or user_profile — the profile is fleet-wide because
+        who the user is does not vary by agent."""
         return service.insert(
             agent_id=agent_id,
             scope=scope,

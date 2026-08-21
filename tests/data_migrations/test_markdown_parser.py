@@ -291,3 +291,55 @@ def test_identity_searched_across_all_records() -> None:
     """An agent has three identity records; Name/Role live in only one of them."""
     ras = "# DOMAIN RAS\ntriggers"
     assert P.parse_identity_fields([ras, IDENTITY])["role"] == "Meta Agent for Alvi"
+
+
+# --- the user profile (layer i, one record) ---
+
+# The exact bullet form `user-profile-claude.sh` writes and greps. Written out here
+# rather than imported from a fixture on purpose: this literal IS the contract between
+# the shell and the parser, so a test that generated it from the parser's own assumptions
+# would agree with itself and catch nothing.
+_REAL_PROFILE = (
+    "## AI Agent - User Profile\n"
+    "\n"
+    "- **[USER-NAME]** = Alvi\n"
+    '- **[USER-PHILOSOPHY]** = "Success feeling first" - always start with working product.\n'
+    "- **[USER-AGENT-VISION]** = Building a legendary ecosystem of specialized AI agents!\n"
+)
+
+
+def test_profile_parses_to_exactly_one_item() -> None:
+    """One record, not one per field — presence is answerable by a row count."""
+    items = P.parse_shared_profile(_REAL_PROFILE)
+    assert len(items) == 1
+    assert items[0].title == "User Profile"
+    assert items[0].key == "user-profile"
+    # the whole file is the body, so no field is dropped on the way in
+    for marker in ("[USER-NAME]", "[USER-PHILOSOPHY]", "[USER-AGENT-VISION]"):
+        assert marker in items[0].body
+
+
+def test_profile_key_is_fixed_so_reimport_is_idempotent() -> None:
+    """The key feeds `stable_uuid`; if it varied with content, every edit would insert
+    a second row instead of updating the first."""
+    edited = _REAL_PROFILE.replace("Alvi", "Someone Else")
+    assert P.parse_shared_profile(edited)[0].key == P.parse_shared_profile(_REAL_PROFILE)[0].key
+
+
+def test_a_blank_field_still_parses_and_stays_blank() -> None:
+    """A deliberately empty field is data, not damage — the bootstrap must be able to
+    tell 'told us nothing' from 'never asked'."""
+    blanked = _REAL_PROFILE.replace(
+        "- **[USER-AGENT-VISION]** = Building a legendary ecosystem of specialized AI agents!\n",
+        "- **[USER-AGENT-VISION]** = \n",
+    )
+    items = P.parse_shared_profile(blanked)
+    assert len(items) == 1
+    assert "[USER-AGENT-VISION]" in items[0].body
+
+
+def test_a_file_without_the_marker_is_not_a_profile() -> None:
+    """Zero items, not one empty one — importing noise under a meaningful name is worse
+    than importing nothing."""
+    assert P.parse_shared_profile("# Some other document\n\nnothing to see here\n") == []
+    assert P.parse_shared_profile("") == []

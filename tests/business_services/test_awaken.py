@@ -90,3 +90,44 @@ def test_awaken_episodes_newest_first_and_latest_has_body(tmp_path: Path) -> Non
 def test_awaken_rejects_invalid_domain(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         _service(tmp_path).awaken("__shared__")
+
+
+# --- layer i's third member: the user profile ---
+
+
+def test_awaken_returns_no_profile_when_nobody_has_been_asked(tmp_path: Path) -> None:
+    """`None` is a real answer, not an error case — it is precisely what tells the
+    awakening protocol to run its first-run bootstrap. A raise or a missing key would
+    make "never asked" indistinguishable from "asked and got nothing"."""
+    payload = _service(tmp_path).awaken("meta")
+    assert payload["shared"]["user_profile"] is None
+
+
+def test_awaken_carries_the_user_profile_whole(tmp_path: Path) -> None:
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    repo.insert_shared(
+        _shared("up1", RecordType.user_profile, full_content="- **[USER-NAME]** = Alvi")
+    )
+    repo.insert(_rec("id1", "meta", RecordType.identity))
+
+    profile = MemoryService(repo, user_id="alvi").awaken("meta")["shared"]["user_profile"]
+
+    assert profile is not None
+    assert profile["uuid"] == "up1"
+    # whole, not an index projection — a profile without its body is useless
+    assert profile["content"] == "- **[USER-NAME]** = Alvi"
+
+
+def test_the_profile_does_not_leak_into_reasoning_or_knowledge(tmp_path: Path) -> None:
+    """Three record types now share one table and one fetch, so the filters have to stay
+    disjoint. A profile arriving under `reasoning` would be read as a pattern to obey."""
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    repo.insert_shared(_shared("up1", RecordType.user_profile))
+    repo.insert_shared(_shared("sr1", RecordType.reasoning))
+    repo.insert(_rec("id1", "meta", RecordType.identity))
+
+    shared = MemoryService(repo, user_id="alvi").awaken("meta")["shared"]
+
+    assert [r["uuid"] for r in shared["reasoning"]] == ["sr1"]
+    assert shared["knowledge"] == []
+    assert shared["user_profile"]["uuid"] == "up1"
