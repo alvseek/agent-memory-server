@@ -28,13 +28,13 @@ The change exists because the first is data and the second is process, and a cli
 - `/refresh-memory` — the component's **other** consumer — still reads correctly on both backends. It was edited by side effect, not by intent.
 - Registering a Prompt named `awaken-agent` does not shadow, rename, or break the `awaken` **tool**.
 - The other eleven prompts compose identically to before. `awaken-agent` is the first served procedure whose ops arrive through an **inlined component** rather than a `## {procedure}` backend section, and that path runs through shared, cached modules.
-- The served text arrives **whole** over a live server. `awaken`'s payload is already known to exceed the MCP output cap and truncate silently — a 10.7 KB prompt should be nowhere near it, but "should" is what that finding disproved once already.
+- The served text arrives **whole** over a live server. `awaken`'s payload is already known to exceed the MCP output cap and truncate silently — a 10,842-byte prompt should be nowhere near it, but "should" is what that finding disproved once already.
 
 ## Happy path — single end-to-end scenario (run this first)
 
 1. RESET → INJECT → ACT (`qa/scripts/reset-db.sh`, `seed-meta.sh`, `start-server.sh`) — see [qa/README.md](../README.md).
 2. `GET /api/prompts` → the list contains **12** names including `awaken-agent`. → *Registration*
-3. `GET /api/prompts/awaken-agent` → HTTP 200, `content-type: text/markdown; charset=utf-8`, body ~10.7 KB. → *Delivery*
+3. `GET /api/prompts/awaken-agent` → HTTP 200, `content-type: text/markdown; charset=utf-8`, body **10,842 bytes**. → *Delivery*
 4. Read the body: it names `awaken(`, both profile ops, and the `null`-vs-blank distinction; it contains no `## Storage Mechanics`, no `[STORAGE-BACKENDS-PATH]`, no `](components/`, no "Read tool". → *Composition*
 5. Over MCP on the same running server, `prompts/list` returns the same 12 and `tools/list` still returns the 14 tools with `awaken` intact. → *No collision*
 6. `GET /api/prompts/update-episodic` still returns its DB mechanics unchanged. → *No regression*
@@ -59,7 +59,7 @@ The change exists because the first is data and the second is process, and a cli
 - [ ] `GET /api/prompts` returns exactly 12 names; `awaken-agent` among them.
 - [ ] `GET /api/prompts/awaken-agent` → 200, `text/markdown; charset=utf-8`, **not** a JSON envelope.
 - [ ] `curl -o out.md` writes a file that opens as clean markdown — no truncation mid-sentence at the tail.
-- [ ] Body length matches what the loader composes in-process (compare against `ContentLoader.get_prompt`), proving nothing was lost in transit.
+- [ ] Body length matches what the loader composes in-process — compare **UTF-8 bytes to UTF-8 bytes**: `len(get_prompt("awaken-agent").encode("utf-8"))` against curl's `size_download`. A raw Python `len()` counts characters (10,731) and will look like 111 bytes of truncation that is not there.
 - [ ] MCP `prompts/list` on the **same running server** returns the same 12, and `prompts/get` for `awaken-agent` returns the same bytes as the HTTP face.
 
 ### Composition correctness
