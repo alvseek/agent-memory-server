@@ -57,7 +57,7 @@ Every script honours `MUNNIN_DB_PATH`, `MUNNIN_IMPORT_SOURCE`, `MUNNIN_HOST` and
 |---|---|---|---|
 | Per-module "how to run" | Runbook | [runbooks/munnin.md](runbooks/munnin.md) | /build-qa-test |
 | Per-feature verification | Checklists | [checklists/](checklists/) — 1 active | /build-qa-test |
-| Per-stage test preconditions | Fixtures | [fixtures/](fixtures/) | /build-qa-test |
+| Per-stage test preconditions | Fixtures | [fixtures/](fixtures/) — 1 built | /build-qa-test |
 | R/I/A/O scripts | Scripts | [scripts/](scripts/) | /build-qa-bench |
 | Required config + templates | Config | [config/](config/) | /build-qa-bench |
 | Test-data sources | Seeds | [seeds/](seeds/) | /build-qa-bench |
@@ -84,7 +84,8 @@ There is almost nothing to switch, and that is deliberate: `configuration/config
 
 **Test layer** (→ `/build-qa-test`):
 - **One checklist now exists** — [checklists/user-profile.md](checklists/user-profile.md), built 2026-08-21. It is **not yet run**: its first-run-bootstrap items need a fresh agent session reading the installed instruction, and its pipeline items need the configurator run for real. Every other shipped change in this repo still has no checklist.
-- **Fixtures are inlined in the test suite** (`_fake_source`, `_seed`, `_db`) rather than extracted to `qa/fixtures/`, so nothing is composable and `/run-qa-test` Tactic B cannot reach them.
+- **One fixture now exists** — [fixtures/profile-source.sh](fixtures/profile-source.sh), built 2026-08-21. It assembles a throwaway import source root in four user-profile states, composes with `seed-meta.sh` through `MUNNIN_IMPORT_SOURCE`, and was proved by running the chain (all four states reached in the DB), fidelity-checked against the real authoring script, and torn down to zero residue. It covers **one** stage of one flow.
+- **Every other fixture is still inlined in the test suite** (`_fake_source`, `_seed`, `_db`) rather than extracted to `qa/fixtures/`, so those preconditions remain unreachable to `/run-qa-test` Tactic B.
 - The runbook predates the three-table store and the `user_profile` record type; its content has not been re-checked against them.
 
 **Not a gap**: the retired `# R/I/A/O category:` headers still present in all five scripts. They are inert — this table is the contract now — and rewriting working scripts to remove them would be churn.

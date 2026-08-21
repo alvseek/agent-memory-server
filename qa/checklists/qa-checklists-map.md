@@ -11,7 +11,7 @@
 | Material | Location | Grade | Notes |
 |---|---|---|---|
 | Lifecycle + content-shape convention | [README.md](README.md) | exists-documented | The *convention* is documented and good — create on ship, tick inline, archive to `completed/`. It is the only thing here |
-| User-profile feature checklist | [user-profile.md](user-profile.md) | exists-documented | Built 2026-08-21 by /build-qa-test from the user-profile plan. Risk-derived; **not yet run** |
+| User-profile feature checklist | [user-profile.md](user-profile.md) | exists-documented | Built 2026-08-21 by /build-qa-test from the user-profile plan. Risk-derived; **not yet run**. Amended later the same day: five checks that had instructed editing or deleting the authored profile now route through [profile-source.sh](../fixtures/profile-source.sh) instead |
 | Archive folder | [completed/](completed/) | — | Empty apart from `.gitkeep` |
 
 ## Gaps
@@ -22,4 +22,4 @@
 
 ## Last scan
 
-2026-08-21 · scanned qa/checklists, plans/, plans/completed/
+2026-08-21 (rescanned after /build-qa-test) · scanned qa/checklists, plans/, plans/completed/
