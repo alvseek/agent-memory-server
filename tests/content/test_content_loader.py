@@ -51,9 +51,14 @@ def test_prompt_composes_db_mechanics(loader: ContentLoader) -> None:
 
 def test_orchestrator_prompt_composes_and_keeps_footer(loader: ContentLoader) -> None:
     text = loader.get_prompt("wrap-up")
-    assert "query(" in text  # db read op substituted in
+    # db persistence op substituted in: a DB write is durable the moment it lands,
+    # so the served prompt reports an outcome rather than performing a save
+    assert "already durable" in text
+    # markdown-only mechanics must NOT reach the wire — a Munnin client has no
+    # git store to push, and the markdown backend resolves this op to /push-memory
+    assert "/push-memory" not in text
     # the trailing footer note after the seam must survive the substitution
-    assert "Saving work to git too?" in text
+    assert "Working in a repo as well?" in text
 
 
 def test_unknown_prompt_raises(loader: ContentLoader) -> None:
