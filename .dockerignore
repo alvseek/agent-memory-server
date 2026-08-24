@@ -1,0 +1,45 @@
+# Resolved relative to the build context (the repo root).
+
+# VCS
+.git
+.gitignore
+.gitmodules
+.github
+
+# Virtual environments — including control-files/.venv, which is a WINDOWS venv
+# (Lib/site-packages) and is both useless and heavy inside a Linux image.
+.venv
+**/.venv
+
+# Python build/run artifacts
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+
+# Runtime state — Valaskjalf/memory plus ~76 MB of local .bak copies. The
+# database arrives through the named volume, never through an image layer.
+data
+
+# Secrets and host-specific config. Nothing secret exists in v1, but the
+# exclusion is the guard for when WorkOS lands.
+.env
+*.env
+!*.env.example
+deploy/deploy.env
+deploy/munnin.env
+
+# Not needed to build or run the server
+tests
+qa
+plans
+docs
+control-files/tests
+control-files/archived
+
+# The container artifacts themselves
+Dockerfile
+.dockerignore
+compose.yaml

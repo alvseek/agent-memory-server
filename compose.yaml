@@ -1,0 +1,42 @@
+name: munnin
+
+services:
+  munnin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: munnin:0.1.0
+    # Loopback only. A reverse proxy on the host is the intended public face,
+    # so this must not land on every interface. The HOST port is deployment
+    # config (the host-native Munnin may already hold 8200); the container
+    # port is fixed.
+    ports:
+      - "127.0.0.1:${MUNNIN_HOST_PORT:-8200}:8200"
+    environment:
+      # 0.0.0.0 inside the container: the app's own default of 127.0.0.1 binds
+      # the container's loopback, which nothing outside it can reach.
+      MUNNIN_HOST: "0.0.0.0"
+      MUNNIN_PORT: "8200"
+      MUNNIN_USER_ID: "${MUNNIN_USER_ID:-alvi}"
+      MUNNIN_DB_PATH: /app/data/valaskjalf-memory.db
+      MUNNIN_CONTENT_ROOT: /app/control-files
+    volumes:
+      # The DIRECTORY, never the file. SQLite runs in WAL mode here, so it keeps
+      # -wal and -shm sidecars beside the database; mounting only the .db would
+      # strand them in the container and destroy them on recreation.
+      - type: volume
+        source: munnin-data
+        target: /app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  munnin-data:
+    # Named, never anonymous — an anonymous volume dies with the container.
+    # Local only: POSIX advisory locking is unreliable over NFS/CIFS, which
+    # makes a network driver under a file database a corruption path.
+    driver: local
