@@ -15,7 +15,6 @@
 | ACT — bring the uvicorn app up | [start-server.sh](start-server.sh) | exists-documented | Linked and verified running |
 | ACT — bring it down | [stop-server.sh](stop-server.sh) | exists-documented | Paired with start-server; linked and verified |
 | OBSERVE — health + endpoint smoke | [smoke-check.sh](smoke-check.sh) | exists-documented | Linked and verified running |
-| Deployment scripts (outside qa/) | [../../deploy/deploy.sh](../../deploy/deploy.sh) · [../../deploy/restart.sh](../../deploy/restart.sh) | exists-tribal | Deployment, not the QA loop — listed so a future scan does not mistake them for ACT mechanisms |
 
 ## Gaps
 
@@ -24,4 +23,4 @@
 
 ## Last scan
 
-2026-08-21 · scanned qa/scripts, deploy/, repo root
+2026-08-25 · scanned qa/scripts, repo root

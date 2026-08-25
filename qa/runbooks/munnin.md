@@ -67,7 +67,7 @@ Last run 2026-08-21 — 12 prompts swept, zero leaks.
 ## Config Switching
 All config is env-driven (`munnin.configuration.config`), defaulted for local:
 `MUNNIN_HOST` `MUNNIN_PORT` `MUNNIN_USER_ID` `MUNNIN_DB_PATH` `MUNNIN_CONTENT_ROOT` `MUNNIN_IMPORT_SOURCE`.
-Local template: [qa/config/.env.local.template](../config/.env.local.template). Deploy target = `deploy/munnin.env.example` (RackNerd, loopback `127.0.0.1:8200`, SSH tunnel).
+Local template: [qa/config/.env.local.template](../config/.env.local.template). Committed config shape = [`.env.example`](../../.env.example) at the repo root; a real deployment supplies its own values.
 
 ## Troubleshooting
 - **`/health` never comes up** → read `qa/.munnin.log`; commonly the port is taken (`MUNNIN_PORT`) or the DB dir is missing (`reset-db.sh` recreates it).

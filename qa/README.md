@@ -72,7 +72,7 @@ Every script honours `MUNNIN_DB_PATH`, `MUNNIN_IMPORT_SOURCE`, `MUNNIN_HOST` and
 There is almost nothing to switch, and that is deliberate: `configuration/config.py` ships working local defaults (`127.0.0.1:8200`, `data/valaskjalf-memory.db`, `content_root=control-files`, `user_id=alvi`), so a fresh clone runs without any config step.
 
 - **Local override**: set `MUNNIN_*` environment variables for the run. Nothing is written to disk, so nothing can be committed by accident.
-- **Deploy target**: [`deploy/munnin.env.example`](../deploy/munnin.env.example) is the committed shape for a real deployment; the real `.env` never enters git.
+- **Deploy target**: [`.env.example`](../.env.example) at the repo root is the committed shape of the configuration surface; real environment files never enter git.
 - **Invariant**: committed config = deploy target; local overrides are environment-only.
 
 ---

@@ -25,7 +25,12 @@ uv run ruff check
 
 ## Deploy
 
-RackNerd VPS, **systemd + uv, no Docker**. See `deploy/` (`munnin.service`, `deploy.sh`). Bind loopback `127.0.0.1:8200`; reach it via SSH tunnel. `MemoryMax=200M`.
+Two supported shapes, both driven by the same `MUNNIN_*` settings ([.env.example](.env.example)):
+
+- **Container** — [Dockerfile](Dockerfile) + [compose.yaml](compose.yaml). One unit, non-root, SQLite on a named volume mounted at the data *directory*.
+- **Process** — `.venv/bin/python -m munnin` under any supervisor; no uv needed at runtime.
+
+Both bind loopback by default and expect a reverse proxy or tunnel in front. Host-specific configuration and release orchestration live outside this repo.
 
 ## Status
 

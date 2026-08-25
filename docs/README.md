@@ -205,13 +205,13 @@ Both substitutions load through `content/seam_bridge.py` from their single homes
 
 GitHub Actions ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) on push + PR: checkout (recursive submodules) → `uv sync` → `uv run ruff check` → `uv run pytest -q`. Remote is `github.com/alvseek/agent-memory-server` (added 2026-08-14).
 
-`pytest` collects `tests/` only, by design: **control-files runs its own CI** on `agent-memory-system` (lint, its 38 tool tests, a strict compile of every seam procedure, and the core-invariant guard). A submodule's tests are gated by the repo that owns them, not by this one. **No deploy automation** — deploy is manual via `deploy/deploy.sh`.
+`pytest` collects `tests/` only, by design: **control-files runs its own CI** on `agent-memory-system` (lint, its 38 tool tests, a strict compile of every seam procedure, and the core-invariant guard). A submodule's tests are gated by the repo that owns them, not by this one. **No deploy automation here** — CI lints and tests but does not build the image, and release orchestration lives outside this repo.
 
 ### Infrastructure
 
-- **Runtime**: systemd unit ([deploy/munnin.service](../deploy/munnin.service)) — **systemd + uv, no Docker**; runs `.venv/bin/python -m munnin` directly (no uv needed at runtime), `Restart=on-failure`, **`MemoryMax=200M`** (hard ceiling protecting co-tenants on the 1 GB box).
+- **Runtime**: two supported shapes. **Container** — [Dockerfile](../Dockerfile) + [compose.yaml](../compose.yaml): one unit, non-root (uid 10001), `HEALTHCHECK` against `/health`, state on a named volume. **Process** — `.venv/bin/python -m munnin` under any supervisor, no uv needed at runtime. Memory ceilings and restart policy are deployment concerns, set by whatever runs it.
 - **Store**: SQLite file on local disk (`data/valaskjalf-memory.db`), WAL, **single writer** (one uvicorn worker per file).
-- **Scale trigger**: sustained swap > 700–800 MB + rising restarts → move to a bigger box (RAM check 2026-08-09: 461 MB avail).
+- **Scale trigger**: sustained swap pressure plus rising restarts means the host is undersized. The single-writer rule caps this at one process per database file, so scaling is a bigger box, not more workers.
 
 ### Rollback
 

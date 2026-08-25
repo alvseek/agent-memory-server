@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "munnin": {
-      "type": "http",
-      "url": "http://localhost:8200/mcp/"
-    }
-  }
-}

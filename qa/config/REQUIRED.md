@@ -12,5 +12,5 @@
 | `MUNNIN_IMPORT_SOURCE` | importer seed source | exists & documented | default `~/.claude/@agent-memory` (the real markdown tree) |
 
 ## Acquisition Notes
-- **No secrets, no external accounts.** v1 is single-tenant local-first; auth is the SSH tunnel at deploy (see `deploy/`).
+- **No secrets, no external accounts.** v1 is single-tenant local-first and ships no auth; a real deployment is expected to sit behind a reverse proxy or tunnel.
 - The only real precondition is that `MUNNIN_IMPORT_SOURCE` points at a valid markdown memory tree and the `control-files` submodule is checked out.

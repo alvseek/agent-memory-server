@@ -12,7 +12,7 @@
 |---|---|---|---|
 | Required-config inventory | [REQUIRED.md](REQUIRED.md) | exists-documented | In the canonical home under its canonical name |
 | Local env template | [.env.local.template](.env.local.template) | exists-documented | Placeholders only |
-| Deploy env examples (outside qa/) | [../../deploy/munnin.env.example](../../deploy/munnin.env.example) · [../../deploy/deploy.env.example](../../deploy/deploy.env.example) | exists-tribal | Deployment-scoped; not part of the QA loop's config, listed for completeness |
+| Config surface example (outside qa/) | [../../.env.example](../../.env.example) | exists-documented | The committed shape of every `MUNNIN_*` setting; not part of the QA loop's config, listed for completeness |
 | Runtime settings source | [../../src/munnin/configuration/config.py](../../src/munnin/configuration/config.py) | exists-documented | `MUNNIN_*` env vars with working defaults — the reason this project needs almost no config to start |
 
 ## Gaps
@@ -22,4 +22,4 @@
 
 ## Last scan
 
-2026-08-21 · scanned qa/config, deploy/, src/munnin/configuration
+2026-08-25 · scanned qa/config, repo root, src/munnin/configuration
