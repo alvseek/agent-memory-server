@@ -76,12 +76,12 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **type**: other
 - **scope**: shared
 - **roles**: []
-- **status**: unverified
-- **tags**: [deploy, systemd, uv, racknerd, ssh-tunnel]
-- **last_verified**: ""
-- **verified_by**: ""
-- **update_trigger**: "when the deploy topology (host, systemd unit, scripts, tunnel) or the deploy/ file set changes"
-- **notes**: "Deployment guide — systemd + uv, no Docker; loopback 127.0.0.1:8200 + SSH tunnel; MemoryMax=200M. Lists the deploy/ file set (munnin.service, deploy.sh, restart.sh, *.env.example, mcp.json.example)."
+- **status**: stale-but-valuable
+- **tags**: [deploy, systemd, uv, racknerd, ssh-tunnel, docker]
+- **last_verified**: "2026-08-25"
+- **verified_by**: "software-architect / dockerize session"
+- **update_trigger**: "when the deploy topology (host, systemd unit, scripts, tunnel) or the deploy/ file set changes; and to cover the container path now that one exists"
+- **notes**: "Deployment guide — systemd + uv; loopback 127.0.0.1:8200 + SSH tunnel; MemoryMax=200M. Lists the deploy/ file set (munnin.service, deploy.sh, restart.sh, *.env.example, mcp.json.example). Accurate for the systemd path, which is still production. Downgraded 2026-08-25: it asserts 'no Docker', and a container path now exists beside it (root Dockerfile + compose.yaml, verified locally, never run on the VPS). Repair by covering both paths, not by replacing one."
 
 ### `qa/runbooks/munnin.md`
 
