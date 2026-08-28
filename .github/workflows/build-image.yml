@@ -39,6 +39,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/alvseek/munnin
+          # Kamal refuses to boot an image without this label — it is how it
+          # recognises its own containers. Kamal adds it when it builds; here
+          # CI builds instead, so the label has to be applied at this step.
+          labels: |
+            service=munnin
           # The short commit SHA is the tag deploys and rollbacks name. It is
           # immutable, which is the only reason rollback exists at all: a tag
           # that is rebuilt in place destroys the image it replaces. `latest`
