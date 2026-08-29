@@ -59,10 +59,15 @@ def test_insert_for_a_known_agent_succeeds(tmp_path: Path) -> None:
 
 
 def test_insert_for_an_unknown_agent_is_rejected(tmp_path: Path) -> None:
-    """The test that matters. Without the pragma this insert quietly succeeds."""
+    """The test that matters. Without the pragma this insert quietly succeeds.
+
+    The repository reports it as ``ValueError`` so both faces answer 400 rather than 500,
+    but the cause is asserted too: it must be the **database** refusing, not a Python
+    pre-check. A pre-check would pass this test with the foreign keys switched off."""
     repo = _repo(tmp_path)
-    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+    with pytest.raises(ValueError, match="no agent 'ghost' exists") as caught:
         repo.insert(_rec("m2", "ghost"))
+    assert isinstance(caught.value.__cause__, sqlite3.IntegrityError)
 
 
 def test_insert_across_tenants_is_rejected(tmp_path: Path) -> None:
@@ -73,13 +78,14 @@ def test_insert_across_tenants_is_rejected(tmp_path: Path) -> None:
     mine = SqliteMemoryRepository(db, user_id="alvi")
     _seed_agent(mine, "meta")
     theirs = SqliteMemoryRepository(db, user_id="someone-else")
-    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+    with pytest.raises(ValueError, match="no agent 'meta' exists") as caught:
         theirs.insert(_rec("m3", "meta"))
+    assert isinstance(caught.value.__cause__, sqlite3.IntegrityError)
 
 
 def test_nothing_is_written_when_the_insert_is_rejected(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(ValueError):
         repo.insert(_rec("m4", "ghost"))
     assert repo.get("m4") is None
 

@@ -179,7 +179,7 @@ def test_create_then_insert_is_the_working_order(tmp_path: Path) -> None:
     creation has to come first. Before `create_agent` there was no way to do this at all
     through a face, which quietly broke `/create-agent` on the DB backend."""
     repo = _repo(tmp_path)
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(ValueError, match="exists for this account"):
         repo.insert(
             MemoryRecord(
                 uuid="i1", user_id="", agent_id="newborn",

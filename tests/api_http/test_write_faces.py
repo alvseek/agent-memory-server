@@ -12,7 +12,7 @@ from httpx import ASGITransport
 
 from munnin.app import build_app
 from munnin.configuration.config import Config
-from tests.conftest import seed_agent
+from tests.conftest import auth_for, bearer, seed_agent, seed_login
 
 
 def _client(tmp_path: Path) -> httpx.AsyncClient:
@@ -20,8 +20,11 @@ def _client(tmp_path: Path) -> httpx.AsyncClient:
     # `meta` has to exist before its memory can be written — the foreign key is the
     # point of the entity, and these tests go through the real repository.
     seed_agent(db, "meta", name="Claude Meta", role="Meta Agent")
-    app = build_app(Config(db_path=db, user_id="alvi"))
-    return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    app = build_app(Config(db_path=db, user_id="alvi"), auth=auth_for("alvi"))
+    seed_login(db)
+    return httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", headers=bearer()
+    )
 
 
 async def test_insert_get_round_trip(tmp_path: Path) -> None:

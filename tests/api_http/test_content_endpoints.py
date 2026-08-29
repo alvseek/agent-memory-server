@@ -9,13 +9,20 @@ from httpx import ASGITransport
 
 from munnin.app import build_app
 from munnin.configuration.config import Config
+from tests.conftest import auth_for, bearer, seed_login
 
 CF = Path(__file__).resolve().parents[2] / "control-files"
 
 
 def _client(tmp_path: Path) -> httpx.AsyncClient:
-    app = build_app(Config(db_path=tmp_path / "m.db", content_root=CF, user_id="alvi"))
-    return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    app = build_app(
+        Config(db_path=tmp_path / "m.db", content_root=CF, user_id="alvi"),
+        auth=auth_for("alvi"),
+    )
+    seed_login(tmp_path / "m.db")
+    return httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", headers=bearer()
+    )
 
 
 async def test_prompts_list_get_404(tmp_path: Path) -> None:

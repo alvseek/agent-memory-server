@@ -13,12 +13,12 @@ from httpx import ASGITransport
 from munnin.api_mcp.server import build_mcp
 from munnin.app import build_app
 from munnin.business_services.service_factory import ServiceFactory
-from munnin.business_services.tenant_resolver import StaticTenantResolver
 from munnin.configuration.config import load_config
+from tests.conftest import FixedTenantResolver, auth_for
 
 
 async def test_health_endpoint() -> None:
-    app = build_app()
+    app = build_app(auth=auth_for("alvi"))
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/health")
@@ -33,7 +33,7 @@ async def test_mcp_initialize_and_ping() -> None:
     # database path, and `ping` touches no store, so creating rows there would be a
     # side effect on a real developer store for no gain.
     config = load_config()
-    mcp = build_mcp(ServiceFactory(config.db_path), StaticTenantResolver(config.user_id))
+    mcp = build_mcp(ServiceFactory(config.db_path), FixedTenantResolver(config.user_id))
     async with Client(mcp) as client:  # enters = MCP initialize handshake
         tools = await client.list_tools()
         assert any(t.name == "ping" for t in tools)

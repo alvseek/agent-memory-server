@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.server.auth import AuthProvider
 
 from munnin.business_services.memory_service import MemoryService
 from munnin.business_services.service_factory import ServiceFactory
@@ -22,8 +23,15 @@ def build_mcp(
     factory: ServiceFactory,
     resolver: TenantResolver,
     content: ContentLoader | None = None,
+    auth: AuthProvider | None = None,
 ) -> FastMCP:
-    mcp: FastMCP = FastMCP("munnin")
+    """The MCP face.
+
+    ``auth`` guards every tool at the transport layer: FastMCP refuses an unverified
+    request before any tool body runs, which is why the resolver below can trust the
+    token it finds rather than re-checking it.
+    """
+    mcp: FastMCP = FastMCP("munnin", auth=auth)
 
     def _svc() -> MemoryService:
         """The service for whoever is calling right now.

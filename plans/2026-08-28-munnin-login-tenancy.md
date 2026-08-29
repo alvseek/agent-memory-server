@@ -59,10 +59,10 @@ It exists because the deployed server is live and unauthenticated, and the memor
 - Episode `2026-08-28 08.10` in [agent-memory-mcp-server-architecture.md](../../../../Users/alvia/.claude/@agent-memory/agent-software-architect/episodes/agent-memory-mcp-server-architecture.md) — the sibling session that put the server live and recorded the unauthenticated surface as a debt.
 
 ### **SUCCESS CRITERIA**
-- [ ] Two identities writing through the same running server cannot read each other's records — proved by a test, not by inspection.
-- [ ] Every route on both faces rejects an absent, expired, wrong-issuer or wrong-audience token; no endpoint is reachable unauthenticated.
-- [ ] A person who has never signed in before gets a tenant created on first arrival, and that creation is logged.
-- [ ] The existing suite still passes, with the app-level tests authenticating rather than being exempted.
+- [x] Two identities writing through the same running server cannot read each other's records — proved by a test, not by inspection.
+- [x] Every route on both faces rejects an absent, expired, wrong-issuer or wrong-audience token; no endpoint is reachable unauthenticated. *(23 operations measured: 18 API + 4 FastAPI built-ins + the MCP mount. Only `GET /health` answers, by design.)*
+- [x] A person who has never signed in before gets a tenant created on first arrival, and that creation is logged.
+- [x] The existing suite still passes, with the app-level tests authenticating rather than being exempted. *(324 tests.)*
 - [ ] A real token from the live issuer is accepted by the deployed server, and its audience is confirmed by decoding the token — not by observing that login worked.
 - [ ] `alvi` remains the internal identifier, and the reimported memory is reachable only by the identity mapped to it.
 
@@ -113,6 +113,9 @@ It exists because the deployed server is live and unauthenticated, and the memor
 | 15 | The provider class | `AuthKitProvider` | Written through, not asked: it is the only real candidate. It builds a `JWTVerifier` against AuthKit's JWKS so verification is local with no per-request outbound call, and it auto-binds the audience to the server's own URL, which turns a misconfigured resource indicator into a loud 401 rather than a silent hole. |
 | 16 | Whether this plan introduces a secret | No | Written through: a resource server verifies against a **public** JWKS and holds no client credential. The sibling session's `docker`-group boundary debt is therefore not triggered by this work. |
 | 17 | `/health` | Stays unauthenticated — the single exception to decision 13 | Written through: the Kamal configuration sets `healthcheck.path: /health`, so guarding it fails the deploy's health gate and the cutover never happens. It discloses status, service name and version only. Recorded as an exception with its reason so it does not read as an oversight later. |
+| 18 | An unset `MUNNIN_AUTHKIT_DOMAIN` | Refuse to build the app | Asked 2026-08-29, during Phase 3. A config-absent escape hatch is decision 11's refusal to disable auth under test, undone one layer down at deploy level — a missing environment variable would silently produce exactly the world-writable server this plan exists to close. Rejected defaulting to a placeholder domain (safe, since a bogus JWKS rejects every token, but it surfaces as "nobody can log in" rather than "you forgot a variable"). |
+| 20 | FastAPI's own `/openapi.json`, `/docs` and `/redoc` | Absent by default, enabled locally with `MUNNIN_DOCS` | Asked 2026-08-29. Measured answering **200 anonymously** after Step 3.3 — they are added to the app rather than to a router, so the guard cannot reach them and they can only be present or absent, never protected (a browser cannot attach a bearer token to its own page load). They disclose the API's shape rather than any memory, but Success Criterion 2 says *no endpoint is reachable unauthenticated*, and reading `/openapi.json` is exactly how the live server's original hole was found. Off by default because forgetting to disable them publishes the schema, whereas forgetting to enable them costs a developer one environment variable. |
+| 19 | Where the test-auth harness lands | Folded into Step 3.1, before enforcement is switched on | Asked 2026-08-29. As originally ordered, Steps 3.2 and 3.3 turn on rejection while Step 3.5 teaches the tests to authenticate — leaving three consecutive steps closing red against the plan's own per-step Definition of Done, on its most security-sensitive change. Building the instrument after the thing it measures means the one step that could catch a mistake runs last. Pure reordering: same work, same files, no scope change. |
 
 ---
 
@@ -222,19 +225,19 @@ sequenceDiagram
 ### Phase 1: Identity tables and the resolver
 *No authentication yet. Everything here is provable on its own.*
 
-- [ ] **Step 1.1**: The two tables, and `agent` joins the chain
+- [x] **Step 1.1**: The two tables, and `agent` joins the chain
   - **Action**: Add `user` and `user_identity` to the schema; add the foreign key from `agent` to `user`.
   - **Implementation**: `user` holds the internal id, an optional display name and email (a **label and a matching hint, never a key**), and a creation date. `user_identity` is keyed on `(iss, sub)` and references `user`. `agent` gains its reference in the same file. Because SQLite cannot retrofit a constraint, this applies to a database created fresh — the deployed volume is deleted at Phase 4.
   - **Testing**: Extend `tests/data_entities/test_schema.py` for both tables; extend `tests/data_repositories/test_foreign_keys.py` to prove an unknown `user_id` is **rejected**, not silently accepted.
   - **Success Criteria**: A fresh database has both tables, and an orphan insert raises.
 
-- [ ] **Step 1.2**: The tenant-free identity repository and service
+- [x] **Step 1.2**: The tenant-free identity repository and service
   - **Action**: Add `IdentityRepository` and `IdentityService.resolve(iss, sub) -> user_id`.
   - **Implementation**: The repository takes only a database path — **no tenant**, because it runs before a tenant is known, which is why it cannot live on `SqliteMemoryRepository`. It must set the foreign-key pragma on its own connections. The service returns an existing mapping, or creates a `user` plus a `user_identity` row and logs the creation through the existing `logger/` box, at a level that survives production settings.
   - **Testing**: New unit tests — known pair resolves; unknown pair creates exactly one user and one identity; the same unknown pair twice is idempotent; two different subjects get two different users; a creation emits a log record.
   - **Success Criteria**: All pass, and the pragma is proved on this repository's own connection rather than inherited by assumption.
 
-- [ ] **Step 1.3**: The importer ensures its user exists
+- [x] **Step 1.3**: The importer ensures its user exists
   - **Action**: Make the importer create the `user` row before upserting agents.
   - **Implementation**: `importer.py` already reads `config.user_id`; that value now names the import target. Ensure the row, then proceed unchanged.
   - **Testing**: Extend `tests/data_migrations/test_importer.py` — importing into an empty database succeeds and leaves exactly one user; importing twice stays idempotent.
@@ -243,13 +246,13 @@ sequenceDiagram
 ### Phase 2: Per-request tenancy
 *Still no authentication. The tenant becomes a parameter before it becomes a claim.*
 
-- [ ] **Step 2.1**: The service factory
+- [x] **Step 2.1**: The service factory
   - **Action**: Add `ServiceFactory` and stop building a service in `build_app`.
   - **Implementation**: The factory holds the database path and the content loader; `for_user(user_id)` returns a `MemoryService` bound to that tenant. `MemoryService` and `SqliteMemoryRepository` constructors are **unchanged**, which is what keeps the service- and repository-level tests untouched.
   - **Testing**: A factory test proving two calls with different ids yield services that cannot see each other's writes — the first form of the isolation proof.
   - **Success Criteria**: Every existing `business_services` and `data_repositories` test still passes with no edits.
 
-- [ ] **Step 2.2**: Both adapters resolve per call
+- [x] **Step 2.2**: Both adapters resolve per call
   - **Action**: Replace the captured service with a per-call resolution in all routes and all tools.
   - **Implementation**: `api_http` gains a dependency injecting the service per route; `api_mcp` tools open with one resolution line. Identity comes from a `StaticResolver(config.user_id)` — **temporary, marked temporary, deleted in Step 3.4** — so the suite stays green before verification exists.
   - **Testing**: The whole existing suite, unchanged, still green.
@@ -257,39 +260,39 @@ sequenceDiagram
 
 ### Phase 3: Verification on both faces
 
-- [ ] **Step 3.1**: The shared provider
-  - **Action**: Build `MultiAuth(server=AuthKitProvider(...))` once in `build_app`.
-  - **Implementation**: Config gains the AuthKit domain and the public base URL — no secret. Use `AuthKitProvider`, **not** `WorkOSTokenVerifier`, which calls a userinfo endpoint per request.
-  - **Testing**: A test asserting the provider's verifier is JWKS-based and its audience is bound to the configured base URL.
-  - **Success Criteria**: One provider object exists and is reachable by both adapters.
+- [x] **Step 3.1**: The shared provider, and the harness that will prove it
+  - **Action**: Build `MultiAuth(server=AuthKitProvider(...))` once in `build_app`, and give the app-driving tests a way to authenticate *before* anything starts rejecting.
+  - **Implementation**: Config gains the AuthKit domain and the public base URL — no secret. Use `AuthKitProvider`, **not** `WorkOSTokenVerifier`, which calls a userinfo endpoint per request. An unset domain raises (decision 18). `build_app` takes an `auth` override that swaps *which issuer is trusted* and never *whether* a token is checked. Per decision 19 the test harness lands here rather than at 3.5, so each later step closes green and a real regression stays visible among the expected 401s.
+  - **Testing**: The provider's verifier is JWKS-based; its audience is unbound until the mount path is known and then binds to the configured base URL **through `MultiAuth`**, which is the forwarding decision 8 rests on; an unset issuer refuses to build.
+  - **Success Criteria**: One provider object exists, is reachable by both adapters, and every app-driving test already authenticates.
 
-- [ ] **Step 3.2**: The MCP face
+- [x] **Step 3.2**: The MCP face
   - **Action**: Pass the provider as `auth=` to `FastMCP`; resolve identity from the verified token.
   - **Implementation**: Tools take issuer and subject from `get_access_token()` and pass them to `IdentityService`.
   - **Testing**: An unauthenticated tool call is rejected; an authenticated one reaches the right tenant.
   - **Success Criteria**: No tool is reachable without a valid token.
 
-- [ ] **Step 3.3**: The HTTP face, with the one exception
+- [x] **Step 3.3**: The HTTP face, with the one exception
   - **Action**: Guard every `/api/*` route, content endpoints included, through the same provider object.
   - **Implementation**: A FastAPI dependency reusing the provider's verifier — not a second verifier. **`/health` stays open** (decision 17): the Kamal health gate depends on it.
   - **Testing**: A test enumerating the app's routes and asserting every one except `/health` rejects an absent token — a route-count guard, so a future route added without a guard fails the suite.
   - **Success Criteria**: The enumeration passes and `/health` still answers unauthenticated.
 
-- [ ] **Step 3.4**: Delete the temporary resolver
+- [x] **Step 3.4**: Delete the temporary resolver
   - **Action**: Remove `StaticResolver` and every reference to it.
   - **Implementation**: Identity now comes only from a verified token.
   - **Testing**: A grep for the symbol returns nothing; the suite is green.
   - **Success Criteria**: No path exists by which a tenant is chosen without a token.
 
-- [ ] **Step 3.5**: Application-level tests authenticate
-  - **Action**: Move the five app-driving test files onto `DebugTokenVerifier`.
-  - **Implementation**: Each test presents a token carrying a chosen subject. Auth is **never** disabled under test — the tested path stays the shipped path.
-  - **Testing**: The five files pass while authenticating.
-  - **Success Criteria**: The full suite is green with verification enforced throughout.
+- [x] **Step 3.5**: Confirm nothing authenticates by accident
+  - **Action**: Sweep the suite now that enforcement is real. The migration this step used to carry happened at 3.1 (decision 19); what remains is checking that it actually bites.
+  - **Implementation**: Auth is **never** disabled under test — the tested path stays the shipped path — so the thing to verify is that removing a test's token makes it fail. A harness that silently passes unauthenticated would have hidden every guard in this phase.
+  - **Testing**: A test presenting no token, and one presenting an unknown token, are both rejected by each face.
+  - **Success Criteria**: The full suite is green with verification enforced throughout, and proven capable of going red.
 
 ### Phase 4: Prove it, then ship it
 
-- [ ] **Step 4.1**: The isolation proof
+- [x] **Step 4.1**: The isolation proof
   - **Action**: Write the test the whole plan exists to make possible.
   - **Implementation**: Through the running app, authenticate as one subject and write a record; authenticate as a second subject and attempt to read, query, search and edit it. Every attempt must fail or return nothing — including full-text search, which reaches the records by a different path than `query` and is the likeliest place for a leak to hide.
   - **Testing**: Is the test.
@@ -359,8 +362,6 @@ I have to use this document as my **ONLY** source of truth to execute and track 
   - **Success Criteria**: **Pass.** A clean import into a fresh database works with the constraint in force.
   - **Tech Debts**: None.
   - **Result**: Met.
-- [ ] **Step 1.3**: The importer ensures its user exists
-  - **Implementation Log**: · **Testing Log**: · **Success Criteria**: · **Tech Debts**: · **Result**:
 
 ### Phase 2: Per-request tenancy
 - [x] **Step 2.1**: The service factory
@@ -378,20 +379,47 @@ I have to use this document as my **ONLY** source of truth to execute and track 
   - **Result**: Met, with the success criterion corrected rather than quietly satisfied.
 
 ### Phase 3: Verification on both faces
-- [ ] **Step 3.1**: The shared provider
-  - **Implementation Log**: · **Testing Log**: · **Success Criteria**: · **Tech Debts**: · **Result**:
-- [ ] **Step 3.2**: The MCP face
-  - **Implementation Log**: · **Testing Log**: · **Success Criteria**: · **Tech Debts**: · **Result**:
-- [ ] **Step 3.3**: The HTTP face, with the one exception
-  - **Implementation Log**: · **Testing Log**: · **Success Criteria**: · **Tech Debts**: · **Result**:
-- [ ] **Step 3.4**: Delete the temporary resolver
-  - **Implementation Log**: · **Testing Log**: · **Success Criteria**: · **Tech Debts**: · **Result**:
-- [ ] **Step 3.5**: Application-level tests authenticate
-  - **Implementation Log**: · **Testing Log**: · **Success Criteria**: · **Tech Debts**: · **Result**:
+- [x] **Step 3.1**: The shared provider, and the harness that will prove it
+  - **Implementation Log**: `config.py` gained `authkit_domain` (no default) and `public_base_url`, and its docstring was rewritten rather than appended to — it still claimed "there is no auth and no login", which stopped being true two phases ago. `app.py` gained `build_auth(config)`, raising `AuthNotConfiguredError` when the domain is unset (decision 18), plus an `auth` override on `build_app` for tests. **Three facts read out of the installed `fastmcp 3.4.6` rather than its docs, each of which would have produced a wrong test if assumed**: `AuthKitProvider` binds the token audience in `set_mcp_path()`, **not** in `__init__`, so a freshly built provider legitimately has `audience is None` and a naive assertion would have tested the wrong moment; `MultiAuth.set_mcp_path` explicitly forwards to `self.server`, which is the mechanical reason decision 8's "free skeleton" claim holds; and `JWTVerifier` puts the whole decoded payload in `AccessToken.claims`, so `iss`/`sub` arrive there. **One deviation from the plan text**: decision 11 named `DebugTokenVerifier`, but it returns `claims={"token": token}` — no subject at all — so it cannot express "each test presenting a chosen subject". Used its sibling `StaticTokenVerifier` from the same package, which maps a token string to a claims dict natively. Same intent, same refusal to disable auth; the class named in the decision simply could not do what the decision asked for.
+  - **Testing Log**: New `tests/test_auth_provider.py`, 5 tests: the unset issuer refuses to build; the verifier is a `JWTVerifier` against `{domain}/oauth2/jwks` with `RS256` (the guard against reaching for `WorkOSTokenVerifier`, which sits in the same module under a more obvious name); the audience is unbound before the mount path is known; it binds to `{base_url}/mcp` **asserted through the `MultiAuth` wrapper**, since forwarding is the thing that could silently break; and no attribute holding a secret exists (decision 16). `conftest.py` gained `auth_for()` / `token_for()`, and all **7 `build_app` call sites across 5 files** now authenticate. **294 passed** (up from 289), `ruff check` clean. Two self-caught defects: my first `auth_for` import order failed `ruff check` (fixed), and the secret test contained redundant logic — `"client_secret" in name` can never be true when `"secret" in name` is false.
+  - **Success Criteria**: **Pass.** One provider object exists, is held on `app.state.auth`, and every app-driving test already authenticates — so Steps 3.2 and 3.3 are now pure wiring against a green suite.
+  - **Tech Debts**: `public_base_url` defaults to the live host, so a developer running locally verifies against a production audience unless they override it — harmless today because no local token is minted, and it will bite the moment one is. `ruff format` disagrees with 33 files repo-wide including 4 I touched; **verified pre-existing** by format-checking the `HEAD` blobs, and CI runs `ruff check` + `pytest` only, so reformatting was left alone rather than churning files this plan never needed.
+  - **Result**: Met, with the step widened by decision 19 and the verifier class corrected to one that can carry a subject.
+- [x] **Step 3.2**: The MCP face
+  - **Implementation Log**: `build_mcp` gained an `auth` parameter passed straight to `FastMCP(auth=...)`, so the guard sits at the transport and no tool body can be reached without a verified token. `tenant_resolver.py` gained `TokenTenantResolver`, which reads `get_access_token()`, takes `iss` and `sub` from its claims and hands them to `IdentityService.resolve`; its module docstring was rewritten as one description of the seam rather than having a second class appended to it. It **refuses** rather than falling back when a token carries no issuer-and-subject pair — a fallback there would pick a tenant for someone whose identity is unknown, which is the precise failure the `(iss, sub)` key exists to prevent. `build_app` now wires `TokenTenantResolver` into the MCP face while the HTTP face stays on `StaticTenantResolver` until Step 3.3, and the TEMPORARY comment moved with it so it still marks the one remaining tokenless path. **A design fact found by reading rather than assuming**: `get_access_token()` resolves through FastMCP's own request context, so it returns `None` inside a plain FastAPI route — which is why decision 7's separate HTTP dependency is a necessity rather than a stylistic choice, and why this step is MCP-only.
+  - **Testing Log**: New `tests/api_mcp/test_mcp_auth.py`, 9 tests. These drive the **mounted** app over streamable-HTTP rather than an in-memory `FastMCP`, because auth is enforced at the transport and an in-memory client sails straight past it — a test that cannot observe the guard cannot prove it. Two traps found by running: `ASGITransport` never fires lifespan events, so the MCP session manager stayed uninitialised and failed with a task-group error that looks nothing like an auth problem (fixed by entering `app.router.lifespan_context`); and a stray third-party `tests` package in site-packages shadows the repo's, which only bites standalone scripts since pytest puts the repo root first. 🚨 **A negative control was added and matters more than the rest**: every other assertion here is that something is *refused*, and a malformed request would be refused too — so an unguarded face is built and the identical call made against it, asserting it is **not** 401. Without that, all eight passing tests would have been compatible with a server that rejects everything for unrelated reasons. The tenant assertions read the **store**, not the tool's reply, because the reply would look identical if the resolver had quietly fallen back to the configured tenant. **303 passed** (up from 294), `ruff check` clean.
+  - **Success Criteria**: **Pass.** No tool is reachable without a valid token — proven on `ping` too, which touches no store and is the likeliest thing to be waved through — and an authenticated call lands in a tenant that is demonstrably not the configured one.
+  - **Tech Debts**: `TokenTenantResolver` resolves identity on **every** tool call, so a session doing twenty calls does twenty `user_identity` lookups. Each is an indexed read on a local SQLite file and the correctness argument is simply that resolution is not cached where a token could change under it — but it is the obvious thing to measure if latency ever matters.
+  - **Result**: Met. The MCP face now serves whoever holds the token and nobody else.
+- [x] **Step 3.3**: The HTTP face, with the one exception
+  - **Implementation Log**: `build_router` now takes `auth` and `identity` as **required** keyword arguments and no resolver — an unauthenticated HTTP face is not a configuration this server has, and an optional `None` would make one reachable by omission. Inside it, `_caller` verifies the bearer through **the same provider object** the MCP face holds and resolves the pair to a tenant; `_tenant_service` turns that into a `MemoryService` bound to the caller. Routes moved onto a second `APIRouter(dependencies=[Depends(_caller)])`, so the guard is declared **once** for all sixteen rather than sixteen times — a per-handler list is a thing you can forget to add to, and forgetting is silent. Paths are unchanged; `/health` stays on the open router. **Decision 6 was nearly violated and the plan caught me**: the small-diff way to keep `_svc()` working was a request-scoped context variable, and I had started designing one before re-reading that decision, which had already rejected exactly that — *"an unset value fails by reading someone else's rows."* It would have been worse than the plan knew, because all 19 handlers are **synchronous**, so FastAPI runs them in a threadpool and a leaked context variable would serve one caller another's rows while raising nothing.
+  - **Testing Log**: 🚨 **Two false-green traps found by measuring instead of assuming.** First, the handlers took `svc: Svc` where `Svc` was a local `Annotated[...]` alias — with `from __future__ import annotations` the annotation is the *string* `"Svc"`, which `get_type_hints` cannot resolve to a local, so FastAPI silently treated `svc` as a **query parameter** and every route answered 422. Fixed by the default-value form (`svc: MemoryService = Depends(_tenant_service)`), which is evaluated at definition time and needs no annotation lookup. Second, the route-coverage guard: walking `app.routes` finds **four** built-in routes and no real ones, because FastAPI keeps an included router as one opaque `_IncludedRouter` with neither `path` nor `routes` — the naive guard would have passed while checking nothing. Rewritten to read the **OpenAPI schema**, which is both public API and the authoritative surface: **17 paths / 18 operations**, matching the sibling session's audit exactly. New `tests/api_http/test_route_coverage.py` (5 tests) asserts every operation but `/health` returns 401, that `/health` still answers, a size tripwire, and a negative control on one read and one write so the file cannot pass by everything being broken. **308 passed** (up from 303), `ruff check` clean. Also completed the Step 3.1 harness, which was half-built: it made the app trust a known verifier but never made the clients *present* a token, so this step's first run was 27 red. Added `bearer()` and `seed_login()` and wired six client sites.
+  - **Success Criteria**: **Pass.** The enumeration passes and `/health` still answers unauthenticated.
+  - **Tech Debts**: 🚨 **`/openapi.json`, `/docs`, `/docs/oauth2-redirect` and `/redoc` answer 200 to an anonymous request.** They are FastAPI built-ins, so they sit outside the `/api` router the guard is attached to, and outside decision 1's wording — but Success Criterion 2 says *no endpoint is reachable unauthenticated*, so as written this plan does not yet meet it. Not data, but the complete shape of the API, and reading `/openapi.json` is exactly how the sibling session found the original hole. **Raised for decision rather than settled.** Also: `identity.resolve` runs synchronous SQLite inside an async dependency, briefly blocking the event loop — invisible on a local file, worth revisiting under Postgres.
+  - **Result**: Met for the surface the plan scoped; the built-in documentation routes are outside it and are now the only open HTTP endpoints besides `/health`.
+- [x] **Step 3.4**: Delete the temporary resolver
+  - **Implementation Log**: `StaticTenantResolver` deleted from `src/`. Production had already stopped using it at Step 3.3, so the only four references left were tests. Rather than delete those tests' ability to build a face directly, the class moved into `tests/conftest.py` as `FixedTenantResolver`, documented as a test double that is **deliberately not importable from `munnin`** — if it ever appears in the server's own dependency graph again, that is the bug it now exists to make visible. `tenant_resolver.py`'s docstring was rewritten to say there is exactly one implementation and why that is the point, rather than leaving a paragraph describing a class that no longer exists.
+  - **Testing Log**: The grep the plan asks for: `grep -rn "StaticTenantResolver" --include=*.py .` returns **nothing anywhere in the repo**, and `src/` alone likewise. **308 passed**, `ruff check` clean.
+  - **Success Criteria**: **Pass.** No path exists in the shipped server by which a tenant is chosen without a token — the resolver protocol now has one implementation and it reads a verified token.
+  - **Tech Debts**: None.
+  - **Result**: Met.
+- [x] **Step 3.5**: Confirm nothing authenticates by accident
+  - **Implementation Log**: No production code. The migration this step originally carried happened at 3.1 under decision 19, so what was left was checking the guard actually bites rather than assuming it from a green suite.
+  - **Testing Log**: Added the two HTTP rejection paths that had only been shown on the MCP face — an **unknown** token (presenting *a* token is not presenting a *valid* one), and the sharper one, a token that **verifies but names no subject**. That second branch is the one it would be tempting to paper over with a default, because the signature checks out and the caller looks legitimate while nothing says who they are; resolving it to any tenant would be guessing at an identity. Both 401. Together with the negative controls already in `test_mcp_auth.py` and `test_route_coverage.py`, every rejection assertion in this phase is now paired with a demonstration that the same call succeeds when the guard is removed or a real token is presented — so none of them can be passing for an unrelated reason. **310 passed**, `ruff check` clean.
+  - **Success Criteria**: **Pass.** The suite is green with verification enforced throughout, and proven capable of going red.
+  - **Tech Debts**: The subjectless-token test builds its own verifier inline rather than through `auth_for`, since `auth_for` always supplies a subject. Two lines, and making the helper able to omit a subject would give every future test a way to build a caller who is nobody.
+  - **Result**: Met. Phase 3 complete.
 
 ### Phase 4: Prove it, then ship it
-- [ ] **Step 4.1**: The isolation proof
-  - **Implementation Log**: · **Testing Log**: · **Success Criteria**: · **Tech Debts**: · **Result**:
+- [x] **Step 4.1**: The isolation proof
+  - **Implementation Log**: No production code was planned for this step, and one change was needed anyway — see the finding below. Also lifted `running()` and `mcp_client_for()` out of `test_mcp_auth.py` into `conftest.py`, since a second file now needs them and they are fiddly enough (lifespan plus an injected httpx factory) that two copies would drift.
+  - **Testing Log**: New `tests/test_isolation.py`, 10 tests, both faces, everything through routes a real caller has rather than by reaching into the store. Alice creates her own agent and writes a record; Bob is then **handed its uuid** — the strongest form, since it removes discovery from the question and asks only whether the tenant check holds. Bob gets 404 on `get`, `edit`, `append`, `prepend`, `archive` and `soft_delete`, empty on `query`, `search` and `list_agents`, and the same over MCP. `search` is asserted separately from `query` throughout because it reaches records through the FTS5 index rather than the browse query — a different WHERE clause, and the likeliest place for a leak to survive a change that looked safe. The negative control is first in the file: Alice can read her own record, because an absence is also what a completely broken write path produces.
+  - 🚨 **The finding**: Bob naming Alice's agent `meta` was **correctly refused by the composite foreign key** — no leak — but it escaped as an unhandled `sqlite3.IntegrityError`, so the caller got a **500 instead of the 400** the API promises. This path is newly reachable *because of this plan*: before per-request tenancy every caller was the same tenant, so naming an existing agent always succeeded. Fixed in `SqliteMemoryRepository.insert` by translating the foreign-key violation into `ValueError`, following the pattern the shared-table insert already established a few lines below — whose own comment says *"an untranslated IntegrityError reaches an agent as an opaque database string and an HTTP caller as a 500."* Four existing tests asserted the raw `IntegrityError` and were updated; two of them now also assert `__cause__` is an `IntegrityError`, so they still prove the **database** refused rather than a Python pre-check — a pre-check would pass those tests with foreign keys switched off.
+  - **Success Criteria**: **Pass.** The second subject cannot observe the first's record by any route on either face. **324 passed**, `ruff check` clean.
+  - **Tech Debts**: The proof runs against an in-process ASGI app, not a server started by `qa/scripts/start-server.sh`, so it is integration-by-substitution rather than the QA bench's own RESET → INJECT → ACT cycle. Worth re-running there once the stack is up, though the boundary it exercises — two verified identities through the mounted app — is the real one.
+  - 🚨 **A second finding, while preparing Step 4.2 — this one would have blocked login entirely.** The 401 challenge answers `WWW-Authenticate: Bearer resource_metadata="https://munnin.lok.quest/.well-known/oauth-protected-resource"`, and **that URL returned 404**. FastMCP builds its app believing it sits at `/`, so it advertises root-level metadata and keeps its own copies of the discovery routes *inside* the sub-app — which FastAPI then mounts under `/mcp`, leaving the advertised URL nowhere. A client following the standard flow (claude.ai, MCP Inspector) would fail discovery and never reach a login screen, while every test in this plan still passed and the server looked healthy. Fixed by serving `auth.get_well_known_routes()` from the FastAPI root; both URLs now agree, asserted **together** because their agreeing is the property rather than either existing. Two consequences recorded rather than left to be rediscovered: OAuth discovery is a **third deliberately open endpoint** beside `/health` (a client reads it to learn how to get a token, so requiring one would be circular — RFC 9728), and `/.well-known/oauth-authorization-server` is a **forwarder** that fetches AuthKit's metadata over the network per request, so discovery stops working if AuthKit is unreachable.
+  - 📌 **Measured for Step 4.2**: the audience Munnin binds is **`https://munnin.lok.quest/`** — with a trailing slash, and *not* `/mcp`, because `http_app(path="/")` leaves FastMCP unaware of the FastAPI mount. That exact string is what must be registered as the Resource Indicator, or every token is refused with a loud 401.
+  - **Result**: Met, and it earned its place twice over — the isolation proof found a 500-where-400 defect, and preparing the dashboard step found a discovery break that no test in the plan would have caught.
 - [ ] **Step 4.2**: Configure the issuer
   - **Implementation Log**: · **Testing Log**: · **Success Criteria**: · **Tech Debts**: · **Result**:
 - [ ] **Step 4.3**: Deploy onto a recreated volume, and decode the token
@@ -406,10 +434,23 @@ I have to use this document as my **ONLY** source of truth to execute and track 
 ## **QUALITY REVIEW**
 *Filled by procedure Step 16 (delegated to `/analyze-code-quality` in embedded mode) after all execution phases are complete. **Static** review — answers "is the code clean?".*
 
-- **Scope**: [Files reviewed — from Execution Log, reconciled against `git diff --name-only`]
-- **Quality Standard**: [quality-standard.md found / not found — dimensions applied]
-- **Findings**: [Issues found, or "No findings — implementation meets quality dimensions"]
-- **Fixed**: [What was fixed from approved findings, or "N/A"]
+- **Scope**: 19 files — 6 production (`app.py`, `api_http/api.py`, `api_mcp/server.py`, `business_services/tenant_resolver.py`, `configuration/config.py`, `data_repositories/sqlite_memory_repository.py`), 12 test, 1 plan. Reconciled against ground truth: `git diff --name-only` lists 15 and `git ls-files --others` the 4 new test files, which together match the Execution Log exactly — the four missing from the diff are new files, which `git diff` never shows, proven rather than assumed.
+- **Quality Standard**: **Not found** — no `quality-standard.md` exists in this repo, so the review is freeform and Dimension 8 (project standard compliance) is skipped. Worth noting the repo has one enforced standard regardless: `ruff check` runs in CI, and it is clean.
+- **Findings**: 4 — 0 critical, 2 medium, 2 low.
+
+  | # | Severity | Location | Issue |
+  |---|---|---|---|
+  | 1 | Medium | `app.py:99` | `app.state.auth = auth` is written and **never read**. It was load-bearing at Step 3.1, when the provider had to be "reachable by both adapters" before either consumed it; both now receive it as an explicit argument. Dead state that advertises a coupling which no longer exists, and would be the wrong place for a future reader to reach for it. |
+  | 2 | Medium | `configuration/config.py:50-59` | **No test covers `load_config()` at all** — a pre-existing gap this plan made sharper by adding three env-driven settings, two of them security-relevant: `MUNNIN_AUTHKIT_DOMAIN` decides whether the server boots, and `MUNNIN_DOCS` decides whether the API schema is public. All three fail safe under a typo (no boot, wrong audience → loud 401, docs off), which is why this is Medium rather than Critical, but the truth-table for `MUNNIN_DOCS` (`1`/`true`/`yes`) is asserted nowhere. |
+  | 3 | Low | `tenant_resolver.py:33-64` | `MissingTokenError` is raised on two branches and **caught nowhere, tested nowhere**. It exists to fail loudly if a handler is ever added outside the guard — but an unproven guard is a guard nobody knows works, and its first execution would be in production. |
+  | 4 | Low | `app.py:88-92` | The comment *"Propagate the MCP app's lifespan to the parent app."* now sits immediately above the block explaining the schema routes, so it reads as describing them. Two edits collided; the sentence lost the statement it belonged to. |
+
+  Deliberately **not** raised: `_UNAUTHENTICATED` being a module-level dict shared across three `HTTPException` raises looked like a shared-mutable risk, but Starlette copies headers into the response rather than retaining the mapping, so it is safe as written and changing it would be motion without a defect.
+- **Fixed**: All four, on [USER-NAME]'s *"proceed"* (defaults accepted). **349 passed** (up from 326), `ruff check` clean.
+  1. `app.state.auth` deleted.
+  2. New `tests/configuration/test_config.py` (16 tests) — the issuer stays empty when unset *and* an unset issuer stops the server, asserted together because an empty string is only dangerous if something downstream shrugs; plus the full `MUNNIN_DOCS` truth-table including the near-misses `off`, `maybe` and `" true"`, that last one being what a typo in a compose file looks like and the one that must not read as enabled.
+  3. New `tests/business_services/test_tenant_resolver.py` (7 tests) — both `MissingTokenError` branches, parametrised over five shapes of incomplete token. **Empty strings are included deliberately**: `{"iss": "", "sub": "x"}` is what a claim stripped by a misconfigured issuer looks like — falsy but present, which an `in claims` check would wave straight through, and the current truthiness check correctly refuses. A negative control proves a complete token still resolves, and resolves *stably* on a second call.
+  4. The lifespan comment reunited with the line it describes.
 
 ---
 
@@ -420,9 +461,9 @@ I have to use this document as my **ONLY** source of truth to execute and track 
 - **QA instrument**: [Set up (map + bench) / NOT SET UP — auto-skipped]
 - **Integration coverage**: **In scope** — bench built (all four R/I/A/O phases `documented`) and a server answers on `127.0.0.1:8200` (`/health` → HTTP 200, checked 2026-08-28). **Phase 4 Step 4.1 carries an `/integration-test` run**: the isolation proof authenticates as two subjects against a *started* server, which is integration by the substitution rule — the server is started, not constructed. Phases 1–3 do not: their boundaries are a temp SQLite the test constructs itself and a doubled token verifier, neither of which is a started system. Steps 4.3–4.5 are **live-system verification against the deployed host**, which sits above `/integration-test` and is recorded here so its absence from the integration count is not read as a gap.
   - ⚠️ **Caveat on the probe**: what answered on 8200 is most likely the long-running local instance left up since 2026-08-21, not a server started by `qa/scripts/start-server.sh`. Its database is therefore not the QA seed. Before Step 4.1, run the bench's own RESET → INJECT → ACT cycle so the isolation test starts from a known state rather than from whatever that instance holds.
-- **Checklist**: [`qa/checklists/{feature}.md`, or "none — skipped, reason"]
-- **Coverage split**: [N automated (named tests) / N manual — of which N are UI-bound]
-- **Runtime verification**: **NOT DONE.** Next action: [`/run-qa-test --checklist qa/checklists/{feature}.md` once the stack is up | set up the instrument first: `/map-qa-instrument create` → `/build-qa-bench`]
+- **Checklist**: [qa/checklists/munnin-login-tenancy.md](../qa/checklists/munnin-login-tenancy.md) — built 2026-08-29. Instrument gate passed (`qa/qa-map.md` + a built bench both present). 🚨 It carries a regression the change caused rather than found: **`qa/scripts/smoke-check.sh` will now report `SMOKE FAILED`**, because it probes `/api/awaken`, `/api/prompts`, `/api/prompts/update-episodic` and `/api/resources` with no Authorization header and all four now answer 401. Named rather than patched — the scripts belong to `/build-qa-bench`. The sharpest manual item is one no automated test can reach: **`PRAGMA foreign_key_list(agent)` against the deployed database**, because `CREATE TABLE IF NOT EXISTS` leaves a reused volume's `agent` table without the constraint, silently, and every isolation guarantee would then rest on application code alone.
+- **Coverage split**: 10 automated rows (each naming its test) / 26 manual checks. **Four of the automated rows carry an explicit gap in the Still-manual column** rather than an em-dash — the audience row is the one to read: our tests prove what Munnin *verifies against*, and nothing offline can prove what AuthKit actually *mints*. That is only knowable by decoding a real token, which is why it is a manual check and not a green tick. None are UI-bound in the usual sense; the login page is the only screen involved.
+- **Runtime verification**: **NOT DONE.** Next action: `/run-qa-test --checklist qa/checklists/munnin-login-tenancy.md` once Phase 4 has deployed and the stack is up. Note the ordering: most of this checklist cannot be walked until Steps 4.2–4.4 are complete, because it verifies a live issuer, a recreated volume and an imported store — none of which exist yet.
 
 > Do not read a filled checklist as a passed one. This section says a verification *plan* exists, nothing more.
 

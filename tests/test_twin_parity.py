@@ -15,7 +15,7 @@ from httpx import ASGITransport
 from munnin.app import build_app
 from munnin.configuration.config import Config
 from munnin.content.loader import ContentLoader
-from tests.conftest import mcp_for, seed_account, seed_agent
+from tests.conftest import auth_for, bearer, mcp_for, seed_account, seed_agent, seed_login
 
 CF = Path(__file__).resolve().parents[1] / "control-files"
 
@@ -34,8 +34,13 @@ def _mcp_content(db: Path):
 
 def _http(db: Path) -> httpx.AsyncClient:
     seed_account(db)
-    app = build_app(Config(db_path=db, content_root=CF, user_id="alvi"))
-    return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    app = build_app(
+        Config(db_path=db, content_root=CF, user_id="alvi"), auth=auth_for("alvi")
+    )
+    seed_login(db)
+    return httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test", headers=bearer()
+    )
 
 
 async def test_insert_http_get_mcp(tmp_path: Path) -> None:

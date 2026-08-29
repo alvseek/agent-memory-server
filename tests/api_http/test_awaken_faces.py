@@ -13,7 +13,7 @@ from httpx import ASGITransport
 from munnin.app import build_app
 from munnin.configuration.config import Config
 from munnin.data_entities.memory_record import MemoryRecord, RecordType, SharedRecord
-from tests.conftest import AutoAgentRepository, mcp_for
+from tests.conftest import AutoAgentRepository, auth_for, bearer, mcp_for, seed_login
 
 
 def _mk(uuid: str, agent: str, rtype: RecordType, content: str, date: str) -> MemoryRecord:
@@ -50,9 +50,12 @@ def _seed(db: Path) -> None:
 async def test_http_awaken(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     _seed(db)
-    app = build_app(Config(db_path=db, user_id="alvi"))
+    app = build_app(Config(db_path=db, user_id="alvi"), auth=auth_for("alvi"))
+    seed_login(db)
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers=bearer()
+    ) as client:
         resp = await client.get("/api/awaken", params={"agent_id": "meta"})
     assert resp.status_code == 200
     payload = resp.json()
@@ -65,9 +68,12 @@ async def test_http_awaken(tmp_path: Path) -> None:
 async def test_http_awaken_invalid_domain_400(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     _seed(db)
-    app = build_app(Config(db_path=db, user_id="alvi"))
+    app = build_app(Config(db_path=db, user_id="alvi"), auth=auth_for("alvi"))
+    seed_login(db)
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers=bearer()
+    ) as client:
         resp = await client.get("/api/awaken", params={"agent_id": "__shared__"})
     assert resp.status_code == 400
 
@@ -93,9 +99,12 @@ async def test_both_faces_carry_the_same_user_profile(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     _seed(db)
 
-    app = build_app(Config(db_path=db, user_id="alvi"))
+    app = build_app(Config(db_path=db, user_id="alvi"), auth=auth_for("alvi"))
+    seed_login(db)
     transport = ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", headers=bearer()
+    ) as client:
         http_payload = (await client.get("/api/awaken", params={"agent_id": "meta"})).json()
 
     async with Client(mcp_for(db)) as client:

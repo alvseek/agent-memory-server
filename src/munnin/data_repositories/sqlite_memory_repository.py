@@ -115,14 +115,23 @@ class SqliteMemoryRepository:
 
     def insert(self, record: MemoryRecord) -> MemoryRecord:
         """Append a new item. Idempotent UPSERT on ``uuid`` — a re-import of the
-        same content is a no-op (updates the row in place, preserves ``created_date``)."""
+        same content is a no-op (updates the row in place, preserves ``created_date``).
+
+        The composite foreign key means the agent must already exist **for this tenant**.
+        Its rejection is translated into ``ValueError``, the same way the shared table's
+        CHECK is, so both faces report it as bad input rather than as a broken server.
+        Naming an agent that exists for somebody else is the ordinary case here, not an
+        exotic one: agent ids are short and shared by convention across the fleet, so two
+        tenants both having a ``meta`` is expected and one of them asking for the other's
+        must read as "you have no such agent"."""
         created = record.created_date or _now()
         modified = record.modified_date or created
         rtype = record.record_type.value
         tags = json.dumps(record.tags or [])
         with self._conn() as conn:
-            conn.execute(
-                f"""
+            try:
+                conn.execute(
+                    f"""
                 INSERT INTO memory_record
                     ({_INSERT_COLUMNS})
                 VALUES (:uuid, :user_id, :agent_id, :record_type, :project, :title,
@@ -134,21 +143,28 @@ class SqliteMemoryRepository:
                     modified_date=excluded.modified_date, archived_date=excluded.archived_date,
                     deleted_date=excluded.deleted_date, full_content=excluded.full_content
                 """,
-                {
-                    "uuid": record.uuid,
-                    "user_id": self._user_id,
-                    "agent_id": record.agent_id,
-                    "record_type": rtype,
-                    "project": record.project,
-                    "title": record.title,
-                    "tags": tags,
-                    "created_date": created,
-                    "modified_date": modified,
-                    "archived_date": record.archived_date,
-                    "deleted_date": record.deleted_date,
-                    "full_content": record.full_content,
-                },
-            )
+                    {
+                        "uuid": record.uuid,
+                        "user_id": self._user_id,
+                        "agent_id": record.agent_id,
+                        "record_type": rtype,
+                        "project": record.project,
+                        "title": record.title,
+                        "tags": tags,
+                        "created_date": created,
+                        "modified_date": modified,
+                        "archived_date": record.archived_date,
+                        "deleted_date": record.deleted_date,
+                        "full_content": record.full_content,
+                    },
+                )
+            except sqlite3.IntegrityError as exc:
+                if "FOREIGN KEY constraint failed" in str(exc):
+                    raise ValueError(
+                        f"no agent {record.agent_id!r} exists for this account. Create it "
+                        "first, then insert its memory."
+                    ) from exc
+                raise
             row = conn.execute(
                 f"SELECT {_COLUMNS} FROM memory_record WHERE uuid=? AND user_id=?",
                 (record.uuid, self._user_id),
@@ -537,7 +553,7 @@ class SqliteMemoryRepository:
                 ON CONFLICT(user_id, agent_id) DO UPDATE SET
                     name=excluded.name, role=excluded.role, uuid=excluded.uuid
                 """,
-                {
+                    {
                     "user_id": self._user_id,
                     "agent_id": validate_domain(agent.agent_id),
                     "name": agent.name,
