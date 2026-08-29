@@ -9,6 +9,11 @@ The audience assertions call ``set_mcp_path`` explicitly. That is not a shortcut
 the real wiring — it *is* the real trigger. Binding happens there rather than in
 ``__init__``, so a freshly constructed provider legitimately has ``audience is None``, and
 a test that skipped this step would assert nothing while appearing to assert everything.
+
+Three issuer arrangements are covered rather than one, because replacing an issuer passes
+through all of them in order: AuthKit alone, both at once while the swap is in flight, and
+Logto alone at the end. The middle one carries the risk — a token that verifies against
+the old issuer must still be checked as strictly as one from the new.
 """
 
 from __future__ import annotations
@@ -16,21 +21,37 @@ from __future__ import annotations
 import pytest
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
-from munnin.app import AuthNotConfiguredError, build_auth
+from munnin.app import AuthNotConfiguredError, LogtoAuthProvider, build_auth
 from munnin.configuration.config import Config
 
 DOMAIN = "https://munnin-test.authkit.app"
+LOGTO = "https://munnin-test.logto.app"
 BASE_URL = "https://munnin.example.test"
 
 
 def _config() -> Config:
+    """AuthKit alone — what shipped, and still the shape whenever Logto is unset."""
     return Config(authkit_domain=DOMAIN, public_base_url=BASE_URL)
 
 
+def _swapping() -> Config:
+    """Mid-swap: Logto owns discovery, AuthKit still verifies its outstanding tokens."""
+    return Config(logto_endpoint=LOGTO, authkit_domain=DOMAIN, public_base_url=BASE_URL)
+
+
+def _logto_only() -> Config:
+    """The end state, once AuthKit is removed from the deploy config."""
+    return Config(logto_endpoint=LOGTO, public_base_url=BASE_URL)
+
+
 def test_missing_issuer_refuses_to_build() -> None:
-    """An unset issuer stops the server rather than quietly opening it."""
+    """No issuer at all stops the server rather than quietly opening it.
+
+    Both names have to be absent now. Checking only one would let a half-configured
+    deploy through, and a half-configured deploy is precisely what a swap creates.
+    """
     with pytest.raises(AuthNotConfiguredError):
-        build_auth(Config(authkit_domain=""))
+        build_auth(Config(authkit_domain="", logto_endpoint=""))
 
 
 def test_verifier_is_jwks_based_not_userinfo() -> None:
@@ -64,11 +85,75 @@ def test_audience_binds_to_this_server_through_multiauth() -> None:
     assert auth.server.token_verifier.audience == f"{BASE_URL}/mcp"
 
 
-def test_no_client_secret_is_held() -> None:
+@pytest.mark.parametrize("config", [_config(), _swapping(), _logto_only()])
+def test_no_client_secret_is_held(config: Config) -> None:
     """A resource server verifies with public keys only (decision 16).
 
     This is what keeps the work clear of the deploy's secret-handling boundary, so it is
-    worth failing loudly if a future provider swap starts demanding a credential.
+    worth failing loudly if a provider swap starts demanding a credential. All three
+    arrangements are checked, because the rejected alternative — ``ClerkProvider`` — is an
+    OAuth proxy that cannot be constructed without one.
     """
-    provider = build_auth(_config()).server
+    provider = build_auth(config).server
     assert [name for name in vars(provider) if "secret" in name.lower()] == []
+
+
+def test_logto_owns_discovery_once_it_is_configured() -> None:
+    """The swap's direction: whichever provider is ``server`` is where logins are sent."""
+    auth = build_auth(_swapping())
+    assert isinstance(auth.server, LogtoAuthProvider)
+    advertised = str(auth.server.authorization_servers[0]).rstrip("/")
+    assert advertised == f"{LOGTO}/oidc"
+
+
+def test_logto_verifier_is_jwks_based_with_derived_paths() -> None:
+    """Logto fixes both OIDC paths and forbids customising them, so deriving is safe."""
+    verifier = build_auth(_logto_only()).server.token_verifier
+    assert isinstance(verifier, JWTVerifier)
+    assert verifier.jwks_uri == f"{LOGTO}/oidc/jwks"
+    assert verifier.issuer == f"{LOGTO}/oidc"
+    assert verifier.algorithm == "RS256"
+
+
+def test_logto_audience_binds_to_this_server() -> None:
+    """The same late binding AuthKit gets, reimplemented because the base class has none."""
+    auth = build_auth(_logto_only())
+    auth.set_mcp_path("/mcp")
+    assert auth.server.token_verifier.audience == f"{BASE_URL}/mcp"
+
+
+def test_the_authkit_fallback_still_checks_its_audience() -> None:
+    """The trap this arrangement had to step around, and the reason for a verifier subclass.
+
+    ``MultiAuth`` does forward ``set_mcp_path`` to its verifiers, but the base
+    implementation only records the resource URL — it never tells the verifier about it.
+    A fallback built as a plain ``JWTVerifier`` would keep ``audience is None`` and accept
+    a token minted for any resource at all, while every other test in this file passed.
+    """
+    auth = build_auth(_swapping())
+    auth.set_mcp_path("/mcp")
+    assert auth.verifiers
+    assert auth.verifiers[0].audience == f"{BASE_URL}/mcp"
+
+
+def test_no_fallback_remains_once_authkit_is_removed() -> None:
+    """The end state — one issuer, and nothing left quietly trusting the retired one."""
+    assert build_auth(_logto_only()).verifiers == []
+
+
+def test_a_pinned_audience_wins_over_the_derived_one() -> None:
+    """The escape hatch for an API Identifier that is not this server's resource URL.
+
+    Logto matches a token request's ``resource`` against the registered identifier
+    character for character, and will not let that identifier be edited after creation —
+    so config has to be able to state what was actually registered.
+    """
+    auth = build_auth(
+        Config(
+            logto_endpoint=LOGTO,
+            public_base_url=BASE_URL,
+            logto_audience="https://pinned.example.test/api",
+        )
+    )
+    auth.set_mcp_path("/mcp")
+    assert auth.server.token_verifier.audience == "https://pinned.example.test/api"

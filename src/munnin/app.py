@@ -16,8 +16,10 @@ catch, applied to the one seam where drift means an open door.
 from __future__ import annotations
 
 from fastapi import FastAPI
-from fastmcp.server.auth import AuthProvider, MultiAuth
+from fastmcp.server.auth import AuthProvider, MultiAuth, RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.providers.workos import AuthKitProvider
+from pydantic import AnyHttpUrl
 
 from munnin import __version__
 from munnin.api_http.api import build_router
@@ -34,30 +36,113 @@ class AuthNotConfiguredError(RuntimeError):
     """Raised when the server is started without an issuer to verify tokens against."""
 
 
+class _ResourceBoundVerifier(JWTVerifier):
+    """A JWT verifier that binds its own audience once the mount path is known.
+
+    ``MultiAuth`` forwards ``set_mcp_path`` to every verifier it holds, but a plain
+    ``JWTVerifier`` inherits the base implementation, which records the resource URL and
+    never tells itself about it. A fallback verifier built the obvious way would therefore
+    leave ``audience`` at ``None`` and accept tokens minted for any resource at all —
+    silently, because a check that is skipped looks exactly like a check that passed.
+    """
+
+    def set_mcp_path(self, mcp_path: str | None) -> None:
+        super().set_mcp_path(mcp_path)
+        if self.audience is None and self._resource_url is not None:
+            self.audience = str(self._resource_url)
+
+
+class LogtoAuthProvider(RemoteAuthProvider):
+    """Logto as the authorization server; Munnin stays a pure resource server.
+
+    Logto ships no FastMCP provider class and needs none — the shape is a JWKS verifier
+    plus the address of whoever mints the tokens, which is all FastMCP's own
+    ``KeycloakAuthProvider`` is. Both OIDC paths are derived from the tenant endpoint
+    because Logto fixes them and does not allow either to be customised.
+
+    ``set_mcp_path`` is overridden for one reason, and omitting it would fail quietly: the
+    base class records the resource URL without passing it to the verifier, so ``audience``
+    would stay ``None`` and every token would clear the audience check by never being
+    subjected to it. ``AuthKitProvider`` overrides it for exactly this reason;
+    ``KeycloakAuthProvider`` does not, which is the trap in copying that file as-is.
+    """
+
+    def __init__(self, *, endpoint: str, base_url: str, audience: str = "") -> None:
+        oidc = f"{endpoint.rstrip('/')}/oidc"
+        self._pinned_audience = audience
+        super().__init__(
+            token_verifier=JWTVerifier(
+                jwks_uri=f"{oidc}/jwks",
+                issuer=oidc,
+                algorithm="RS256",
+                audience=audience or None,
+            ),
+            authorization_servers=[AnyHttpUrl(oidc)],
+            base_url=AnyHttpUrl(base_url.rstrip("/")),
+        )
+
+    def set_mcp_path(self, mcp_path: str | None) -> None:
+        """Bind the verifier's audience to the resource URL this server advertises."""
+        super().set_mcp_path(mcp_path)
+        if self._pinned_audience:
+            return
+        if self._resource_url is not None and isinstance(self.token_verifier, JWTVerifier):
+            self.token_verifier.audience = str(self._resource_url)
+
+
 def build_auth(config: Config) -> MultiAuth:
     """The single verifier both faces share.
 
-    ``MultiAuth`` wraps one provider today and takes a list entry to accept a second
-    issuer later — telegent's machine token is the named future occupant. With no extra
-    verifiers it behaves exactly as the provider alone, and it forwards ``set_mcp_path``
-    to the wrapped server, so the audience binding below still happens.
+    Exactly one issuer owns discovery — it is the address a client is sent to in order to
+    log in. A second one, when present, contributes verification only, and that asymmetry
+    is what makes replacing an issuer safe: new logins go to the replacement while tokens
+    the old issuer already minted keep working, so the swap needs no window in which
+    nobody can get in. Logto takes the discovery role whenever it is configured, because a
+    swap moves toward it and never back.
 
-    ``AuthKitProvider`` — never ``WorkOSTokenVerifier``, which calls a userinfo endpoint
-    on every single request. This one builds a ``JWTVerifier`` against AuthKit's public
-    JWKS, so verification is local, and binds the token audience to this server's own
-    resource URL once the mount path is known.
+    Both paths verify locally against a public JWKS. Neither ``WorkOSTokenVerifier`` nor
+    ``ClerkProvider`` appears anywhere here: both call the vendor on every single request,
+    and ``ClerkProvider`` additionally proxies OAuth, which would put a client secret on
+    the box and make this server the issuer of its own tokens.
     """
-    if not config.authkit_domain:
+    if not config.logto_endpoint and not config.authkit_domain:
         raise AuthNotConfiguredError(
-            "MUNNIN_AUTHKIT_DOMAIN is not set, so no issuer exists to verify tokens "
-            "against. Refusing to start: a server that cannot check a token is a "
-            "server that serves everyone's memory to anyone."
+            "Neither MUNNIN_LOGTO_ENDPOINT nor MUNNIN_AUTHKIT_DOMAIN is set, so no issuer "
+            "exists to verify tokens against. Refusing to start: a server that cannot "
+            "check a token is a server that serves everyone's memory to anyone."
         )
+
+    if not config.logto_endpoint:
+        return MultiAuth(
+            server=AuthKitProvider(
+                authkit_domain=config.authkit_domain,
+                base_url=config.public_base_url,
+            )
+        )
+
+    # AuthKit stays on as a verify-only fallback for as long as both are configured. It is
+    # rebuilt here rather than lifted off an ``AuthKitProvider``, because that provider
+    # binds its verifier's audience inside its own ``set_mcp_path`` — a hook nothing calls
+    # once the verifier is held directly by ``MultiAuth``.
+    fallback = (
+        [
+            _ResourceBoundVerifier(
+                jwks_uri=f"{config.authkit_domain}/oauth2/jwks",
+                issuer=config.authkit_domain,
+                algorithm="RS256",
+                base_url=config.public_base_url,
+            )
+        ]
+        if config.authkit_domain
+        else []
+    )
     return MultiAuth(
-        server=AuthKitProvider(
-            authkit_domain=config.authkit_domain,
+        server=LogtoAuthProvider(
+            endpoint=config.logto_endpoint,
             base_url=config.public_base_url,
-        )
+            audience=config.logto_audience,
+        ),
+        verifiers=fallback,
     )
 
 
