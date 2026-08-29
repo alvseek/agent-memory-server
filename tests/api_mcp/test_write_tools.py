@@ -9,14 +9,16 @@ from pathlib import Path
 
 from fastmcp import Client
 
-from munnin.api_mcp.server import build_mcp
-from munnin.business_services.memory_service import MemoryService
-from tests.conftest import AutoAgentRepository
+from tests.conftest import mcp_for, seed_agent
 
 
 def _mcp(tmp_path: Path):
-    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
-    return build_mcp(MemoryService(repo, user_id="alvi"))
+    # The face now runs over a per-tenant factory, which wires the **real** repository —
+    # so the agent these tools write to has to exist, where the auto-creating double used
+    # to invent it. Seeding it explicitly is the honest version of that precondition.
+    db = tmp_path / "m.db"
+    seed_agent(db, "meta")
+    return mcp_for(db)
 
 
 async def test_tool_surface_present(tmp_path: Path) -> None:

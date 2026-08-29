@@ -1,8 +1,13 @@
 """FastAPI adapter — the HTTP face (REST twin of the MCP surface).
 
 Exposes the full memory data-primitive surface over the shared MemoryService core:
-``/health`` + ``/api/awaken`` + the generic read/write ops. ``user_id`` is stamped
-server-side (never a request field). ``ValueError`` → 400, ``LookupError`` → 404.
+``/health`` + ``/api/awaken`` + the generic read/write ops. ``ValueError`` → 400,
+``LookupError`` → 404.
+
+The tenant is resolved **per request** rather than captured once: every handler opens by
+asking the resolver who is calling and getting a service bound to them. ``/health`` is the
+sole exception, and deliberately so — the deploy's health gate calls it unauthenticated,
+so it can have no caller identity to resolve.
 """
 
 from __future__ import annotations
@@ -13,7 +18,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
+from munnin import __version__
 from munnin.business_services.memory_service import MemoryService
+from munnin.business_services.service_factory import ServiceFactory
+from munnin.business_services.tenant_resolver import TenantResolver
 from munnin.content.loader import ContentLoader
 
 
@@ -71,18 +79,29 @@ class UuidBody(BaseModel):
     uuid: str
 
 
-def build_router(service: MemoryService, content: ContentLoader | None = None) -> APIRouter:
+def build_router(
+    factory: ServiceFactory,
+    resolver: TenantResolver,
+    content: ContentLoader | None = None,
+) -> APIRouter:
     router = APIRouter()
+
+    def _svc() -> MemoryService:
+        """The service for whoever is calling right now."""
+        return factory.for_user(resolver.current_user_id())
 
     @router.get("/health")
     def health() -> dict[str, str]:
-        return service.health()
+        # Deliberately tenant-free: the deploy's health gate reaches this without a
+        # credential, so resolving a caller here would fail the cutover. It reads nothing
+        # from the store, so there is nothing to scope.
+        return {"status": "ok", "service": "munnin", "version": __version__}
 
     @router.get("/api/awaken")
     def awaken(agent_id: str) -> dict[str, Any]:
         """Assemble + return an agent's full memory payload from the DB (M0)."""
         try:
-            return service.awaken(agent_id)
+            return _svc().awaken(agent_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -91,7 +110,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
     @router.get("/api/record/{uuid}")
     def get_record(uuid: str) -> dict[str, Any]:
         """Load one record's full body by id."""
-        record = service.get(uuid)
+        record = _svc().get(uuid)
         if record is None:
             raise HTTPException(status_code=404, detail=f"record not found: {uuid}")
         return record
@@ -106,7 +125,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
         """Filter memory by exact field values (bodies included). Omitting ``agent_id``
         also returns fleet-shared memory, whose rows carry no ``agent_id``."""
         try:
-            return service.query(
+            return _svc().query(
                 agent_id=agent_id,
                 record_type=record_type,
                 project=project,
@@ -118,12 +137,12 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
     @router.get("/api/search")
     def search(text: str, include_archived: bool = True) -> list[dict[str, Any]]:
         """Full-text (FTS5) keyword search."""
-        return service.search(text, include_archived=include_archived)
+        return _svc().search(text, include_archived=include_archived)
 
     @router.get("/api/agents")
     def list_agents() -> list[dict[str, Any]]:
         """The fleet roster — ``agent_id`` + name + role, metadata only."""
-        return service.list_agents()
+        return _svc().list_agents()
 
     # --- writes ---
 
@@ -132,7 +151,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
         """Create a new agent. 400 if the domain is invalid or already taken — creation
         never overwrites a live agent's identity."""
         try:
-            return service.create_agent(
+            return _svc().create_agent(
                 agent_id=body.agent_id, name=body.name, role=body.role, uuid=body.uuid
             )
         except ValueError as exc:
@@ -143,7 +162,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
         """Append a new item (record assembled server-side). ``scope="agent"`` (default)
         needs an ``agent_id`` that already exists; ``scope="shared"`` takes none."""
         try:
-            return service.insert(
+            return _svc().insert(
                 agent_id=body.agent_id,
                 scope=body.scope,
                 record_type=body.record_type,
@@ -160,7 +179,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
     def edit(body: EditBody) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity)."""
         try:
-            return service.edit(body.uuid, body.old_string, body.new_string, body.replace_all)
+            return _svc().edit(body.uuid, body.old_string, body.new_string, body.replace_all)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -170,7 +189,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
     def append(body: AppendBody) -> dict[str, Any]:
         """Add text verbatim to the end of a record's body."""
         try:
-            return service.append(body.uuid, body.text)
+            return _svc().append(body.uuid, body.text)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -178,7 +197,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
     def prepend(body: AppendBody) -> dict[str, Any]:
         """Add text verbatim to the start of a record's body."""
         try:
-            return service.prepend(body.uuid, body.text)
+            return _svc().prepend(body.uuid, body.text)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -186,7 +205,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
     def multi_edit(body: MultiEditBody) -> dict[str, Any]:
         """Apply a sequence of edits to one record atomically (all-or-nothing)."""
         try:
-            return service.multi_edit(body.uuid, [op.model_dump() for op in body.edits])
+            return _svc().multi_edit(body.uuid, [op.model_dump() for op in body.edits])
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
@@ -196,7 +215,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
     def archive(body: UuidBody) -> dict[str, str]:
         """Retire a record from the hot index (still searchable)."""
         try:
-            return service.archive(body.uuid)
+            return _svc().archive(body.uuid)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -204,7 +223,7 @@ def build_router(service: MemoryService, content: ContentLoader | None = None) -
     def soft_delete(body: UuidBody) -> dict[str, str]:
         """Tombstone a record (excluded from all reads)."""
         try:
-            return service.soft_delete(body.uuid)
+            return _svc().soft_delete(body.uuid)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

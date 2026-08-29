@@ -15,9 +15,11 @@ import pytest
 
 from munnin.data_entities.memory_record import Agent, MemoryRecord, RecordType
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import seed_account
 
 
 def _repo(tmp_path: Path, user_id: str = "alvi", name: str = "m.db") -> SqliteMemoryRepository:
+    seed_account(tmp_path / name, user_id)
     return SqliteMemoryRepository(tmp_path / name, user_id=user_id)
 
 
@@ -71,6 +73,8 @@ def test_an_agent_with_no_memory_is_still_an_agent(tmp_path: Path) -> None:
 def test_roster_is_tenancy_scoped(tmp_path: Path) -> None:
     """The security-critical rule: another tenant's agents are invisible."""
     db = tmp_path / "m.db"
+    seed_account(db, "someone-else")
+    seed_account(db, "alvi")
     SqliteMemoryRepository(db, user_id="someone-else").upsert_agent(_agent("hidden"))
     mine = SqliteMemoryRepository(db, user_id="alvi")
     mine.upsert_agent(_agent("meta"))
@@ -80,6 +84,8 @@ def test_roster_is_tenancy_scoped(tmp_path: Path) -> None:
 def test_same_domain_under_two_tenants_is_two_agents(tmp_path: Path) -> None:
     """The composite key is what makes this safe rather than a collision."""
     db = tmp_path / "m.db"
+    seed_account(db, "someone-else")
+    seed_account(db, "alvi")
     theirs = SqliteMemoryRepository(db, user_id="someone-else")
     theirs.upsert_agent(_agent("meta", name="Their Meta"))
     mine = SqliteMemoryRepository(db, user_id="alvi")
@@ -160,6 +166,8 @@ def test_create_agent_rejects_an_illegal_domain(tmp_path: Path) -> None:
 def test_create_agent_is_tenancy_scoped(tmp_path: Path) -> None:
     """The same domain under two tenants is two agents, so neither blocks the other."""
     db = tmp_path / "m.db"
+    seed_account(db, "alvi")
+    seed_account(db, "someone-else")
     SqliteMemoryRepository(db, user_id="alvi").create_agent(_agent("meta"))
     other = SqliteMemoryRepository(db, user_id="someone-else")
     other.create_agent(_agent("meta"))  # must not raise

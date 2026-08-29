@@ -13,11 +13,24 @@ from typing import Any
 from fastmcp import FastMCP
 
 from munnin.business_services.memory_service import MemoryService
+from munnin.business_services.service_factory import ServiceFactory
+from munnin.business_services.tenant_resolver import TenantResolver
 from munnin.content.loader import ContentLoader
 
 
-def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> FastMCP:
+def build_mcp(
+    factory: ServiceFactory,
+    resolver: TenantResolver,
+    content: ContentLoader | None = None,
+) -> FastMCP:
     mcp: FastMCP = FastMCP("munnin")
+
+    def _svc() -> MemoryService:
+        """The service for whoever is calling right now.
+
+        Called inside each tool body rather than captured when the tool is registered:
+        registration happens once at boot, and the caller is not known until the call."""
+        return factory.for_user(resolver.current_user_id())
 
     @mcp.tool
     def ping() -> str:
@@ -30,14 +43,14 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
 
         Loads the shared always-load layer + the agent's identity whole, plus the
         episodic/knowledge index and the latest episode body."""
-        return service.awaken(domain)
+        return _svc().awaken(domain)
 
     # --- reads ---
 
     @mcp.tool
     def get(uuid: str) -> dict[str, Any] | None:
         """Load one record's full body by id (None if absent/deleted)."""
-        return service.get(uuid)
+        return _svc().get(uuid)
 
     @mcp.tool
     def query(
@@ -49,7 +62,7 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         """Filter memory by exact field values, returning whole records with bodies.
         Naming an ``agent_id`` reads that agent alone; omitting it also returns
         fleet-shared memory, whose rows carry no ``agent_id``."""
-        return service.query(
+        return _svc().query(
             agent_id=agent_id,
             record_type=record_type,
             project=project,
@@ -59,14 +72,14 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
     @mcp.tool
     def search(text: str, include_archived: bool = True) -> list[dict[str, Any]]:
         """Full-text (FTS5) keyword search over content + title + tags."""
-        return service.search(text, include_archived=include_archived)
+        return _svc().search(text, include_archived=include_archived)
 
     @mcp.tool
     def list_agents() -> list[dict[str, Any]]:
         """List every agent in the fleet: ``agent_id`` + display name + one-line role.
         Metadata only, no bodies. An agent with no identity recorded comes back with
         ``name``/``role`` of ``null`` rather than being omitted."""
-        return service.list_agents()
+        return _svc().list_agents()
 
     @mcp.tool
     def create_agent(
@@ -80,7 +93,7 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         **before** inserting any of the agent's memory: memory names an owner the store
         checks, so an insert for an agent with no row is refused. ``uuid`` is the agent's
         own "digital soul" id from its identity document."""
-        return service.create_agent(agent_id=agent_id, name=name, role=role, uuid=uuid)
+        return _svc().create_agent(agent_id=agent_id, name=name, role=role, uuid=uuid)
 
     # --- writes (Edit-tool parity; record assembled server-side) ---
 
@@ -101,7 +114,7 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         episode|knowledge|identity|reasoning|emotional|user_profile, and fleet memory may
         only be reasoning, knowledge or user_profile — the profile is fleet-wide because
         who the user is does not vary by agent."""
-        return service.insert(
+        return _svc().insert(
             agent_id=agent_id,
             scope=scope,
             record_type=record_type,
@@ -117,19 +130,19 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         uuid: str, old_string: str, new_string: str, replace_all: bool = False
     ) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity)."""
-        return service.edit(uuid, old_string, new_string, replace_all)
+        return _svc().edit(uuid, old_string, new_string, replace_all)
 
     @mcp.tool
     def append(uuid: str, text: str) -> dict[str, Any]:
         """Add ``text`` to the END of a record's body. Verbatim — include your own
         leading newline(s) for spacing (e.g. a new sub-episode under a date header)."""
-        return service.append(uuid, text)
+        return _svc().append(uuid, text)
 
     @mcp.tool
     def prepend(uuid: str, text: str) -> dict[str, Any]:
         """Add ``text`` to the START of a record's body. Verbatim — include your own
         trailing newline(s) for spacing."""
-        return service.prepend(uuid, text)
+        return _svc().prepend(uuid, text)
 
     @mcp.tool
     def multi_edit(uuid: str, edits: list[dict[str, Any]]) -> dict[str, Any]:
@@ -138,17 +151,17 @@ def build_mcp(service: MemoryService, content: ContentLoader | None = None) -> F
         Each edit is a dict with ``old_string`` + ``new_string`` (+ optional
         ``replace_all``). Edits apply in order, each to the result of the previous; if
         any fails, nothing is written."""
-        return service.multi_edit(uuid, edits)
+        return _svc().multi_edit(uuid, edits)
 
     @mcp.tool
     def archive(uuid: str) -> dict[str, str]:
         """Retire a record from the hot index (still searchable on demand)."""
-        return service.archive(uuid)
+        return _svc().archive(uuid)
 
     @mcp.tool
     def soft_delete(uuid: str) -> dict[str, str]:
         """Tombstone a record (excluded from all reads)."""
-        return service.soft_delete(uuid)
+        return _svc().soft_delete(uuid)
 
     if content is not None and content.available():
         _register_content(mcp, content)

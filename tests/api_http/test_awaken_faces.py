@@ -10,12 +10,10 @@ import httpx
 from fastmcp import Client
 from httpx import ASGITransport
 
-from munnin.api_mcp.server import build_mcp
 from munnin.app import build_app
-from munnin.business_services.memory_service import MemoryService
 from munnin.configuration.config import Config
 from munnin.data_entities.memory_record import MemoryRecord, RecordType, SharedRecord
-from tests.conftest import AutoAgentRepository
+from tests.conftest import AutoAgentRepository, mcp_for
 
 
 def _mk(uuid: str, agent: str, rtype: RecordType, content: str, date: str) -> MemoryRecord:
@@ -77,8 +75,7 @@ async def test_http_awaken_invalid_domain_400(tmp_path: Path) -> None:
 async def test_mcp_awaken_tool(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     _seed(db)
-    service = MemoryService(AutoAgentRepository(db, user_id="alvi"), user_id="alvi")
-    mcp = build_mcp(service)
+    mcp = mcp_for(db)
     async with Client(mcp) as client:
         tools = {t.name for t in await client.list_tools()}
         assert "awaken" in tools
@@ -101,8 +98,7 @@ async def test_both_faces_carry_the_same_user_profile(tmp_path: Path) -> None:
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         http_payload = (await client.get("/api/awaken", params={"agent_id": "meta"})).json()
 
-    service = MemoryService(AutoAgentRepository(db, user_id="alvi"), user_id="alvi")
-    async with Client(build_mcp(service)) as client:
+    async with Client(mcp_for(db)) as client:
         mcp_payload = (await client.call_tool("awaken", {"domain": "meta"})).data
 
     assert http_payload["shared"]["user_profile"] == mcp_payload["shared"]["user_profile"]

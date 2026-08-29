@@ -12,13 +12,10 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from httpx import ASGITransport
 
-from munnin.api_mcp.server import build_mcp
 from munnin.app import build_app
-from munnin.business_services.memory_service import MemoryService
 from munnin.configuration.config import Config
 from munnin.content.loader import ContentLoader
-from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
-from tests.conftest import seed_agent
+from tests.conftest import mcp_for, seed_account, seed_agent
 
 CF = Path(__file__).resolve().parents[1] / "control-files"
 
@@ -26,18 +23,17 @@ CF = Path(__file__).resolve().parents[1] / "control-files"
 def _mcp(db: Path):
     # The **real** repository on both sides. The auto-creating double would have made
     # the MCP face conjure agent rows the HTTP face refuses to, which is precisely the
-    # kind of asymmetry a parity test exists to catch.
-    return build_mcp(MemoryService(SqliteMemoryRepository(db, user_id="alvi"), user_id="alvi"))
+    # kind of asymmetry a parity test exists to catch. Seeding the tenant is different in
+    # kind: it is the account both faces act *within*, never something either creates.
+    return mcp_for(db)
 
 
 def _mcp_content(db: Path):
-    return build_mcp(
-        MemoryService(SqliteMemoryRepository(db, user_id="alvi"), user_id="alvi"),
-        ContentLoader(CF),
-    )
+    return mcp_for(db, content=ContentLoader(CF))
 
 
 def _http(db: Path) -> httpx.AsyncClient:
+    seed_account(db)
     app = build_app(Config(db_path=db, content_root=CF, user_id="alvi"))
     return httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 

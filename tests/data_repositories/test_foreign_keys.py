@@ -17,11 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from munnin.data_entities.memory_record import MemoryRecord, RecordType
+from munnin.data_entities.memory_record import Agent, MemoryRecord, RecordType
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import seed_account
 
 
 def _repo(tmp_path: Path, user_id: str = "alvi") -> SqliteMemoryRepository:
+    seed_account(tmp_path / "m.db", user_id)
     return SqliteMemoryRepository(tmp_path / "m.db", user_id=user_id)
 
 
@@ -66,6 +68,8 @@ def test_insert_for_an_unknown_agent_is_rejected(tmp_path: Path) -> None:
 def test_insert_across_tenants_is_rejected(tmp_path: Path) -> None:
     """`meta` exists for `alvi`; another tenant's repository still cannot write to it."""
     db = tmp_path / "m.db"
+    seed_account(db, "alvi")
+    seed_account(db, "someone-else")
     mine = SqliteMemoryRepository(db, user_id="alvi")
     _seed_agent(mine, "meta")
     theirs = SqliteMemoryRepository(db, user_id="someone-else")
@@ -78,3 +82,35 @@ def test_nothing_is_written_when_the_insert_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(sqlite3.IntegrityError):
         repo.insert(_rec("m4", "ghost"))
     assert repo.get("m4") is None
+
+
+# --- the second link in the chain: an agent must name a tenant that exists ---
+
+
+def test_agent_for_an_unknown_tenant_is_rejected(tmp_path: Path) -> None:
+    """The link that makes a mistyped tenant an error instead of a new tenant.
+
+    Without it, `user_id="alvii"` would silently create a parallel store that no login
+    can ever reach — a leak of nothing, but an unbounded write surface all the same."""
+    repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="ghost-tenant")
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+        repo.upsert_agent(
+            Agent(user_id="", agent_id="meta", name="Claude Meta", role="Meta Agent")
+        )
+
+
+def test_agent_for_a_known_tenant_succeeds(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    assert repo.upsert_agent(Agent(user_id="", agent_id="meta")).agent_id == "meta"
+
+
+def test_identity_for_an_unknown_tenant_is_rejected(tmp_path: Path) -> None:
+    """`user_identity` points at `account` for the same reason: a mapping to a tenant
+    that does not exist would authenticate somebody into nothing."""
+    repo = _repo(tmp_path)
+    with repo._conn() as conn:  # noqa: SLF001 — deliberately bypassing the write path
+        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
+            conn.execute(
+                "INSERT INTO user_identity (iss, sub, user_id, linked_date)"
+                " VALUES ('https://x.authkit.app','sub_1','ghost-tenant','2026-08-28')"
+            )

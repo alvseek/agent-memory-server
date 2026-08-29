@@ -16,8 +16,10 @@ from collections import Counter
 from pathlib import Path
 
 from munnin.configuration.config import load_config
+from munnin.data_entities.identity import Account
 from munnin.data_entities.memory_record import Agent, MemoryRecord, RecordType, SharedRecord
 from munnin.data_migrations import markdown_parser as P
+from munnin.data_repositories.identity_repository import IdentityRepository
 from munnin.data_repositories.memory_repository import MemoryRepository
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 from munnin.logger.logger import get_logger
@@ -310,6 +312,12 @@ def main() -> None:
     )
     parser.add_argument("--db", default=str(config.db_path), help="target SQLite db path")
     args = parser.parse_args()
+
+    # The tenant first. An agent references an `account` row, so the chain has to be
+    # built downwards — and `MUNNIN_USER_ID` now names *which tenant this import lands
+    # in* rather than which tenant the server serves, since the server takes that from
+    # the caller's token.
+    IdentityRepository(Path(args.db)).ensure_account(Account(user_id=config.user_id))
 
     repo = SqliteMemoryRepository(Path(args.db), user_id=config.user_id)
     if args.agent and not args.all:

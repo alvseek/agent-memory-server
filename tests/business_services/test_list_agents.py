@@ -19,6 +19,7 @@ from pathlib import Path
 from munnin.business_services.memory_service import MemoryService
 from munnin.data_entities.memory_record import Agent, MemoryRecord, RecordType
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import seed_account
 
 IDENTITY = """# DOMAIN AGENT IDENTITY
 
@@ -30,6 +31,7 @@ IDENTITY = """# DOMAIN AGENT IDENTITY
 
 
 def _svc(tmp_path: Path) -> tuple[SqliteMemoryRepository, MemoryService]:
+    seed_account(tmp_path / "m.db")
     repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
     return repo, MemoryService(repo, user_id="alvi")
 
@@ -70,6 +72,7 @@ def test_agent_without_identity_is_kept(tmp_path: Path) -> None:
 
 def test_roster_is_sorted_and_tenancy_scoped(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
+    seed_account(db, "someone-else")
     other = SqliteMemoryRepository(db, user_id="someone-else")
     other.upsert_agent(Agent(user_id="", agent_id="hidden", name="Not Mine"))
     repo, svc = _svc(tmp_path)

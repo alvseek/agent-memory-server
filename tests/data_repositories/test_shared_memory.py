@@ -27,9 +27,11 @@ from munnin.data_entities.memory_record import (
     SharedRecord,
 )
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import seed_account
 
 
 def _repo(tmp_path: Path, user_id: str = "alvi") -> SqliteMemoryRepository:
+    seed_account(tmp_path / "mem.db", user_id)
     return SqliteMemoryRepository(tmp_path / "mem.db", user_id=user_id)
 
 

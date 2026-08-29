@@ -6,6 +6,7 @@ absent from the index), real knowledge bodies, project-knowledge skip.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,9 @@ from munnin.data_migrations.importer import (
     import_agent,
     import_fleet,
     import_shared,
+    main,
 )
+from munnin.data_repositories.identity_repository import IdentityRepository
 from tests.conftest import AutoAgentRepository
 
 
@@ -343,3 +346,43 @@ def test_reimporting_the_profile_updates_rather_than_duplicates(tmp_path: Path) 
     assert len(rows) == 1, "an edited profile must update the row, not add a second"
     assert rows[0].uuid == first.uuid
     assert "Alvi Widiasto" in rows[0].full_content
+
+
+# --- the entrypoint builds the ownership chain downwards (account, then agents) ---
+
+
+def test_main_creates_the_tenant_before_importing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`main` uses the real repository, not the auto-creating double, so an import into
+    a fresh database is the honest test of the new constraint: without the account row
+    the very first agent write would fail on the foreign key."""
+    src = _fake_source(tmp_path / "src")
+    db = tmp_path / "m.db"
+    monkeypatch.setattr(
+        sys, "argv", ["importer", "--source", str(src), "--db", str(db), "--all"]
+    )
+    main()
+
+    identities = IdentityRepository(db)
+    account = identities.get_account("alvi")
+    assert account is not None
+    assert account.created_date  # stamped, not left null
+
+
+def test_running_the_import_twice_leaves_one_tenant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-importing is the normal way this store is refreshed, so it must not accumulate
+    a tenant per run."""
+    src = _fake_source(tmp_path / "src")
+    db = tmp_path / "m.db"
+    monkeypatch.setattr(
+        sys, "argv", ["importer", "--source", str(src), "--db", str(db), "--all"]
+    )
+    main()
+    main()
+
+    repo = IdentityRepository(db)
+    with repo._conn() as conn:  # noqa: SLF001 — counting rows, not exercising a path
+        assert conn.execute("SELECT COUNT(*) FROM account").fetchone()[0] == 1

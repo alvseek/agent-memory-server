@@ -23,9 +23,11 @@ from munnin.data_entities.memory_record import (
     SharedRecord,
 )
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
+from tests.conftest import seed_account
 
 
 def _repo(tmp_path: Path) -> SqliteMemoryRepository:
+    seed_account(tmp_path / "m.db")
     repo = SqliteMemoryRepository(tmp_path / "m.db", user_id="alvi")
     repo.upsert_agent(Agent(user_id="", agent_id="meta", name="Claude Meta"))
     repo.insert(

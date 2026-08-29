@@ -12,9 +12,9 @@ from httpx import ASGITransport
 
 from munnin.api_mcp.server import build_mcp
 from munnin.app import build_app
-from munnin.business_services.memory_service import MemoryService
+from munnin.business_services.service_factory import ServiceFactory
+from munnin.business_services.tenant_resolver import StaticTenantResolver
 from munnin.configuration.config import load_config
-from tests.conftest import AutoAgentRepository
 
 
 async def test_health_endpoint() -> None:
@@ -28,14 +28,12 @@ async def test_health_endpoint() -> None:
     assert body["service"] == "munnin"
 
 
-def _service() -> MemoryService:
-    config = load_config()
-    repo = AutoAgentRepository(config.db_path, user_id=config.user_id)
-    return MemoryService(repo, user_id=config.user_id)
-
-
 async def test_mcp_initialize_and_ping() -> None:
-    mcp = build_mcp(_service())
+    # Built without seeding a tenant on purpose: this runs against the *configured*
+    # database path, and `ping` touches no store, so creating rows there would be a
+    # side effect on a real developer store for no gain.
+    config = load_config()
+    mcp = build_mcp(ServiceFactory(config.db_path), StaticTenantResolver(config.user_id))
     async with Client(mcp) as client:  # enters = MCP initialize handshake
         tools = await client.list_tools()
         assert any(t.name == "ping" for t in tools)

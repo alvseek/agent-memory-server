@@ -1,13 +1,41 @@
--- Valaskjalf/memory schema — three tables (arch §3; amends ADR-013 D5 for entities).
+-- Valaskjalf/memory schema — five tables (arch §3; amends ADR-013 D5 for entities).
 --
+--   account        the tenant. A person exists here because they have a row.
+--   user_identity  which issuer-and-subject pair resolves to which tenant.
 --   agent          the entity. An agent exists because it has a row.
 --   shared_record  fleet memory, owned by no agent.
 --   memory_record  shared_record + agent_id, with the owner enforced by a foreign key.
 --
 -- Applied on repository init (idempotent). FTS5 external-content indexes each memory
 -- table without duplicating its blob; a browse index serves the metadata reads.
--- NOTE: the foreign key below only fires when `PRAGMA foreign_keys = ON` is set on the
--- connection — SQLite defaults it OFF, so the repository sets it in `_conn()`.
+-- NOTE: every foreign key below only fires when `PRAGMA foreign_keys = ON` is set on the
+-- connection — SQLite defaults it OFF, so each repository sets it per connection.
+
+-- The tenant. `user_id` is ours forever and is never an issuer's subject: a subject is
+-- only unique within the issuer that minted it, so storing one here would orphan every
+-- record the day the issuer changes. The column keeps the name `user_id` because three
+-- tables below already use it and not rewriting them is the entire point of this design.
+-- `email` is a label and a matching hint, never a key — OpenID Connect permits an issuer
+-- to reassign an address to a different person, so matching on it can hand one person's
+-- memory to another.
+CREATE TABLE IF NOT EXISTS account (
+  user_id      TEXT PRIMARY KEY,
+  display_name TEXT,
+  email        TEXT,
+  created_date TEXT NOT NULL
+);
+
+-- Issuer-to-tenant mapping, keyed on the pair OpenID Connect guarantees to be stable.
+-- Two issuers may map to one person at the same time, which is what makes changing
+-- issuers an insert here rather than a rewrite of every memory record.
+CREATE TABLE IF NOT EXISTS user_identity (
+  iss         TEXT NOT NULL,            -- the authorization server that minted the token
+  sub         TEXT NOT NULL,            -- its identifier for the person; meaningless elsewhere
+  user_id     TEXT NOT NULL,
+  linked_date TEXT NOT NULL,
+  PRIMARY KEY (iss, sub),
+  FOREIGN KEY (user_id) REFERENCES account(user_id)
+);
 
 -- The agent entity. No lifecycle columns: nothing in the system retires an agent.
 CREATE TABLE IF NOT EXISTS agent (
@@ -17,7 +45,8 @@ CREATE TABLE IF NOT EXISTS agent (
   role         TEXT,                    -- **Role**, falling back to **Main Purpose**
   uuid         TEXT,                    -- the agent's own "digital soul" id — content, never a key
   created_date TEXT NOT NULL,
-  PRIMARY KEY (user_id, agent_id)
+  PRIMARY KEY (user_id, agent_id),
+  FOREIGN KEY (user_id) REFERENCES account(user_id)
 );
 
 -- Fleet-shared memory. No agent_id at all — this memory has no owner, which is why it

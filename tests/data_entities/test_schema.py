@@ -33,6 +33,8 @@ def _db() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
     conn.executescript(_DDL)
     conn.execute("PRAGMA foreign_keys = ON")
+    # The tenant first: an agent references it, so the chain has to be built downwards.
+    conn.execute("INSERT INTO account (user_id, created_date) VALUES ('alvi','2026-08-28')")
     conn.execute(
         "INSERT INTO agent VALUES ('alvi','meta','Claude Meta','Meta Agent','u1','2026-08-20')"
     )
@@ -43,10 +45,13 @@ def _names(conn: sqlite3.Connection, kind: str) -> set[str]:
     return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type=?", (kind,))}
 
 
-def test_three_tables_and_two_fts_indexes() -> None:
+_TABLES = {"account", "user_identity", "agent", "shared_record", "memory_record"}
+
+
+def test_five_tables_and_two_fts_indexes() -> None:
     conn = _db()
     tables = _names(conn, "table")
-    assert {"agent", "shared_record", "memory_record"} <= tables
+    assert _TABLES <= tables
     assert {"memory_fts", "shared_fts"} <= tables
     assert {"idx_memory_browse", "idx_shared_browse"} <= _names(conn, "index")
     # one insert/delete/update trigger per memory table
@@ -58,7 +63,43 @@ def test_schema_is_idempotent() -> None:
     conn = sqlite3.connect(":memory:")
     conn.executescript(_DDL)
     conn.executescript(_DDL)
-    assert {"agent", "shared_record", "memory_record"} <= _names(conn, "table")
+    assert _TABLES <= _names(conn, "table")
+
+
+# --- the identity pair: a tenant, and which issuer-and-subject resolves to it ---
+
+
+def test_one_person_may_hold_several_identities() -> None:
+    """Two issuers mapping to one tenant at the same time is what makes changing
+    issuers an insert here rather than a rewrite of every memory record."""
+    conn = _db()
+    conn.execute(
+        "INSERT INTO user_identity VALUES ('https://a.authkit.app','sub_a','alvi','d')"
+    )
+    conn.execute(
+        "INSERT INTO user_identity VALUES ('https://b.supabase.co/auth/v1','uuid-b','alvi','d')"
+    )
+    rows = conn.execute(
+        "SELECT user_id FROM user_identity ORDER BY iss"
+    ).fetchall()
+    assert [r[0] for r in rows] == ["alvi", "alvi"]
+
+
+def test_the_same_subject_string_under_two_issuers_is_two_identities() -> None:
+    """Keyed on the pair, never on the subject alone — a subject is only unique within
+    the issuer that minted it, so two issuers may legitimately emit the same string."""
+    conn = _db()
+    conn.execute("INSERT INTO account (user_id, created_date) VALUES ('other','d')")
+    conn.execute("INSERT INTO user_identity VALUES ('https://a.example','same','alvi','d')")
+    conn.execute("INSERT INTO user_identity VALUES ('https://b.example','same','other','d')")
+    assert conn.execute("SELECT COUNT(*) FROM user_identity").fetchone()[0] == 2
+
+
+def test_the_same_pair_cannot_map_twice() -> None:
+    conn = _db()
+    conn.execute("INSERT INTO user_identity VALUES ('https://a.example','sub_a','alvi','d')")
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("INSERT INTO user_identity VALUES ('https://a.example','sub_a','alvi','d')")
 
 
 @pytest.mark.parametrize("rtype", ["reasoning", "knowledge", "user_profile"])
