@@ -66,6 +66,54 @@ def test_unknown_prompt_raises(loader: ContentLoader) -> None:
         loader.get_prompt("does-not-exist")
 
 
+def test_prompt_descriptions_are_distinct_and_read_from_the_procedures(
+    loader: ContentLoader,
+) -> None:
+    described = {name: loader.describe_prompt(name) for name in loader.list_prompts()}
+    assert len(described) == 12
+    # a command menu is only readable if its rows differ — one templated sentence with
+    # the name swapped in gives twelve entries that all say the same thing
+    assert len(set(described.values())) == 12
+    assert described["awaken-agent"] == "Load agent memory and activate a domain-specific agent."
+    assert described["update-episodic"] == "Capture session context as rolling per-theme episodes."
+
+
+def test_prompt_description_stops_before_the_storage_caveat(loader: ContentLoader) -> None:
+    # every procedure names its storage backend in a *later* sentence, so this fails
+    # loudly if the first-sentence cut ever stops working
+    for name in loader.list_prompts():
+        assert "storage backend" not in loader.describe_prompt(name)
+
+
+def test_prompt_description_is_plain_text(loader: ContentLoader) -> None:
+    # descriptions travel as a plain string, where `**bold**` arrives as literal asterisks
+    for name in loader.list_prompts():
+        description = loader.describe_prompt(name)
+        assert "**" not in description
+        assert "`" not in description
+        assert "](" not in description
+        assert "\n" not in description
+        assert description == description.strip()
+
+
+def test_describe_unknown_prompt_raises(loader: ContentLoader) -> None:
+    with pytest.raises(KeyError):
+        loader.describe_prompt("does-not-exist")
+
+
+def test_prompt_with_no_prose_falls_back_to_naming_itself(tmp_path: Path) -> None:
+    root = tmp_path / "control-files"
+    proc = root / "procedures" / "memory"
+    proc.mkdir(parents=True)
+    (proc / "update-episodic.md").write_text(
+        "# Update Episodic\n", encoding="utf-8", newline="\n"
+    )
+    assert (
+        ContentLoader(root).describe_prompt("update-episodic")
+        == "Memory procedure 'update-episodic'."
+    )
+
+
 def test_resources_include_block_templates(loader: ContentLoader) -> None:
     res = loader.list_resources()
     for stem in (

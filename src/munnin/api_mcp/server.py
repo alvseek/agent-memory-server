@@ -196,7 +196,7 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
     for name in content.list_prompts():
         mcp.prompt(
             name=name,
-            description=f"Memory procedure '{name}' — how-to for the DB-backed memory tools.",
+            description=content.describe_prompt(name),
         )(_make_prompt(name))
 
     def _make_resource(template: str):

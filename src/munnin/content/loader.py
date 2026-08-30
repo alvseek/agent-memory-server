@@ -2,7 +2,9 @@
 
 Procedures are served as MCP **Prompts** (the "how-to" an agent reads before calling
 the data tools); templates as MCP **Resources**. Content is read **live** from the
-submodule on each request — single source of truth, no re-import on edit.
+submodule on each request — single source of truth, no re-import on edit. That extends
+to the one-line description a client shows for each Prompt, which is the procedure's own
+opening sentence rather than an authored copy that could drift from it.
 
 Each served procedure is storage-agnostic (a semantic core + a ``## Storage Mechanics``
 seam). ``get_prompt`` composes the core with the **db** backend section so a Munnin
@@ -24,12 +26,17 @@ Prompt are byte-identical.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from munnin.content.seam_bridge import component_inline, seam_compose
 from munnin.logger.logger import get_logger
 
 _log = get_logger("content.loader")
+
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_MD_EMPHASIS = re.compile(r"\*\*|\*|`")
+_FIRST_SENTENCE = re.compile(r"(.+?[.!?])(?:\s|$)")
 
 # Served memory procedures: prompt name -> path under content_root.
 _PROMPTS: dict[str, str] = {
@@ -54,6 +61,28 @@ _COMPONENTS_DIR = "procedures/components"
 _RESOURCE_EXCLUDE = {"episodic-memory-template"}
 
 
+def _lead_sentence(text: str) -> str:
+    """The first sentence of a procedure's opening paragraph, as plain prose.
+
+    Every procedure opens with its ``#`` title and then a paragraph whose first
+    sentence says what the procedure is for; the storage-backend caveat is always a
+    later sentence, so stopping at the first one drops the part no client needs.
+    Markdown emphasis and links are flattened because this text is delivered as a
+    plain description, where ``**bold**`` would arrive as literal asterisks.
+
+    Returns ``""`` when there is no prose paragraph to read.
+    """
+    body = text.replace("\r\n", "\n")
+    for block in body.split("\n\n"):
+        paragraph = " ".join(block.split())
+        if not paragraph or paragraph.startswith("#"):
+            continue
+        match = _FIRST_SENTENCE.match(paragraph)
+        sentence = match.group(1) if match else paragraph
+        return _MD_EMPHASIS.sub("", _MD_LINK.sub(r"\1", sentence)).strip()
+    return ""
+
+
 class ContentLoader:
     """Reads + composes served framework content from the control-files submodule."""
 
@@ -72,6 +101,24 @@ class ContentLoader:
     def list_prompts(self) -> list[str]:
         """The served procedure names (only those present on disk)."""
         return sorted(name for name, rel in _PROMPTS.items() if (self._root / rel).exists())
+
+    def describe_prompt(self, name: str) -> str:
+        """A one-line purpose for a served procedure, read from the procedure itself.
+
+        Descriptions are what a client shows in its command menu, so twelve procedures
+        sharing one templated sentence leaves the menu unable to tell them apart.
+        Reading each procedure's own opening sentence fixes that and keeps the two from
+        drifting: editing the procedure is the only way to change what clients are told
+        about it, and there is no second copy to forget.
+
+        Falls back to naming the procedure when it carries no prose to read. Raises
+        ``KeyError`` for an unknown prompt name, as ``get_prompt`` does.
+        """
+        rel = _PROMPTS.get(name)
+        if rel is None:
+            raise KeyError(f"unknown prompt: {name}")
+        lead = _lead_sentence((self._root / rel).read_text(encoding="utf-8"))
+        return lead or f"Memory procedure '{name}'."
 
     def _inlined(self, text: str) -> tuple[str, tuple[str, ...]]:
         """Inline every component reference; returns ``(text, components used)``.
