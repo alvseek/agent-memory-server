@@ -65,7 +65,22 @@ class LogtoAuthProvider(RemoteAuthProvider):
     would stay ``None`` and every token would clear the audience check by never being
     subjected to it. ``AuthKitProvider`` overrides it for exactly this reason;
     ``KeycloakAuthProvider`` does not, which is the trap in copying that file as-is.
+
+    ``scopes_supported`` is passed for a symmetrical reason, and omitting it also failed
+    quietly. A client builds its authorization request from what this server advertises in
+    its protected-resource metadata, so an empty list tells the client to ask for nothing —
+    and an authorization request carrying a resource but no scopes leaves the issuer with
+    nothing to grant, which Logto answers with ``access_denied`` *after* the person has
+    already signed in. Nothing in the server logs an error; the failure looks like a
+    refused login. ``KeycloakAuthProvider`` defaults to ``["openid"]`` for this reason and
+    the original copy dropped it.
     """
+
+    #: Advertised so clients know what to ask for. ``openid`` is what makes it an OIDC
+    #: request at all; ``profile`` and ``email`` populate the label on an account row;
+    #: ``offline_access`` buys a refresh token, without which a connector silently stops
+    #: working whenever the access token expires.
+    DEFAULT_SCOPES = ("openid", "profile", "email", "offline_access")
 
     def __init__(self, *, endpoint: str, base_url: str, audience: str = "") -> None:
         oidc = f"{endpoint.rstrip('/')}/oidc"
@@ -79,6 +94,11 @@ class LogtoAuthProvider(RemoteAuthProvider):
             ),
             authorization_servers=[AnyHttpUrl(oidc)],
             base_url=AnyHttpUrl(base_url.rstrip("/")),
+            # Advertised, deliberately not required. Enforcing ``openid`` on an incoming
+            # token adds a rejection path while proving almost nothing — every OIDC token
+            # carries it — and the access control that matters here is the audience check
+            # plus tenant resolution, both of which already run.
+            scopes_supported=list(self.DEFAULT_SCOPES),
         )
 
     def set_mcp_path(self, mcp_path: str | None) -> None:

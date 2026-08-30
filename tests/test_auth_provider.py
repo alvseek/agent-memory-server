@@ -157,3 +157,36 @@ def test_a_pinned_audience_wins_over_the_derived_one() -> None:
     )
     auth.set_mcp_path("/mcp")
     assert auth.server.token_verifier.audience == "https://pinned.example.test/api"
+
+
+def test_scopes_are_advertised_so_a_client_knows_what_to_ask_for() -> None:
+    """A client builds its authorization request from what we advertise.
+
+    Advertising nothing made Claude send an authorization request carrying a resource
+    and no scopes, which left Logto nothing to grant and produced ``access_denied``
+    *after* a successful sign-in — with no error logged anywhere. The empty list was
+    the whole defect, so it is pinned here rather than left to be re-omitted.
+    """
+    provider = LogtoAuthProvider(
+        endpoint="https://auth.lok.quest",
+        base_url="https://munnin.lok.quest",
+    )
+    assert provider._scopes_supported == ["openid", "profile", "email", "offline_access"]
+    assert "openid" in provider._scopes_supported, (
+        "openid is what makes this an OIDC request at all"
+    )
+
+
+def test_scopes_are_advertised_but_not_required() -> None:
+    """Advertising is the fix; enforcing would add a rejection path worth nothing.
+
+    Every OIDC token carries ``openid``, so requiring it proves almost nothing, while
+    the checks that do carry weight — audience binding and tenant resolution — already
+    run on every request.
+    """
+    provider = LogtoAuthProvider(
+        endpoint="https://auth.lok.quest",
+        base_url="https://munnin.lok.quest",
+    )
+    assert not provider.required_scopes
+    assert not provider.token_verifier.required_scopes
