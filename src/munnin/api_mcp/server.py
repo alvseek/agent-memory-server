@@ -1,9 +1,12 @@
 """FastMCP adapter — the agent-facing MCP face (streamable-HTTP transport).
 
 Exposes the full memory data-primitive surface as tools (twin of the HTTP face)
-over the shared MemoryService core. The 1:1 memory *procedures* (update_episodic,
-add_reasoning, ...) are served separately as MCP Prompts/Resources in SP-5 — these
-tools are the data operations those procedures instruct the agent to call.
+over the shared MemoryService core. The memory *procedures* (update-episodic,
+add-reasoning, ...) are served as MCP Prompts and the templates as Resources — and both
+again as tools (``read_procedure`` / ``read_resource``), because a Prompt is user-invoked
+and a Resource client-attached, while a tool is the one primitive the protocol lets the
+agent itself call. The data tools are the operations those procedures instruct the agent
+to call.
 """
 
 from __future__ import annotations
@@ -179,11 +182,16 @@ def build_mcp(
 
 
 def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
-    """Register served memory procedures as Prompts + templates as Resources.
+    """Register served procedures as Prompts, templates as Resources — and both as tools.
 
-    Both are read live from the control-files submodule; procedures are composed
-    with the db storage backend so the served text speaks DB tools, not markdown
-    files. The twin of these is the FastAPI ``/api/prompts`` + ``/api/resources``.
+    All read live from the control-files submodule; procedures are composed with the db
+    storage backend so the served text speaks DB tools, not markdown files. The twin of
+    these is the FastAPI ``/api/prompts`` + ``/api/resources``.
+
+    The tools are the same content through a door the agent can open itself. A served
+    procedure that says "execute ``/wrap-up``" is addressed to an agent with no picker to
+    run it from; ``read_procedure("wrap-up")`` is what that instruction resolves to on
+    this backend (the rule rides in the awakening procedure's db mechanics).
     """
     def _make_prompt(procedure: str, argument: tuple[str, str] | None):
         # FastMCP derives a prompt's arguments from the function signature, so a procedure
@@ -198,6 +206,13 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
 
         fn.__name__ = procedure.replace("-", "_")
         if argument is None:
+            # A bare signature, or FastMCP sees the raw ``**kwargs`` and refuses the prompt.
+            # This branch was never reached until the first argument-less procedure was
+            # served (``wait-options``, a format reference that takes nothing).
+            fn.__annotations__ = {"return": str}
+            fn.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+                [], return_annotation=str
+            )
             return fn
         arg_name, arg_help = argument
         fn.__doc__ = f"{procedure}\n\nArgs:\n    {arg_name}: {arg_help}\n"
@@ -241,3 +256,77 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
             # which would take these out of a picker where they do belong.
             annotations={"audience": ["assistant"], "priority": 0.1},
         )(_make_resource(name))
+
+    # --- the same content as tools: the one primitive the agent may invoke itself ---
+
+    def _not_served(kind: str, name: str, listing: str) -> dict[str, Any]:
+        # A tool's caller is an agent typing whatever a procedure told it to type, so an
+        # unknown name is an answer to give, not an error to raise — the raise is right
+        # for the Prompt surface, where a client can only ask for a registered name.
+        return {
+            "served": False,
+            "name": name,
+            "note": f"no served {kind} named {name!r}; call {listing} to see what is",
+        }
+
+    @mcp.tool
+    def list_procedures() -> list[dict[str, str]]:
+        """List the framework procedures this server serves — name, title, one-line purpose.
+
+        A procedure is the how-to an agent follows before calling the data tools. Read one
+        with read_procedure(name).
+        """
+        return [
+            {
+                "name": name,
+                "title": content.title_prompt(name),
+                "description": content.describe_prompt(name),
+            }
+            for name in content.list_prompts()
+        ]
+
+    @mcp.tool
+    def read_procedure(name: str, argument: str | None = None) -> dict[str, Any]:
+        """Read a served framework procedure, composed for this server's storage backend.
+
+        Use this whenever a procedure or instruction tells you to execute, invoke or run a
+        slash command such as `/wrap-up`: call read_procedure("wrap-up") instead of the
+        slash command and follow what it returns. `argument` fills the procedure's
+        $ARGUMENTS slot (the domain for awaken-agent, a mode for wrap-up). A name that is
+        not served returns served=false rather than an error.
+        """
+        try:
+            text = content.get_prompt(name, argument)
+        except KeyError:
+            return _not_served("procedure", name, "list_procedures()")
+        return {"served": True, "name": name, "content": text}
+
+    @mcp.tool
+    def list_resources() -> list[dict[str, str]]:
+        """List the framework templates this server serves — name, title, one-line purpose.
+
+        A template is the format of one memory entry, filled in when that layer is written.
+        Read one with read_resource(name).
+        """
+        return [
+            {
+                "name": name,
+                "title": content.title_resource(name),
+                "description": content.describe_resource(name),
+            }
+            for name in content.list_resources()
+        ]
+
+    @mcp.tool
+    def read_resource(name: str) -> dict[str, Any]:
+        """Read a served framework template verbatim.
+
+        Use this when a procedure points at a template by relative path — a reference to
+        `resources/episodic-entry-template.md` is read_resource("episodic-entry-template").
+        A name that is not served returns served=false rather than an error.
+        """
+        try:
+            text = content.get_resource(name)
+        except KeyError:
+            return _not_served("resource", name, "list_resources()")
+        return {"served": True, "name": name, "content": text}

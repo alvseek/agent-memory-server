@@ -20,15 +20,18 @@ def loader() -> ContentLoader:
 
 def test_lists_served_prompts(loader: ContentLoader) -> None:
     names = loader.list_prompts()
-    assert len(names) == 12
+    assert len(names) == 13
     assert "update-episodic" in names
     assert "wrap-up" in names
     assert "create-agent" in names
     assert "list-agents" in names
     # the awakening protocol is not a record, so it rides in a Prompt
     assert "awaken-agent" in names
+    # a format reference with no storage seam: in the command set, so served — as-is
+    assert "wait-options" in names
     # intentionally NOT served (the DB write is durable / markdown-recovery)
     assert "push-memory" not in names
+    assert "pull-memory" not in names
     assert "refresh-memory" not in names
 
 
@@ -70,10 +73,10 @@ def test_prompt_descriptions_are_distinct_and_read_from_the_procedures(
     loader: ContentLoader,
 ) -> None:
     described = {name: loader.describe_prompt(name) for name in loader.list_prompts()}
-    assert len(described) == 12
+    assert len(described) == 13
     # a command menu is only readable if its rows differ — one templated sentence with
     # the name swapped in gives twelve entries that all say the same thing
-    assert len(set(described.values())) == 12
+    assert len(set(described.values())) == 13
     assert described["awaken-agent"] == "Load agent memory and activate a domain-specific agent."
     assert described["update-episodic"] == "Capture session context as rolling per-theme episodes."
 
@@ -105,6 +108,7 @@ def test_prompt_with_no_prose_falls_back_to_naming_itself(tmp_path: Path) -> Non
     root = tmp_path / "control-files"
     proc = root / "procedures" / "memory"
     proc.mkdir(parents=True)
+    _install_framework_modules(root)
     (proc / "update-episodic.md").write_text(
         "# Update Episodic\n", encoding="utf-8", newline="\n"
     )
@@ -116,7 +120,7 @@ def test_prompt_with_no_prose_falls_back_to_naming_itself(tmp_path: Path) -> Non
 
 def test_every_prompt_has_a_title_from_its_own_heading(loader: ContentLoader) -> None:
     titles = {name: loader.title_prompt(name) for name in loader.list_prompts()}
-    assert len(set(titles.values())) == 12
+    assert len(set(titles.values())) == 13
     assert titles["awaken-agent"] == "Awaken Agent"
     assert titles["wrap-up"] == "Wrap Up Session"
     # a title is a display name, never the slug it replaces
@@ -125,9 +129,11 @@ def test_every_prompt_has_a_title_from_its_own_heading(loader: ContentLoader) ->
         assert "**" not in title and "#" not in title
 
 
-def test_every_prompt_declares_its_optional_argument(loader: ContentLoader) -> None:
-    for name in loader.list_prompts():
-        argument = loader.argument_prompt(name)
+def test_every_procedure_declares_its_optional_argument(loader: ContentLoader) -> None:
+    declared = {name: loader.argument_prompt(name) for name in loader.list_prompts()}
+    # a format reference is read, never invoked with a subject — it takes nothing
+    assert declared.pop("wait-options") is None
+    for name, argument in declared.items():
         assert argument is not None, f"{name} declares no argument"
         arg_name, arg_help = argument
         # a parameter name has to be a legal python identifier or the signature won't build
@@ -205,6 +211,79 @@ def test_missing_submodule_is_graceful() -> None:
     assert loader.list_resources() == []
 
 
+# --- discovery: the served set is the framework's command set, never a list kept here ---
+
+
+def _install_framework_modules(root: Path) -> None:
+    """The framework's own modules copied into a synthetic tree — imported, never stubbed,
+    so a synthetic tree composes and discovers through the same single-homed logic."""
+    proc = root / "procedures"
+    backends = proc / "memory" / "storage-backends"
+    comp = proc / "components"
+    for d in (proc, backends, comp):
+        d.mkdir(parents=True, exist_ok=True)
+    shutil.copy(CF / "procedures" / "command_set.py", proc)
+    shutil.copy(CF / "procedures" / "memory" / "storage-backends" / "seam.py", backends)
+    shutil.copy(CF / "procedures" / "components" / "inline.py", comp)
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def test_served_set_is_discovered_from_the_command_dirs(tmp_path: Path) -> None:
+    """No name is listed anywhere: a file dropped into a command dir is served, one in the
+    exclusion set is not, and one in a non-command dir (``components/``) never is."""
+    root = tmp_path / "control-files"
+    _install_framework_modules(root)
+    proc = root / "procedures"
+    _write(proc / "brand-new.md", "# Brand New\n\nA procedure nobody listed.\n")
+    _write(proc / "memory" / "deeper-new.md", "# Deeper New\n\nAlso unlisted.\n")
+    _write(proc / "push-memory.md", "# Push\n\nExcluded by policy.\n")
+    _write(proc / "components" / "fragment.md", "# Fragment\n\nInlined, never served.\n")
+
+    loader = ContentLoader(root)
+    assert loader.list_prompts() == ["brand-new", "deeper-new"]
+    assert loader.describe_prompt("brand-new") == "A procedure nobody listed."
+    # no seam and no db backend in this tree: the core is served as-is
+    assert loader.get_prompt("deeper-new") == "# Deeper New\n\nAlso unlisted.\n"
+    with pytest.raises(KeyError):
+        loader.get_prompt("push-memory")
+    with pytest.raises(KeyError):
+        loader.get_prompt("fragment")
+
+
+def test_duplicate_command_stem_is_refused(tmp_path: Path) -> None:
+    """A command is addressed by its stem alone, so two files sharing one could only be
+    resolved by a precedence rule nobody stated — refuse rather than pick."""
+    root = tmp_path / "control-files"
+    _install_framework_modules(root)
+    _write(root / "procedures" / "same.md", "# Same\n\nTop-level.\n")
+    _write(root / "procedures" / "memory" / "same.md", "# Same\n\nNested.\n")
+    with pytest.raises(ValueError, match="duplicate command stem"):
+        ContentLoader(root).list_prompts()
+
+
+def test_seamless_procedure_is_served_as_its_own_core(loader: ContentLoader) -> None:
+    """``wait-options`` carries no ``## Storage Mechanics`` — a format reference with no
+    storage dimension — so the served text is the file itself, on either backend."""
+    served = loader.get_prompt("wait-options")
+    source = (CF / "procedures" / "wait-options.md").read_text(encoding="utf-8")
+    assert served == source
+    assert "## Storage Mechanics" not in served
+
+
+def test_lead_sentence_does_not_end_inside_a_parenthetical(loader: ContentLoader) -> None:
+    # the WAIT Options reference opens with a question mark inside brackets; a sentence
+    # boundary inside a parenthetical is not a sentence boundary
+    described = loader.describe_prompt("wait-options")
+    assert described.startswith(
+        "Reusable format definition for WAIT Options (What Am I Thinking? Options)"
+    )
+    assert described.endswith("collecting an answer.")
+
+
 def test_awaken_agent_prompt_stands_alone(loader: ContentLoader) -> None:
     """Prompt 12. ``awaken`` returns the memory; this Prompt carries the protocol for
     using it — so the served text has to work with no filesystem and no dangling links.
@@ -234,7 +313,7 @@ def test_awaken_agent_prompt_stands_alone(loader: ContentLoader) -> None:
 # `awaken-agent` exercises this for real against the submodule (see the served-text test
 # above); the synthetic tree here isolates the shape from that one procedure's content, so
 # a change to the awakening protocol cannot quietly take the mechanism's only coverage
-# with it. Both framework modules are copied in and imported from the tree, never stubbed,
+# with it. The framework modules are copied in and imported from the tree, never stubbed,
 # so this composes through the same single-homed logic the real submodule serves.
 
 
@@ -247,8 +326,7 @@ def _synthetic_root(tmp_path: Path) -> Path:
     backends = proc / "storage-backends"
     for d in (proc, comp, backends):
         d.mkdir(parents=True, exist_ok=True)
-    shutil.copy(CF / "procedures" / "memory" / "storage-backends" / "seam.py", backends)
-    shutil.copy(CF / "procedures" / "components" / "inline.py", comp)
+    _install_framework_modules(root)
 
     (comp / "shared-fragment.md").write_text(
         "# Shared Fragment\n\nA component, not a standalone skill.\n\n---\n\n"

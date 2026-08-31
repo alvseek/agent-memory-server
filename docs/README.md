@@ -123,8 +123,8 @@ All optional — defaults are local-first. Override with `MUNNIN_*`:
 
 ### MCP surface (agent face)
 
-- **Tools** (14 — data primitives plus agent lifecycle): `ping`, `awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`, `create_agent`, `list_agents`
-- **Prompts** (12 procedures, composed with the DB backend — the "how-to" before calling the tools): `update-episodic`, `add-reasoning`, `update-emotional`, `update-knowledge`, `load-episodic`, `load-knowledge`, `archive-old-memories`, `update-memory`, `wrap-up`, `create-agent`, `list-agents`, `awaken-agent` — the last carrying the awakening protocol itself, since `awaken` returns the memory but not the process for using it
+- **Tools** (18 — data primitives, agent lifecycle, and the framework content): `ping`, `awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`, `create_agent`, `list_agents`, plus `list_procedures`, `read_procedure`, `list_resources`, `read_resource` — the served procedures and templates a second way, because a Prompt is user-invoked and a Resource client-attached while a tool is the one primitive the agent may call itself. A served procedure that says "execute `/wrap-up`" resolves to `read_procedure("wrap-up")` on this backend; that rule rides in the awakening procedure's db mechanics
+- **Prompts** (13 — the framework's command set discovered from `control-files` minus `push`/`pull`/`refresh`-memory, never a list kept in the server; composed with the DB backend — the "how-to" before calling the tools): `update-episodic`, `add-reasoning`, `update-emotional`, `update-knowledge`, `load-episodic`, `load-knowledge`, `archive-old-memories`, `update-memory`, `wrap-up`, `create-agent`, `list-agents`, `awaken-agent` (carrying the awakening protocol itself, since `awaken` returns the memory but not the process for using it), `wait-options` (the format reference the others cite when they ask something — no storage seam, so served as-is)
 - **Resources**: framework block-templates (`episodic-entry`, `reasoning-pattern`, `emotional-moment`, `knowledge-file`)
 
 ### HTTP API (REST twin)
@@ -145,10 +145,10 @@ Each HTTP endpoint is a REST twin of an MCP primitive over the **same** `MemoryS
 | POST | `/api/multi-edit` | `multi_edit` tool | Apply a sequence of edits to one record atomically |
 | POST | `/api/archive` | `archive` tool | Retire a record from the hot index (still searchable) |
 | POST | `/api/soft-delete` | `soft_delete` tool | Tombstone a record (excluded from all reads) |
-| GET | `/api/prompts` · `/api/prompts/{name}` | `prompts/list` · `prompts/get` | List names (JSON) / fetch a served procedure, DB-composed, as raw markdown |
-| GET | `/api/resources` · `/api/resources/{name}` | `resources/list` · `resources/read` | List names (JSON) / fetch a served template verbatim, as raw markdown |
+| GET | `/api/prompts` · `/api/prompts/{name}` | `prompts/list` · `prompts/get`, and the `list_procedures` · `read_procedure` tools | List names (JSON) / fetch a served procedure, DB-composed, as raw markdown |
+| GET | `/api/resources` · `/api/resources/{name}` | `resources/list` · `resources/read`, and the `list_resources` · `read_resource` tools | List names (JSON) / fetch a served template verbatim, as raw markdown |
 
-The `prompts/*` and `resources/*` rows twin MCP's **native prompt/resource primitives** (not tools); every other row twins a **tool**. Their response shape splits by what is being returned: a *list* of names is data and arrives as JSON, while a *single* procedure or template is a document and arrives as raw `text/markdown; charset=utf-8` — no enclosing object, so `curl -o update-episodic.md` writes exactly the bytes an installed slash command carries. Errors stay JSON throughout: `ValueError → 400`, `LookupError → 404`.
+The `prompts/*` and `resources/*` rows twin MCP's **native prompt/resource primitives** — and, since the same content is served again as tools for the agent's own use, those tools as well; every other row twins a **tool**. Their response shape splits by what is being returned: a *list* of names is data and arrives as JSON, while a *single* procedure or template is a document and arrives as raw `text/markdown; charset=utf-8` — no enclosing object, so `curl -o update-episodic.md` writes exactly the bytes an installed slash command carries. Errors stay JSON throughout: `ValueError → 400`, `LookupError → 404`.
 
 ---
 

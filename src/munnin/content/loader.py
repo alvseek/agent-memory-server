@@ -1,7 +1,9 @@
 """Serves framework memory procedures/templates as data from the control-files submodule.
 
 Procedures are served as MCP **Prompts** (the "how-to" an agent reads before calling
-the data tools); templates as MCP **Resources**. Content is read **live** from the
+the data tools) and templates as MCP **Resources** — and both again through tools
+(``read_procedure`` / ``read_resource``), the one primitive an agent may invoke on its
+own. Content is read **live** from the
 submodule on each request — single source of truth, no re-import on edit. That extends
 to the one-line description a client shows for each Prompt, which is the procedure's own
 opening sentence rather than an authored copy that could drift from it.
@@ -19,9 +21,11 @@ A procedure may also reference **components** — shared fragments under
 ``procedures/components/`` that are inlined at their reference point so the delivered
 Prompt is self-contained (it never points at a file the client cannot reach). Inlining
 runs **before** the seam, because an ``§ op`` arriving inside a component has to be part
-of the body the backend section is composed for. This mirrors the framework's own
-``compile-procedures.py`` step for step, so an installed slash command and a served
-Prompt are byte-identical.
+of the body the backend section is composed for. Every definition this takes — which
+files are procedures, how a component inlines, how the seam composes — is imported from
+the framework's own modules through ``seam_bridge``, the same ones
+``compile-procedures.py`` runs, so an installed slash command and a served Prompt cannot
+drift: there is no second copy to keep in step.
 """
 
 from __future__ import annotations
@@ -29,30 +33,41 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from munnin.content.seam_bridge import component_inline, seam_compose
+from munnin.content.seam_bridge import command_set, component_inline, seam_compose
 from munnin.logger.logger import get_logger
 
 _log = get_logger("content.loader")
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 _MD_EMPHASIS = re.compile(r"\*\*|\*|`")
-_FIRST_SENTENCE = re.compile(r"(.+?[.!?])(?:\s|$)")
+_OPENERS, _CLOSERS, _TERMINATORS = "([", ")]", ".!?"
 
-# Served memory procedures: prompt name -> path under content_root.
-_PROMPTS: dict[str, str] = {
-    "update-episodic": "procedures/memory/update-episodic.md",
-    "add-reasoning": "procedures/memory/add-reasoning.md",
-    "update-emotional": "procedures/memory/update-emotional.md",
-    "update-knowledge": "procedures/memory/update-knowledge.md",
-    "load-episodic": "procedures/memory/load-episodic.md",
-    "load-knowledge": "procedures/memory/load-knowledge.md",
-    "archive-old-memories": "procedures/memory/archive-old-memories.md",
-    "update-memory": "procedures/memory/update-memory.md",
-    "wrap-up": "procedures/wrap-up.md",
-    "create-agent": "procedures/create-agent.md",
-    "list-agents": "procedures/list-agents.md",
-    "awaken-agent": "procedures/awaken-agent.md",
-}
+
+def _first_sentence(paragraph: str) -> str:
+    """``paragraph`` up to its first sentence terminator — outside any parenthetical.
+
+    A ``.``, ``!`` or ``?`` ends the sentence only when followed by whitespace or the end,
+    and never inside ``(...)`` or ``[...]``: a question mark in a bracketed aside is part
+    of the sentence, not the end of it.
+    """
+    depth = 0
+    for i, ch in enumerate(paragraph):
+        if ch in _OPENERS:
+            depth += 1
+        elif ch in _CLOSERS:
+            depth = max(0, depth - 1)
+        elif ch in _TERMINATORS and depth == 0:
+            if i + 1 == len(paragraph) or paragraph[i + 1].isspace():
+                return paragraph[: i + 1]
+    return paragraph
+
+# The served procedures are the framework's command set (``procedures/command_set.py``,
+# read through the bridge) minus these. Not served because the DB write is durable —
+# there is nothing to push or pull — and recovering after compaction is another ``awaken``
+# call rather than a procedure. This is the server's only say over what the framework
+# defines: a procedure added to control-files is served on the next request, unlisted.
+_EXCLUDED_PROCEDURES = frozenset({"pull-memory", "push-memory", "refresh-memory"})
+_PROCEDURES_DIR = "procedures"
 # Served procedure -> its single optional argument, as (name, description). Every one is
 # optional because each procedure has an ask-if-missing branch, so declaring the argument
 # adds a slot without making anything stricter. Authored rather than derived: the
@@ -97,8 +112,7 @@ def _lead_sentence(text: str) -> str:
         paragraph = " ".join(block.split())
         if not paragraph or paragraph.startswith("#"):
             continue
-        match = _FIRST_SENTENCE.match(paragraph)
-        sentence = match.group(1) if match else paragraph
+        sentence = _first_sentence(paragraph)
         return _MD_EMPHASIS.sub("", _MD_LINK.sub(r"\1", sentence)).strip()
     return ""
 
@@ -131,9 +145,31 @@ class ContentLoader:
 
     # --- prompts (memory procedures, composed with the db backend) ---
 
+    def _procedures(self) -> dict[str, Path]:
+        """The served procedures, name → source file, discovered on every call.
+
+        The set is the framework's own command set (``procedures/command_set.py``, imported
+        through the bridge — never a list kept here) minus ``_EXCLUDED_PROCEDURES``. Read
+        live, like the content itself: a file that appears is served, a file that goes is
+        not, and neither needs a server edit. An absent submodule yields nothing rather
+        than failing, so a server without content still boots.
+        """
+        if not self.available():
+            return {}
+        commands = command_set(str(self._root))
+        found = commands.command_procedures(self._root / _PROCEDURES_DIR)
+        return {p.stem: p for p in found if p.stem not in _EXCLUDED_PROCEDURES}
+
+    def _procedure_path(self, name: str) -> Path:
+        """The source file of a served procedure. Raises ``KeyError`` for any other name."""
+        try:
+            return self._procedures()[name]
+        except KeyError:
+            raise KeyError(f"unknown prompt: {name}") from None
+
     def list_prompts(self) -> list[str]:
-        """The served procedure names (only those present on disk)."""
-        return sorted(name for name, rel in _PROMPTS.items() if (self._root / rel).exists())
+        """The served procedure names."""
+        return sorted(self._procedures())
 
     def describe_prompt(self, name: str) -> str:
         """A one-line purpose for a served procedure, read from the procedure itself.
@@ -147,10 +183,7 @@ class ContentLoader:
         Falls back to naming the procedure when it carries no prose to read. Raises
         ``KeyError`` for an unknown prompt name, as ``get_prompt`` does.
         """
-        rel = _PROMPTS.get(name)
-        if rel is None:
-            raise KeyError(f"unknown prompt: {name}")
-        lead = _lead_sentence((self._root / rel).read_text(encoding="utf-8"))
+        lead = _lead_sentence(self._procedure_path(name).read_text(encoding="utf-8"))
         return lead or f"Memory procedure '{name}'."
 
     def title_prompt(self, name: str) -> str:
@@ -159,10 +192,7 @@ class ContentLoader:
         Clients show this instead of the hyphenated slug, so a menu reads as sentences
         rather than filenames. Falls back to the slug when the document has no heading.
         """
-        rel = _PROMPTS.get(name)
-        if rel is None:
-            raise KeyError(f"unknown prompt: {name}")
-        return _h1_title((self._root / rel).read_text(encoding="utf-8")) or name
+        return _h1_title(self._procedure_path(name).read_text(encoding="utf-8")) or name
 
     def argument_prompt(self, name: str) -> tuple[str, str] | None:
         """This procedure's single optional argument as ``(name, description)``.
@@ -210,11 +240,9 @@ class ContentLoader:
         marker or the db backend defines nothing for it. Raises ``KeyError`` for an
         unknown prompt name.
         """
-        rel = _PROMPTS.get(name)
-        if rel is None:
-            raise KeyError(f"unknown prompt: {name}")
+        path = self._procedure_path(name)
         # inline first: a component may be what brings this procedure's ops
-        core, components = self._inlined((self._root / rel).read_text(encoding="utf-8"))
+        core, components = self._inlined(path.read_text(encoding="utf-8"))
         db_path = self._root / _DB_BACKEND
         if not db_path.exists():
             return core

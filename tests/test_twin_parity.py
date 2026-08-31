@@ -166,9 +166,23 @@ async def test_prompt_list_parity(tmp_path: Path) -> None:
     async with _http(db) as http:
         http_names = sorted((await http.get("/api/prompts")).json()["prompts"])
     assert mcp_names == http_names
-    assert len(http_names) == 12
+    assert len(http_names) == 13
     assert "list-agents" in http_names
-    assert "awaken-agent" in http_names  # Prompt 12 — reaches both faces off one map
+    assert "awaken-agent" in http_names  # reaches both faces off one discovered set
+
+
+async def test_read_procedure_tool_parity(tmp_path: Path) -> None:
+    """The tool is a second door onto the text the Prompt and the HTTP face already serve —
+    one loader behind all three, so they cannot disagree."""
+    db = tmp_path / "m.db"
+    expected = ContentLoader(CF).get_prompt("update-episodic")
+    async with Client(_mcp_content(db)) as mcp:
+        tool = (await mcp.call_tool("read_procedure", {"name": "update-episodic"})).data
+        prompt = (await mcp.get_prompt("update-episodic")).messages[0].content.text
+    async with _http(db) as http:
+        http_txt = (await http.get("/api/prompts/update-episodic")).text
+    assert tool == {"served": True, "name": "update-episodic", "content": expected}
+    assert prompt == expected == http_txt
 
 
 async def test_create_agent_parity(tmp_path: Path) -> None:
@@ -220,10 +234,18 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     """Pinned deliberately. Tool definitions are permanent-layer — they ship on every
     single call — so the surface growing is a cost decision, not an implementation
     detail, and it should not be possible to add one without this test saying so."""
-    async with Client(_mcp(tmp_path / "m.db")) as mcp:
-        names = sorted(t.name for t in await mcp.list_tools())
-    assert len(names) == 14
-    assert names == [
+    data_tools = [
         "append", "archive", "awaken", "create_agent", "edit", "get", "insert",
         "list_agents", "multi_edit", "ping", "prepend", "query", "search", "soft_delete",
     ]
+    async with Client(_mcp(tmp_path / "m.db")) as mcp:
+        names = sorted(t.name for t in await mcp.list_tools())
+    assert names == data_tools
+    # with the framework content present, what the Prompts and Resources carry is reachable
+    # a second way — through the one primitive an agent may invoke itself
+    async with Client(_mcp_content(tmp_path / "m.db")) as mcp:
+        names = sorted(t.name for t in await mcp.list_tools())
+    assert len(names) == 18
+    assert names == sorted(
+        data_tools + ["list_procedures", "read_procedure", "list_resources", "read_resource"]
+    )

@@ -28,7 +28,8 @@ def _client(tmp_path: Path) -> httpx.AsyncClient:
 async def test_prompts_list_get_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         prompts = (await c.get("/api/prompts")).json()["prompts"]
-        assert len(prompts) == 12
+        assert len(prompts) == 13
+        assert "wait-options" in prompts  # discovered from the command set, listed nowhere
         assert "wrap-up" in prompts
         assert "create-agent" in prompts
         assert "list-agents" in prompts
