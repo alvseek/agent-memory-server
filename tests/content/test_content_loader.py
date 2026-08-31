@@ -114,6 +114,60 @@ def test_prompt_with_no_prose_falls_back_to_naming_itself(tmp_path: Path) -> Non
     )
 
 
+def test_every_prompt_has_a_title_from_its_own_heading(loader: ContentLoader) -> None:
+    titles = {name: loader.title_prompt(name) for name in loader.list_prompts()}
+    assert len(set(titles.values())) == 12
+    assert titles["awaken-agent"] == "Awaken Agent"
+    assert titles["wrap-up"] == "Wrap Up Session"
+    # a title is a display name, never the slug it replaces
+    for name, title in titles.items():
+        assert title != name
+        assert "**" not in title and "#" not in title
+
+
+def test_every_prompt_declares_its_optional_argument(loader: ContentLoader) -> None:
+    for name in loader.list_prompts():
+        argument = loader.argument_prompt(name)
+        assert argument is not None, f"{name} declares no argument"
+        arg_name, arg_help = argument
+        # a parameter name has to be a legal python identifier or the signature won't build
+        assert arg_name.isidentifier()
+        assert arg_help
+
+
+def test_arguments_substitute_only_when_supplied(loader: ContentLoader) -> None:
+    bare = loader.get_prompt("awaken-agent")
+    # the placeholder must survive an empty invocation, or a served prompt stops being
+    # byte-identical to the command it mirrors
+    assert "$ARGUMENTS" in bare
+    assert loader.get_prompt("awaken-agent", None) == bare
+    assert loader.get_prompt("awaken-agent", "") == bare
+
+    filled = loader.get_prompt("awaken-agent", "software-architect")
+    assert "$ARGUMENTS" not in filled
+    assert "software-architect" in filled
+
+
+def test_resource_titles_and_descriptions_come_from_the_templates(loader: ContentLoader) -> None:
+    names = loader.list_resources()
+    described = {n: loader.describe_resource(n) for n in names}
+    titled = {n: loader.title_resource(n) for n in names}
+    # the same defect the prompts had: one templated sentence per name tells a reader nothing
+    assert len(set(described.values())) == len(names)
+    assert described["knowledge-file-template"] == "The structure of a knowledge-base entry."
+    assert titled["reasoning-pattern-template"] == "Reasoning Pattern Template"
+    for n in names:
+        assert "**" not in described[n] and "`" not in described[n]
+        assert titled[n] != n
+
+
+def test_describe_unknown_resource_raises(loader: ContentLoader) -> None:
+    with pytest.raises(KeyError):
+        loader.describe_resource("does-not-exist")
+    with pytest.raises(KeyError):
+        loader.title_resource("episodic-memory-template")  # excluded, not served
+
+
 def test_resources_include_block_templates(loader: ContentLoader) -> None:
     res = loader.list_resources()
     for stem in (

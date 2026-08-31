@@ -8,6 +8,7 @@ tools are the data operations those procedures instruct the agent to call.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from fastmcp import FastMCP
@@ -184,20 +185,37 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
     with the db storage backend so the served text speaks DB tools, not markdown
     files. The twin of these is the FastAPI ``/api/prompts`` + ``/api/resources``.
     """
-    def _make_prompt(procedure: str):
-        # Zero-arg so FastMCP registers a plain prompt (a parameter would make it
-        # a prompt-with-arguments); the name is bound via the factory closure.
-        def fn() -> str:
-            return content.get_prompt(procedure)
+    def _make_prompt(procedure: str, argument: tuple[str, str] | None):
+        # FastMCP derives a prompt's arguments from the function signature, so a procedure
+        # that takes one needs a real parameter carrying its name. The parameter is built
+        # dynamically because each procedure names its argument differently, and both
+        # ``__signature__`` and ``__annotations__`` must be set — pydantic reads the second
+        # and raises on the first alone. A plain ``str`` annotation is deliberate: an
+        # ``Annotated[str, Field(...)]`` makes FastMCP append a JSON-schema instruction to
+        # the description, which reads as noise in a command menu.
+        def fn(**kwargs: str) -> str:
+            return content.get_prompt(procedure, kwargs.get(argument[0]) if argument else None)
 
         fn.__name__ = procedure.replace("-", "_")
+        if argument is None:
+            return fn
+        arg_name, arg_help = argument
+        fn.__doc__ = f"{procedure}\n\nArgs:\n    {arg_name}: {arg_help}\n"
+        fn.__annotations__ = {arg_name: str, "return": str}
+        parameter = inspect.Parameter(
+            arg_name, inspect.Parameter.KEYWORD_ONLY, default="", annotation=str
+        )
+        fn.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
+            [parameter], return_annotation=str
+        )
         return fn
 
     for name in content.list_prompts():
         mcp.prompt(
             name=name,
+            title=content.title_prompt(name),
             description=content.describe_prompt(name),
-        )(_make_prompt(name))
+        )(_make_prompt(name, content.argument_prompt(name)))
 
     def _make_resource(template: str):
         # Zero-arg so FastMCP registers a static resource, not a URI template.
@@ -211,6 +229,15 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
         mcp.resource(
             f"resource://templates/{name}",
             name=name,
-            description=f"Framework template '{name}'.",
+            title=content.title_resource(name),
+            description=content.describe_resource(name),
             mime_type="text/markdown",
+            # A fill-in template is written by an agent and read by nobody else, hence the
+            # assistant audience. The priority is near the floor because `priority` scores
+            # whether a client should pull something into context unasked, and a template
+            # earns its place only at the moment that memory layer is being written —
+            # deliberately fetched, never speculatively included. Not 0.0: that is the
+            # spec's "entirely optional", and a client could reasonably read it as "hide",
+            # which would take these out of a picker where they do belong.
+            annotations={"audience": ["assistant"], "priority": 0.1},
         )(_make_resource(name))

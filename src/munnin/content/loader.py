@@ -53,6 +53,26 @@ _PROMPTS: dict[str, str] = {
     "list-agents": "procedures/list-agents.md",
     "awaken-agent": "procedures/awaken-agent.md",
 }
+# Served procedure -> its single optional argument, as (name, description). Every one is
+# optional because each procedure has an ask-if-missing branch, so declaring the argument
+# adds a slot without making anything stricter. Authored rather than derived: the
+# ``## Arguments`` sections are prose bullets in varying shapes and `wrap-up` has none at
+# all, so parsing them would be a heuristic over data that is not deterministic.
+_PROMPT_ARGUMENTS: dict[str, tuple[str, str]] = {
+    "update-episodic": ("mode", "`new` to force a new episode instead of appending"),
+    "add-reasoning": ("context", "the reasoning pattern to document; asks if omitted"),
+    "update-emotional": ("moment_type", "happy, sad, frustrated or bonding; asks if omitted"),
+    "update-knowledge": ("context", "the knowledge to document; asks if omitted"),
+    "load-episodic": ("keyword", "match episodes by keyword; lists the most recent if omitted"),
+    "load-knowledge": ("keyword", "match entries by keyword; lists all if omitted"),
+    "archive-old-memories": ("scope", "episodic, emotional or all; asks if omitted"),
+    "update-memory": ("mode", "`fresh` re-evaluates the whole session, `new` forces a new episode"),
+    "wrap-up": ("mode", "`fresh` to re-evaluate the whole session rather than the delta"),
+    "create-agent": ("domain", "kebab domain for the new agent; asks if omitted"),
+    "list-agents": ("keyword", "filter agents by domain or role"),
+    "awaken-agent": ("domain", "the agent domain to awaken; asks if omitted"),
+}
+_ARGUMENTS_PLACEHOLDER = "$ARGUMENTS"
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"
 _TEMPLATES_DIR = "procedures/memory/resources"
 _COMPONENTS_DIR = "procedures/components"
@@ -80,6 +100,19 @@ def _lead_sentence(text: str) -> str:
         match = _FIRST_SENTENCE.match(paragraph)
         sentence = match.group(1) if match else paragraph
         return _MD_EMPHASIS.sub("", _MD_LINK.sub(r"\1", sentence)).strip()
+    return ""
+
+
+def _h1_title(text: str) -> str:
+    """The document's own `#` heading, as a display title.
+
+    Derived rather than authored for the same reason the description is: the heading is
+    what the document calls itself, so the two cannot drift, and a title that reads badly
+    is a signal to fix the heading rather than to keep a second name beside it.
+    """
+    for line in text.replace("\r\n", "\n").split("\n"):
+        if line.startswith("# "):
+            return _MD_EMPHASIS.sub("", _MD_LINK.sub(r"\1", line[2:])).strip()
     return ""
 
 
@@ -120,6 +153,26 @@ class ContentLoader:
         lead = _lead_sentence((self._root / rel).read_text(encoding="utf-8"))
         return lead or f"Memory procedure '{name}'."
 
+    def title_prompt(self, name: str) -> str:
+        """A display title for a served procedure, taken from its own `#` heading.
+
+        Clients show this instead of the hyphenated slug, so a menu reads as sentences
+        rather than filenames. Falls back to the slug when the document has no heading.
+        """
+        rel = _PROMPTS.get(name)
+        if rel is None:
+            raise KeyError(f"unknown prompt: {name}")
+        return _h1_title((self._root / rel).read_text(encoding="utf-8")) or name
+
+    def argument_prompt(self, name: str) -> tuple[str, str] | None:
+        """This procedure's single optional argument as ``(name, description)``.
+
+        ``None`` when the procedure takes none. Every declared argument is optional: each
+        procedure asks for what it needs when invoked without one, so the slot only ever
+        saves a round trip.
+        """
+        return _PROMPT_ARGUMENTS.get(name)
+
     def _inlined(self, text: str) -> tuple[str, tuple[str, ...]]:
         """Inline every component reference; returns ``(text, components used)``.
 
@@ -133,7 +186,19 @@ class ContentLoader:
             _log.warning("unresolved component references: %s", ", ".join(missing))
         return text, tuple(dict.fromkeys(used))  # de-duplicated, order preserved
 
-    def get_prompt(self, name: str) -> str:
+    def get_prompt(self, name: str, arguments: str | None = None) -> str:
+        """Return the composed procedure, with ``arguments`` filled in when one is given.
+
+        Every procedure carries a ``$ARGUMENTS`` placeholder that an installed slash
+        command fills from what the user typed; a served Prompt fills it the same way so
+        the two stay equivalent. **Substitution happens only when an argument is actually
+        supplied** — an empty invocation leaves the placeholder standing, which keeps a
+        no-argument served Prompt byte-identical to the command it mirrors.
+        """
+        text = self._compose_prompt(name)
+        return text.replace(_ARGUMENTS_PLACEHOLDER, arguments) if arguments else text
+
+    def _compose_prompt(self, name: str) -> str:
         """Return the procedure with its components inlined and its db backend section
         substituted in.
 
@@ -174,11 +239,28 @@ class ContentLoader:
             return []
         return sorted(p.stem for p in d.glob("*.md") if p.stem not in _RESOURCE_EXCLUDE)
 
-    def get_resource(self, name: str) -> str:
-        """Return a template file verbatim. Raises ``KeyError`` if absent or excluded."""
+    def describe_resource(self, name: str) -> str:
+        """A one-line purpose for a served template, read from the template itself.
+
+        Same derivation as the procedures, and for the same reason: four templates sharing
+        one sentence with the name swapped in tells a reader nothing, and an authored copy
+        would drift from the file it describes.
+        """
+        return _lead_sentence(self._resource_text(name)) or f"Framework template '{name}'."
+
+    def title_resource(self, name: str) -> str:
+        """A display title for a served template, taken from its own `#` heading."""
+        return _h1_title(self._resource_text(name)) or name
+
+    def _resource_text(self, name: str) -> str:
+        """The raw template body. Raises ``KeyError`` if absent or excluded."""
         if name in _RESOURCE_EXCLUDE:
             raise KeyError(f"unknown resource: {name}")
         path = self._root / _TEMPLATES_DIR / f"{name}.md"
         if not path.exists():
             raise KeyError(f"unknown resource: {name}")
         return path.read_text(encoding="utf-8")
+
+    def get_resource(self, name: str) -> str:
+        """Return a template file verbatim. Raises ``KeyError`` if absent or excluded."""
+        return self._resource_text(name)
