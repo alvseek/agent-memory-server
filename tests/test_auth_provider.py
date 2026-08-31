@@ -152,11 +152,11 @@ def test_a_pinned_audience_wins_over_the_derived_one() -> None:
         Config(
             logto_endpoint=LOGTO,
             public_base_url=BASE_URL,
-            logto_audience="https://pinned.example.test/api",
+            logto_audience=("https://pinned.example.test/api",),
         )
     )
     auth.set_mcp_path("/mcp")
-    assert auth.server.token_verifier.audience == "https://pinned.example.test/api"
+    assert auth.server.token_verifier.audience == ["https://pinned.example.test/api"]
 
 
 def test_scopes_are_advertised_so_a_client_knows_what_to_ask_for() -> None:

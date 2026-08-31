@@ -46,10 +46,13 @@ class Config:
     # one set, and a verify-only fallback once Logto is configured beside it.
     authkit_domain: str = ""
     # Overrides the audience Logto tokens are checked against. Normally left empty, since
-    # the audience binds itself to the resource URL this server advertises. Set it only if
-    # Logto stores the API Identifier in a different form than that URL — a token request's
-    # `resource` parameter has to match the registered identifier character for character.
-    logto_audience: str = ""
+    # the audience binds itself to the resource URL this server advertises. Set it when the
+    # registered API Identifier differs from that URL, or when more than one identifier is
+    # in play — a token request's `resource` parameter has to match a registered identifier
+    # character for character, and a client that authorizes against one identifier while
+    # refreshing against another mints tokens under both. Comma-separated, so a rename
+    # never needs a window in which neither form is accepted.
+    logto_audience: tuple[str, ...] = ()
     # This server's own public URL. Tokens are bound to it as their audience, so it must
     # match the Resource Indicator registered with whichever issuer is in use.
     public_base_url: str = "https://munnin.lok.quest"
@@ -70,7 +73,11 @@ def load_config() -> Config:
         content_root=Path(os.getenv("MUNNIN_CONTENT_ROOT", "control-files")),
         logto_endpoint=os.getenv("MUNNIN_LOGTO_ENDPOINT", ""),
         authkit_domain=os.getenv("MUNNIN_AUTHKIT_DOMAIN", ""),
-        logto_audience=os.getenv("MUNNIN_LOGTO_AUDIENCE", ""),
+        logto_audience=tuple(
+            entry.strip()
+            for entry in os.getenv("MUNNIN_LOGTO_AUDIENCE", "").split(",")
+            if entry.strip()
+        ),
         public_base_url=os.getenv("MUNNIN_PUBLIC_BASE_URL", "https://munnin.lok.quest"),
         docs_enabled=os.getenv("MUNNIN_DOCS", "").lower() in {"1", "true", "yes"},
     )

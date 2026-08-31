@@ -66,7 +66,7 @@ def test_the_issuers_and_base_url_are_read_from_the_environment(
     config = load_config()
     assert config.logto_endpoint == "https://example.logto.app"
     assert config.authkit_domain == "https://example.authkit.app"
-    assert config.logto_audience == "https://example.test/api"
+    assert config.logto_audience == ("https://example.test/api",)
     assert config.public_base_url == "https://munnin.example.test"
 
 
@@ -77,7 +77,24 @@ def test_the_pinned_audience_is_empty_by_default(monkeypatch: pytest.MonkeyPatch
     so the default has to be the derived one rather than a guess at what was registered.
     """
     monkeypatch.delenv("MUNNIN_LOGTO_AUDIENCE", raising=False)
-    assert load_config().logto_audience == ""
+    assert load_config().logto_audience == ()
+
+
+def test_more_than_one_audience_can_be_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two identifiers have to be trusted together while a client moves between them.
+
+    Claude Code authorizes against the identifier this server advertises and refreshes
+    against its own MCP URL, so tokens legitimately arrive carrying either one. A single
+    accepted value would fail whichever of the two it asked for second.
+    """
+    monkeypatch.setenv(
+        "MUNNIN_LOGTO_AUDIENCE",
+        "https://munnin.example.test/, https://munnin.example.test/mcp/",
+    )
+    assert load_config().logto_audience == (
+        "https://munnin.example.test/",
+        "https://munnin.example.test/mcp/",
+    )
 
 
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "Yes"])

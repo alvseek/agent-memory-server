@@ -15,6 +15,8 @@ catch, applied to the one seam where drift means an open door.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from fastapi import FastAPI
 from fastmcp.server.auth import AuthProvider, MultiAuth, RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
@@ -82,15 +84,19 @@ class LogtoAuthProvider(RemoteAuthProvider):
     #: working whenever the access token expires.
     DEFAULT_SCOPES = ("openid", "profile", "email", "offline_access")
 
-    def __init__(self, *, endpoint: str, base_url: str, audience: str = "") -> None:
+    def __init__(
+        self, *, endpoint: str, base_url: str, audience: Sequence[str] = ()
+    ) -> None:
         oidc = f"{endpoint.rstrip('/')}/oidc"
-        self._pinned_audience = audience
+        self._pinned_audience = tuple(audience)
         super().__init__(
             token_verifier=JWTVerifier(
                 jwks_uri=f"{oidc}/jwks",
                 issuer=oidc,
                 algorithm="RS256",
-                audience=audience or None,
+                # A list even for a single entry, because the plural form is what lets
+                # two registered identifiers be trusted at the same time.
+                audience=list(self._pinned_audience) or None,
             ),
             authorization_servers=[AnyHttpUrl(oidc)],
             base_url=AnyHttpUrl(base_url.rstrip("/")),
