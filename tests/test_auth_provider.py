@@ -119,7 +119,37 @@ def test_logto_audience_binds_to_this_server() -> None:
     """The same late binding AuthKit gets, reimplemented because the base class has none."""
     auth = build_auth(_logto_only())
     auth.set_mcp_path("/mcp")
-    assert auth.server.token_verifier.audience == f"{BASE_URL}/mcp"
+    assert auth.server.token_verifier.audience == f"{BASE_URL}/mcp/"
+
+
+@pytest.mark.parametrize("mcp_path", ["/", "/mcp", "/mcp/", None])
+def test_advertised_resource_is_the_mcp_url_whatever_the_mount_reports(
+    mcp_path: str | None,
+) -> None:
+    """The identifier a client asks the issuer to stamp, held fixed against the mount.
+
+    Every value here is one FastMCP could legitimately pass: it builds the sub-app at "/"
+    today, and a future mount could hand it "/mcp" instead. Deriving from that argument
+    produced the live defect twice over — the root identifier that made every refresh fail
+    with ``invalid_target``, and the doubled ``/mcp/mcp`` the naive fix produced. Both
+    directions are covered here so the assertion can actually fail.
+    """
+    auth = build_auth(_logto_only())
+    auth.set_mcp_path(mcp_path)
+    assert str(auth.server._get_resource_url(mcp_path)) == f"{BASE_URL}/mcp/"
+
+
+def test_the_metadata_document_names_the_same_resource_it_is_served_under() -> None:
+    """Discovery only works if the route, the challenge and the document agree.
+
+    Serving the document somewhere a client is never told to look is the failure this
+    guards, and it is invisible from either side alone: the route exists, the document is
+    correct, and no client can reach it.
+    """
+    auth = build_auth(_logto_only())
+    routes = auth.get_routes(mcp_path="/")
+    paths = [r.path for r in routes if "oauth-protected-resource" in getattr(r, "path", "")]
+    assert paths == ["/.well-known/oauth-protected-resource/mcp/"]
 
 
 def test_the_authkit_fallback_still_checks_its_audience() -> None:

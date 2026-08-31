@@ -33,6 +33,26 @@ from munnin.configuration.config import Config, load_config
 from munnin.content.loader import ContentLoader
 from munnin.data_repositories.identity_repository import IdentityRepository
 
+#: Where the MCP face is mounted, and therefore the address clients actually connect to.
+#: It is a constant rather than two literals because the resource identifier this server
+#: advertises has to be the same string, and the one time they disagreed the failure was
+#: silent: FastMCP builds its app believing it sits at the root, so it advertised
+#: ``https://munnin.lok.quest/`` while every client refreshed against
+#: ``https://munnin.lok.quest/mcp/``. A refresh token is frozen to one resource at the
+#: moment it is minted, so the issuer answered ``invalid_target`` forever after — and the
+#: client quietly fell back to the advertised identifier, which meant nothing broke and
+#: every connection paid several failed round trips first.
+MCP_MOUNT_PATH = "/mcp"
+
+
+def mcp_resource_url(public_base_url: str) -> str:
+    """The one identifier that names the MCP face, trailing slash included.
+
+    The slash is not cosmetic: it is the string a client sends as ``resource`` on both the
+    authorization and the refresh request, and the issuer matches it literally.
+    """
+    return f"{public_base_url.rstrip('/')}{MCP_MOUNT_PATH}/"
+
 
 class AuthNotConfiguredError(RuntimeError):
     """Raised when the server is started without an issuer to verify tokens against."""
@@ -85,7 +105,12 @@ class LogtoAuthProvider(RemoteAuthProvider):
     DEFAULT_SCOPES = ("openid", "profile", "email", "offline_access")
 
     def __init__(
-        self, *, endpoint: str, base_url: str, audience: Sequence[str] = ()
+        self,
+        *,
+        endpoint: str,
+        base_url: str,
+        audience: Sequence[str] = (),
+        resource_base_url: str | None = None,
     ) -> None:
         oidc = f"{endpoint.rstrip('/')}/oidc"
         self._pinned_audience = tuple(audience)
@@ -100,12 +125,30 @@ class LogtoAuthProvider(RemoteAuthProvider):
             ),
             authorization_servers=[AnyHttpUrl(oidc)],
             base_url=AnyHttpUrl(base_url.rstrip("/")),
+            # What goes in the protected-resource metadata, and so what a client asks the
+            # issuer to stamp the token for. It is separate from ``base_url`` because this
+            # server is re-hosted: the metadata is served from the root while the resource
+            # it describes lives under the mount, and only the caller knows that.
+            resource_base_url=resource_base_url,
             # Advertised, deliberately not required. Enforcing ``openid`` on an incoming
             # token adds a rejection path while proving almost nothing — every OIDC token
             # carries it — and the access control that matters here is the audience check
             # plus tenant resolution, both of which already run.
             scopes_supported=list(self.DEFAULT_SCOPES),
         )
+
+    def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:
+        """The advertised identifier, fixed rather than assembled from the mount path.
+
+        The base class appends whatever path FastMCP believes it is serving at, which is a
+        fact the sub-app gets wrong by construction — it is built for ``/`` and then
+        re-hosted under ``/mcp``. Since ``resource_base_url`` already names the face in
+        full, ignoring the path is what stops the two disagreeing, in either direction: a
+        missing segment, or the doubled ``/mcp/mcp`` a plausible mount would produce.
+        """
+        if self.resource_base_url is not None:
+            return self.resource_base_url
+        return super()._get_resource_url(path)
 
     def set_mcp_path(self, mcp_path: str | None) -> None:
         """Bind the verifier's audience to the resource URL this server advertises."""
@@ -167,6 +210,7 @@ def build_auth(config: Config) -> MultiAuth:
             endpoint=config.logto_endpoint,
             base_url=config.public_base_url,
             audience=config.logto_audience,
+            resource_base_url=mcp_resource_url(config.public_base_url),
         ),
         verifiers=fallback,
     )
@@ -209,7 +253,7 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
         openapi_url="/openapi.json" if config.docs_enabled else None,
     )
     app.include_router(build_router(factory, content, auth=auth, identity=identity))
-    app.mount("/mcp", mcp_app)
+    app.mount(MCP_MOUNT_PATH, mcp_app)
 
     # OAuth discovery, served from the **root**. FastMCP builds its app believing it sits
     # at "/", so it advertises root-level metadata URLs and puts its own copies of these
