@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastmcp import Client
 
+from munnin.api_mcp.server import INSTRUCTIONS
 from munnin.content.loader import ContentLoader
 from tests.conftest import mcp_for
 
@@ -28,6 +29,34 @@ async def test_content_tools_present_only_with_content(tmp_path: Path) -> None:
     content_tools = {"list_procedures", "read_procedure", "list_resources", "read_resource"}
     assert not (content_tools & bare)
     assert content_tools <= full
+    assert "help" in bare and "help" in full  # the one door that is always there
+
+
+async def test_initialize_carries_the_instructions(tmp_path: Path) -> None:
+    """What a client is told before it calls anything — returned by the handshake itself,
+    byte for byte the constant, so a stranger can act with no other reading."""
+    async with Client(_mcp(tmp_path)) as client:
+        result = client.initialize_result
+    assert result is not None
+    assert result.instructions == INSTRUCTIONS
+    # permanent-layer text, re-sent on every call of every session: a budget, not a manual
+    assert len(result.instructions) <= 600
+
+
+async def test_help_is_the_instructions_plus_the_menu(tmp_path: Path) -> None:
+    async with Client(_mcp(tmp_path)) as client:
+        out = (await client.call_tool("help", {})).data
+        rows = (await client.call_tool("list_procedures", {})).data
+    assert out["instructions"] == INSTRUCTIONS
+    assert out["procedures"] == rows  # one row-builder behind both
+    assert len(out["procedures"]) == 13
+
+
+async def test_help_answers_without_served_content(tmp_path: Path) -> None:
+    # a server built with no framework content still says what it is; the menu is empty
+    async with Client(mcp_for(tmp_path / "m.db")) as client:
+        out = (await client.call_tool("help", {})).data
+    assert out == {"instructions": INSTRUCTIONS, "procedures": []}
 
 
 async def test_list_procedures_carries_name_title_and_purpose(tmp_path: Path) -> None:

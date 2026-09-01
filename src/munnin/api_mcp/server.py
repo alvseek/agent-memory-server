@@ -7,6 +7,12 @@ again as tools (``read_procedure`` / ``read_resource``), because a Prompt is use
 and a Resource client-attached, while a tool is the one primitive the protocol lets the
 agent itself call. The data tools are the operations those procedures instruct the agent
 to call.
+
+A stranger who connects meets this surface cold, so the server also says what it is:
+``INSTRUCTIONS`` goes out in the ``initialize`` result (clients inject it into the system
+prompt), ``help`` returns the same text for clients that show no instructions, and every
+tool carries a title and the read-only / destructive hints a client shows before it
+lets a tool run.
 """
 
 from __future__ import annotations
@@ -22,6 +28,46 @@ from munnin.business_services.service_factory import ServiceFactory
 from munnin.business_services.tenant_resolver import TenantResolver
 from munnin.content.loader import ContentLoader
 
+#: What a client is told at ``initialize``. claude.ai and Claude Code inject it into the
+#: system prompt, so it is re-sent on every call of every session — which is why it is
+#: four sentences and not a manual: enough to act on with no other reading, and nothing
+#: the tool list already says. ``help`` returns the same text for clients that ignore it.
+INSTRUCTIONS = (
+    "Munnin holds agent identity — an agent's memory of reasoning patterns, emotional "
+    "moments, episodes and knowledge — and serves the procedures for tending it.\n"
+    'New here: call list_agents(); if it is empty, read_procedure("create-agent") and '
+    "follow it.\n"
+    'Returning: read_procedure("awaken-agent", argument="<domain>") and follow it — '
+    '<domain> is the agent you are being, e.g. "meta".\n'
+    "Procedures come from read_procedure(name), never from slash commands; help() lists them."
+)
+
+# Tool annotations, by what a tool does to the store. Clients read these before letting a
+# tool run: a read-only tool needs no confirmation, a destructive one earns a prompt. The
+# spec's ``destructiveHint`` defaults to *true* and is meaningful only when a tool is not
+# read-only, so the additive writes must say ``False`` explicitly or they read as
+# destructive. ``openWorldHint`` is false throughout: nothing here reaches past the store.
+_READ = {"readOnlyHint": True, "openWorldHint": False}
+_ADDITIVE = {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": False}
+_DESTRUCTIVE = {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False}
+# Archiving or tombstoning a record twice leaves it archived or tombstoned — a retry is safe.
+_DESTRUCTIVE_IDEMPOTENT = {**_DESTRUCTIVE, "idempotentHint": True}
+
+
+def _procedure_rows(content: ContentLoader | None) -> list[dict[str, str]]:
+    """Name, title and one-line purpose of every served procedure — the menu ``help`` and
+    ``list_procedures`` both show, empty when no framework content is available."""
+    if content is None or not content.available():
+        return []
+    return [
+        {
+            "name": name,
+            "title": content.title_prompt(name),
+            "description": content.describe_prompt(name),
+        }
+        for name in content.list_prompts()
+    ]
+
 
 def build_mcp(
     factory: ServiceFactory,
@@ -35,7 +81,7 @@ def build_mcp(
     request before any tool body runs, which is why the resolver below can trust the
     token it finds rather than re-checking it.
     """
-    mcp: FastMCP = FastMCP("munnin", auth=auth)
+    mcp: FastMCP = FastMCP("munnin", instructions=INSTRUCTIONS, auth=auth)
 
     def _svc() -> MemoryService:
         """The service for whoever is calling right now.
@@ -44,12 +90,21 @@ def build_mcp(
         registration happens once at boot, and the caller is not known until the call."""
         return factory.for_user(resolver.current_user_id())
 
-    @mcp.tool
+    @mcp.tool(title="Liveness check", annotations=_READ)
     def ping() -> str:
         """Liveness check — returns 'pong'."""
         return "pong"
 
-    @mcp.tool
+    # Registered whether or not framework content is available: it is the fallback for a
+    # client that never shows ``instructions``, so it has to exist in every configuration.
+    @mcp.tool(name="help", title="What Munnin is and where to start", annotations=_READ)
+    def help_() -> dict[str, Any]:
+        """What this server is and what to call first — the same text a client receives at
+        initialize as ``instructions`` — plus the served procedures. Read-only; call it
+        when you are unsure what Munnin is or which procedure to read next."""
+        return {"instructions": INSTRUCTIONS, "procedures": _procedure_rows(content)}
+
+    @mcp.tool(title="Awaken an agent", annotations=_READ)
     def awaken(domain: str) -> dict[str, Any]:
         """Assemble and return an agent's full memory payload from the DB.
 
@@ -59,12 +114,12 @@ def build_mcp(
 
     # --- reads ---
 
-    @mcp.tool
+    @mcp.tool(title="Read one record", annotations=_READ)
     def get(uuid: str) -> dict[str, Any] | None:
         """Load one record's full body by id (None if absent/deleted)."""
         return _svc().get(uuid)
 
-    @mcp.tool
+    @mcp.tool(title="Browse records by field", annotations=_READ)
     def query(
         agent_id: str | None = None,
         record_type: str | None = None,
@@ -81,19 +136,19 @@ def build_mcp(
             include_archived=include_archived,
         )
 
-    @mcp.tool
+    @mcp.tool(title="Full-text search", annotations=_READ)
     def search(text: str, include_archived: bool = True) -> list[dict[str, Any]]:
         """Full-text (FTS5) keyword search over content + title + tags."""
         return _svc().search(text, include_archived=include_archived)
 
-    @mcp.tool
+    @mcp.tool(title="List the agents", annotations=_READ)
     def list_agents() -> list[dict[str, Any]]:
         """List every agent in the fleet: ``agent_id`` + display name + one-line role.
         Metadata only, no bodies. An agent with no identity recorded comes back with
         ``name``/``role`` of ``null`` rather than being omitted."""
         return _svc().list_agents()
 
-    @mcp.tool
+    @mcp.tool(title="Create an agent", annotations=_ADDITIVE)
     def create_agent(
         agent_id: str,
         name: str | None = None,
@@ -109,7 +164,7 @@ def build_mcp(
 
     # --- writes (Edit-tool parity; record assembled server-side) ---
 
-    @mcp.tool
+    @mcp.tool(title="Insert a memory record", annotations=_ADDITIVE)
     def insert(
         record_type: str,
         content: str,
@@ -137,26 +192,26 @@ def build_mcp(
             uuid=uuid,
         )
 
-    @mcp.tool
+    @mcp.tool(title="Edit a record's body", annotations=_DESTRUCTIVE)
     def edit(
         uuid: str, old_string: str, new_string: str, replace_all: bool = False
     ) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity)."""
         return _svc().edit(uuid, old_string, new_string, replace_all)
 
-    @mcp.tool
+    @mcp.tool(title="Append to a record", annotations=_ADDITIVE)
     def append(uuid: str, text: str) -> dict[str, Any]:
         """Add ``text`` to the END of a record's body. Verbatim — include your own
         leading newline(s) for spacing (e.g. a new sub-episode under a date header)."""
         return _svc().append(uuid, text)
 
-    @mcp.tool
+    @mcp.tool(title="Prepend to a record", annotations=_ADDITIVE)
     def prepend(uuid: str, text: str) -> dict[str, Any]:
         """Add ``text`` to the START of a record's body. Verbatim — include your own
         trailing newline(s) for spacing."""
         return _svc().prepend(uuid, text)
 
-    @mcp.tool
+    @mcp.tool(title="Apply several edits atomically", annotations=_DESTRUCTIVE)
     def multi_edit(uuid: str, edits: list[dict[str, Any]]) -> dict[str, Any]:
         """Apply a sequence of string edits to one record atomically (all-or-nothing).
 
@@ -165,12 +220,12 @@ def build_mcp(
         any fails, nothing is written."""
         return _svc().multi_edit(uuid, edits)
 
-    @mcp.tool
+    @mcp.tool(title="Archive a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
     def archive(uuid: str) -> dict[str, str]:
         """Retire a record from the hot index (still searchable on demand)."""
         return _svc().archive(uuid)
 
-    @mcp.tool
+    @mcp.tool(title="Soft-delete a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
     def soft_delete(uuid: str) -> dict[str, str]:
         """Tombstone a record (excluded from all reads)."""
         return _svc().soft_delete(uuid)
@@ -269,23 +324,16 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
             "note": f"no served {kind} named {name!r}; call {listing} to see what is",
         }
 
-    @mcp.tool
+    @mcp.tool(title="List served procedures", annotations=_READ)
     def list_procedures() -> list[dict[str, str]]:
         """List the framework procedures this server serves — name, title, one-line purpose.
 
         A procedure is the how-to an agent follows before calling the data tools. Read one
         with read_procedure(name).
         """
-        return [
-            {
-                "name": name,
-                "title": content.title_prompt(name),
-                "description": content.describe_prompt(name),
-            }
-            for name in content.list_prompts()
-        ]
+        return _procedure_rows(content)
 
-    @mcp.tool
+    @mcp.tool(title="Read a served procedure", annotations=_READ)
     def read_procedure(name: str, argument: str | None = None) -> dict[str, Any]:
         """Read a served framework procedure, composed for this server's storage backend.
 
@@ -301,7 +349,7 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
             return _not_served("procedure", name, "list_procedures()")
         return {"served": True, "name": name, "content": text}
 
-    @mcp.tool
+    @mcp.tool(title="List served templates", annotations=_READ)
     def list_resources() -> list[dict[str, str]]:
         """List the framework templates this server serves — name, title, one-line purpose.
 
@@ -317,7 +365,7 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
             for name in content.list_resources()
         ]
 
-    @mcp.tool
+    @mcp.tool(title="Read a served template", annotations=_READ)
     def read_resource(name: str) -> dict[str, Any]:
         """Read a served framework template verbatim.
 

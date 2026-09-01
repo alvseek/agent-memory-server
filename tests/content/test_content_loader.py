@@ -368,6 +368,20 @@ def test_component_is_inlined_and_brings_its_own_backend_ops(tmp_path: Path) -> 
     assert "unsubstituted-placeholder" not in text
 
 
+def test_backend_preamble_reaches_every_seam_procedure() -> None:
+    """The db backend opens every composed procedure with the one sentence none of them
+    carried: what `<domain>` in its ops means. It arrives through the framework's own
+    composer, so it reaches the served prompt, the tool and the HTTP face alike — and
+    not `wait-options`, which has no seam to compose."""
+    loader = ContentLoader(CF)
+    marker = "`<domain>` in the ops below is the agent you are acting as"
+    for name in ("update-episodic", "wrap-up", "awaken-agent"):
+        text = loader.get_prompt(name)
+        assert marker in text, name
+        assert text.index(marker) < text.index("### §"), name  # ahead of the mechanics
+    assert marker not in loader.get_prompt("wait-options")
+
+
 def test_unresolvable_component_leaves_its_reference_visible(tmp_path: Path) -> None:
     """Nothing fails silently: an absent component keeps its link in the text rather
     than quietly dropping the step."""

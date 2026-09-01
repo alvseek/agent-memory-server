@@ -234,8 +234,10 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     """Pinned deliberately. Tool definitions are permanent-layer — they ship on every
     single call — so the surface growing is a cost decision, not an implementation
     detail, and it should not be possible to add one without this test saying so."""
+    # `help` is not a data tool but it is always present: it is the fallback for a client
+    # that never shows `instructions`, so it exists whether or not content is served.
     data_tools = [
-        "append", "archive", "awaken", "create_agent", "edit", "get", "insert",
+        "append", "archive", "awaken", "create_agent", "edit", "get", "help", "insert",
         "list_agents", "multi_edit", "ping", "prepend", "query", "search", "soft_delete",
     ]
     async with Client(_mcp(tmp_path / "m.db")) as mcp:
@@ -245,7 +247,7 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # a second way — through the one primitive an agent may invoke itself
     async with Client(_mcp_content(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())
-    assert len(names) == 18
+    assert len(names) == 19
     assert names == sorted(
         data_tools + ["list_procedures", "read_procedure", "list_resources", "read_resource"]
     )

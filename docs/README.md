@@ -180,8 +180,11 @@ In a session, `ping` → `pong` is the connectivity check; `list_procedures` sho
 
 ### MCP surface (agent face)
 
-**18 tools**, in three groups:
+At `initialize` the server returns four sentences of **instructions** — what Munnin is, what to call first whether you are new or returning, and that procedures come from `read_procedure`, never slash commands; clients that show instructions inject them into the system prompt. Every tool carries a **title** and the MCP hints a client reads before letting it run: `readOnlyHint` on all, `destructiveHint` explicit on every write (additive: `insert`, `create_agent`, `append`, `prepend`; destructive: `edit`, `multi_edit`, `archive`, `soft_delete`), `openWorldHint=false` throughout.
 
+**19 tools**, in four groups:
+
+- *Orientation* — `help`: the same instructions text plus the served procedure list, for clients that never show instructions. Always present, even with no served content.
 - *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically.
 - *Agent lifecycle* — `create_agent`, `list_agents`. An agent exists when it has a row; every memory record names one under a foreign key, so `create_agent` is the strict twin of the first write.
 - *Served content* — `list_procedures`, `read_procedure(name, argument?)`, `list_resources`, `read_resource(name)`. The same procedures and templates are also served as MCP **prompts** and **resources**, but a prompt is user-invoked and a resource client-attached; a tool is the one primitive the agent may call itself, which is what lets a served procedure that says *execute `/wrap-up`* resolve to `read_procedure("wrap-up")`.
@@ -253,7 +256,7 @@ memory_record  = shared_record + agent_id, record_type ∈ {episode, knowledge, 
 
 ### Served content
 
-The procedures are storage-agnostic: a semantic core plus a `## Storage Mechanics` seam. `content/loader.py` composes them live from the submodule in the framework's two stages — shared **components** inlined at their reference point, then the core and the `db` backend substituted in — through `content/seam_bridge.py`, which imports `components/inline.py` and `storage-backends/seam.py` from their single homes in `control-files`. Munnin keeps no copy of either, which is what makes a served procedure byte-identical to the slash command the framework installs. The served *set* is the framework's own `command_set` minus the three memory-sync commands; add a procedure to `control-files` and it is served on the next request.
+The procedures are storage-agnostic: a semantic core plus a `## Storage Mechanics` seam. `content/loader.py` composes them live from the submodule in the framework's two stages — shared **components** inlined at their reference point, then the core and the `db` backend substituted in — through `content/seam_bridge.py`, which imports `components/inline.py` and `storage-backends/seam.py` from their single homes in `control-files`. Munnin keeps no copy of either, which is what makes a served procedure byte-identical to the slash command the framework installs. The served *set* is the framework's own `command_set` minus the three memory-sync commands; add a procedure to `control-files` and it is served on the next request. The `db` backend also opens every composed procedure with its `## all-procedures` section — one sentence saying what `<domain>` in the ops means (the agent you awakened as, or the one `create-agent` made; `list_agents()` when there was no awakening) — so no served procedure leaves that placeholder to be guessed, and the markdown commands, whose backend defines no such section, are untouched.
 
 ### Importer
 
@@ -316,7 +319,6 @@ In-repo decisions:
 ### Planned before the hosted demo is promoted
 
 - **`GET /` is a 404.** A landing page — what this is, how to connect, the demo's wipe notice and privacy line — is the next piece of the HTTP face.
-- **No `instructions` at `initialize`, no `help` tool, no tool annotations.** A stranger who signs in meets 18 tool names and nothing else; clients defer tool descriptions, so the name is the only always-visible surface today.
 - **Registration is open and nothing bounds a tenant.** No per-tenant record or body cap, no scheduled wipe of demo tenants.
 
 ### Known defects
