@@ -111,13 +111,16 @@ class AuthNotConfiguredError(RuntimeError):
 
 
 class LocalModeNotLoopbackError(RuntimeError):
-    """Raised when ``MUNNIN_AUTH=off`` is combined with a public base URL that is not loopback.
+    """Raised when ``MUNNIN_AUTH=off`` would leave the server reachable beyond this machine.
 
     Local mode serves everyone's memory to whoever can reach the port, which is safe on a
-    laptop and a disclosure anywhere else. The public base URL is the one setting that
-    states where this server believes it is reachable from, so it is the one the guard
-    reads — the bind address cannot serve, because a container has to bind ``0.0.0.0``
-    to be reachable even from its own host.
+    laptop and a disclosure anywhere else. Two settings say where the server is reachable
+    from, and both are checked: the public base URL, which states where it believes it is
+    addressed, and the bind address, which decides which interfaces actually answer. A
+    container has to bind ``0.0.0.0`` to be reachable even from its own host, so the bind
+    check can be waived — but only by ``MUNNIN_LOCAL_BIND_ALL=1``, an explicit statement
+    that something in front of the process (a port published on the host's loopback)
+    keeps it local. The server cannot detect that; it asks to be told.
     """
 
 
@@ -126,10 +129,14 @@ class LocalModeNotLoopbackError(RuntimeError):
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
+def is_loopback_host(host: str | None) -> bool:
+    """Whether a bare host — a bind address, or the host part of a URL — is this machine."""
+    return host is not None and host.strip("[]").lower() in _LOOPBACK_HOSTS
+
+
 def is_loopback_url(url: str) -> bool:
     """Whether ``url`` names this machine and nothing beyond it."""
-    host = urlsplit(url).hostname
-    return host is not None and host.lower() in _LOOPBACK_HOSTS
+    return is_loopback_host(urlsplit(url).hostname)
 
 
 class _ResourceBoundVerifier(JWTVerifier):
@@ -278,6 +285,13 @@ def build_auth(config: Config) -> MultiAuth | None:
                 f"machine (127.0.0.1, localhost or ::1); it is {config.public_base_url!r}. "
                 "Refusing to start: a server anyone can reach and nobody has to log in to "
                 "serves everyone's memory to anyone."
+            )
+        if not is_loopback_host(config.host) and not config.local_bind_all:
+            raise LocalModeNotLoopbackError(
+                f"MUNNIN_AUTH=off with MUNNIN_HOST={config.host!r} would answer on every "
+                "interface of this machine with no authentication. Bind to 127.0.0.1, or — "
+                "only when something in front of this process publishes the port on the "
+                "host's loopback, as compose.yaml does — set MUNNIN_LOCAL_BIND_ALL=1 to say so."
             )
         return None
 

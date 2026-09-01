@@ -285,3 +285,34 @@ def test_off_wins_over_a_stray_issuer_setting() -> None:
     operator asked for local mode, and the loopback guard is what keeps that safe, not
     the presence or absence of an issuer name."""
     assert build_auth(Config(auth_mode="off", logto_endpoint=LOGTO)) is None
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.10", "::", "munnin.internal"])
+def test_local_mode_is_refused_when_bound_beyond_loopback(host: str) -> None:
+    """The bind address is the second guard: a loopback public URL says nothing about
+    which interfaces actually answer, and ``0.0.0.0`` with no authentication is open to
+    every network the machine is on."""
+    with pytest.raises(LocalModeNotLoopbackError):
+        build_auth(Config(auth_mode="off", host=host))
+
+
+def test_local_mode_bound_to_loopback_needs_no_acknowledgement() -> None:
+    assert build_auth(Config(auth_mode="off", host="127.0.0.1")) is None
+    assert build_auth(Config(auth_mode="off", host="::1")) is None
+
+
+def test_the_bind_guard_is_waived_only_by_the_explicit_flag() -> None:
+    """The container case: it must bind ``0.0.0.0``, and compose publishes the port on the
+    host's loopback — a fact the server cannot see, so ``MUNNIN_LOCAL_BIND_ALL=1`` is how
+    the operator states it. The flag waives the bind check and nothing else: a public
+    base URL is still refused with it set."""
+    assert build_auth(Config(auth_mode="off", host="0.0.0.0", local_bind_all=True)) is None
+    with pytest.raises(LocalModeNotLoopbackError):
+        build_auth(
+            Config(
+                auth_mode="off",
+                host="0.0.0.0",
+                local_bind_all=True,
+                public_base_url="https://munnin.lok.quest",
+            )
+        )

@@ -107,7 +107,9 @@ def build_router(
     and the check below is what keeps an unguarded face unreachable by omission: passing
     neither raises rather than quietly building a router that answers everyone, and
     passing both raises rather than guessing which one decides who the caller is.
-    ``identity`` is required in both modes because the served-content routes lean on it.
+    ``identity`` is required in both modes even though only token mode reads it: a
+    token-mode router cannot exist without it, and one signature is easier to hold to
+    that rule than two.
     """
     if (auth is None) == (local_user_id is None):
         raise ValueError(
@@ -126,7 +128,11 @@ def build_router(
         """
         if local_user_id is not None:
             return local_user_id
-        assert auth is not None  # the constructor check above guarantees it
+        if auth is None:
+            # Unreachable: the constructor refused a router with neither mode. Kept as a
+            # real raise rather than an ``assert`` so it survives ``python -O`` and reads
+            # as the invariant it is.
+            raise RuntimeError("token-mode router built without a verifier")
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer" or not token:
             raise HTTPException(401, "missing bearer token", headers=_UNAUTHENTICATED)

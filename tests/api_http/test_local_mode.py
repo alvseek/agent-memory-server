@@ -100,7 +100,7 @@ async def test_http_face_answers_without_a_bearer(tmp_path: Path) -> None:
 async def test_mcp_face_answers_without_a_token(tmp_path: Path) -> None:
     app = _local_app(tmp_path)
     async with running(app):
-        async with mcp_client_for(app, None) as client:  # type: ignore[arg-type]
+        async with mcp_client_for(app, None) as client:
             result = await client.call_tool("ping", {})
     assert _tool_text(result) == "pong"
 
@@ -110,7 +110,7 @@ async def test_writes_land_in_the_configured_tenant(tmp_path: Path) -> None:
     foreign key — and what one face writes the other face reads, under the same tenant."""
     app = _local_app(tmp_path)
     async with running(app):
-        async with mcp_client_for(app, None) as client:  # type: ignore[arg-type]
+        async with mcp_client_for(app, None) as client:
             await client.call_tool(
                 "create_agent", {"agent_id": "meta", "name": "Meta", "role": "test agent"}
             )

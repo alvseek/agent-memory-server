@@ -60,6 +60,13 @@ class Config:
     # deployment cannot reach it by misconfiguration. Any other value reads as ``token``:
     # a typo keeps authentication on, never off.
     auth_mode: str = "token"
+    # Local mode's second guard. ``off`` is also refused while ``host`` is not a loopback
+    # address, because a process bound to ``0.0.0.0`` with no authentication is open to
+    # every network the machine is on — unless the operator states, with this flag, that
+    # something in front of it (a container port published on the host's loopback) keeps
+    # it local. The flag is an acknowledgement, never a detection: the server cannot know
+    # what publishes its port, so it asks to be told.
+    local_bind_all: bool = False
     # This server's own public URL. Tokens are bound to it as their audience, so it must
     # match the Resource Indicator registered with whichever issuer is in use. Loopback by
     # default — the only value local mode accepts, and the right one for a laptop; a
@@ -88,6 +95,7 @@ def load_config() -> Config:
             if entry.strip()
         ),
         auth_mode="off" if os.getenv("MUNNIN_AUTH", "").strip().lower() == "off" else "token",
+        local_bind_all=os.getenv("MUNNIN_LOCAL_BIND_ALL", "").lower() in {"1", "true", "yes"},
         public_base_url=os.getenv("MUNNIN_PUBLIC_BASE_URL", "http://127.0.0.1:8200"),
         docs_enabled=os.getenv("MUNNIN_DOCS", "").lower() in {"1", "true", "yes"},
     )

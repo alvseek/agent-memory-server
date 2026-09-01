@@ -52,12 +52,14 @@ TEST_ISSUER = "https://munnin-tests.authkit.invalid"
 class FixedTenantResolver:
     """A resolver that always answers with one tenant. **Test double — never shipped.**
 
-    The production resolver reaches a tenant only through a verified token, which is the
-    property Step 3.4 deleted the old static resolver to guarantee. Face tests that build
-    an adapter directly still need *some* tenant without standing up a token, so the
-    double lives here, where its being a double is obvious. It is deliberately not
-    importable from `munnin`: if this class ever appears in the server's own dependency
-    graph, that is the bug it exists to make visible.
+    The server does ship a fixed-tenant resolver of its own — ``LocalTenantResolver`` —
+    but ``build_app`` selects it only after ``build_auth`` has accepted local mode, which
+    is gated on a loopback public URL and bind address. Face tests that build an adapter
+    directly still need *some* tenant without standing up a token, and they must get it
+    from here rather than from the shipped class: a test that reached for
+    ``LocalTenantResolver`` would be quietly asserting that the face under test runs in
+    local mode, which is not what any face test means. The double lives here, where its
+    being a double is obvious.
     """
 
     def __init__(self, user_id: str) -> None:
@@ -129,12 +131,15 @@ async def running(app: Any) -> AsyncIterator[None]:
         yield
 
 
-def mcp_client_for(app: Any, token: str) -> Client:
+def mcp_client_for(app: Any, token: str | None) -> Client:
     """A real MCP client speaking streamable-HTTP to a mounted app, in process.
 
     Drives the **mounted** app rather than an in-memory ``FastMCP`` deliberately:
     authentication is enforced at the transport, so an in-memory client sails straight
     past it and would report success against a server that is wide open.
+
+    ``token=None`` sends no credential at all. Only a local-mode app answers that; against
+    a token-mode app it is the anonymous caller the auth tests expect to see refused.
     """
 
     def factory(headers=None, auth=None, follow_redirects=True, **_: Any) -> httpx.AsyncClient:

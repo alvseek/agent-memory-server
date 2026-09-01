@@ -162,3 +162,18 @@ def test_public_base_url_defaults_to_loopback(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.delenv("MUNNIN_PUBLIC_BASE_URL", raising=False)
     assert load_config().public_base_url == "http://127.0.0.1:8200"
     assert Config().public_base_url == "http://127.0.0.1:8200"
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes"])
+def test_local_bind_all_can_be_acknowledged(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("MUNNIN_LOCAL_BIND_ALL", value)
+    assert load_config().local_bind_all is True
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "no", "on"])
+def test_local_bind_all_is_off_unless_stated(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """Absent or anything but an explicit yes leaves the bind guard armed."""
+    monkeypatch.setenv("MUNNIN_LOCAL_BIND_ALL", value)
+    assert load_config().local_bind_all is False
+    monkeypatch.delenv("MUNNIN_LOCAL_BIND_ALL", raising=False)
+    assert load_config().local_bind_all is False
