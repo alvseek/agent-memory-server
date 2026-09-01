@@ -1,3 +1,7 @@
+# The LOCAL shape: one container, local mode, reachable from this machine only.
+# The hosted shape does not use this file — it runs the same image in token mode
+# behind a TLS proxy, configured by whatever deploys it (docs/README.md,
+# "How Is It Deployed").
 name: munnin
 
 services:
@@ -6,10 +10,10 @@ services:
       context: .
       dockerfile: Dockerfile
     image: munnin:0.1.0
-    # Loopback only. A reverse proxy on the host is the intended public face,
-    # so this must not land on every interface. The HOST port is deployment
-    # config (the host-native Munnin may already hold 8200); the container
-    # port is fixed.
+    # Published on the host's loopback only. Local mode is safe precisely because
+    # nothing beyond this machine can reach the port, and MUNNIN_LOCAL_BIND_ALL
+    # below is the statement of this line. The HOST port is a choice (a host-native
+    # Munnin may already hold 8200); the container port is fixed.
     ports:
       - "127.0.0.1:${MUNNIN_HOST_PORT:-8200}:8200"
     environment:
@@ -20,19 +24,18 @@ services:
       MUNNIN_USER_ID: "${MUNNIN_USER_ID:-alvi}"
       MUNNIN_DB_PATH: /app/data/valaskjalf-memory.db
       MUNNIN_CONTENT_ROOT: /app/control-files
-      # Local mode: no identity provider, every call acts as MUNNIN_USER_ID. Safe only
-      # because the port above is published on the host's loopback — and the app
-      # enforces that from its own side: it refuses to start with MUNNIN_AUTH=off
-      # whenever MUNNIN_PUBLIC_BASE_URL is not a loopback address. To run this image
-      # behind a public hostname instead, drop both lines and configure an issuer
-      # (MUNNIN_LOGTO_ENDPOINT) plus the public URL, as the hosted deploy does.
+      # Local mode: no identity provider, every call acts as MUNNIN_USER_ID. The app
+      # enforces the "this machine only" half itself — it refuses to start with
+      # MUNNIN_AUTH=off whenever MUNNIN_PUBLIC_BASE_URL is not a loopback address.
+      # To run this image behind a public hostname instead, drop MUNNIN_AUTH and
+      # MUNNIN_LOCAL_BIND_ALL and set MUNNIN_LOGTO_ENDPOINT plus the real public URL.
       MUNNIN_AUTH: "off"
       MUNNIN_PUBLIC_BASE_URL: "http://127.0.0.1:${MUNNIN_HOST_PORT:-8200}"
       # The container binds 0.0.0.0 (it must, to be reachable from the host at all),
       # which local mode refuses unless told that something else keeps it local. The
-      # `ports:` line above is that something — the port is published on the host's
-      # loopback only — and this flag is the statement of it. Never set this flag on
-      # a process that binds 0.0.0.0 without such a front.
+      # `ports:` line above is that something, and this flag is the acknowledgement
+      # of it — never a detection. Do not set it on a process that binds 0.0.0.0
+      # without such a front.
       MUNNIN_LOCAL_BIND_ALL: "1"
     volumes:
       # The DIRECTORY, never the file. SQLite runs in WAL mode here, so it keeps

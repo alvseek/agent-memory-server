@@ -1,42 +1,49 @@
-# agent-memory-server (Munnin)
+# Munnin — an agent identity server
 
-The **memory MCP server** for the agent-memory framework — Python · FastMCP · FastAPI · SQLite.
+Munnin gives an AI agent a persistent self — identity, reasoning patterns, emotional moments, episodic history, knowledge — and serves the **procedures for tending that memory** beside the data, over MCP. It is the memory server of the [agent-memory framework](https://github.com/alvseek/agent-memory-system): an agent awakens from it as *who it is*, not from a pile of recalled facts, and writes back through the same discipline.
 
-Codename **Munnin** (Odin's memory raven). Owns the **`Valaskjalf/memory`** store (identity, episodic, knowledge, shared foundations) and serves memory primitives over **MCP** (agents) + an **HTTP** operation API. Project-blind.
+Python · FastMCP · FastAPI · SQLite. Apache-2.0. Runs on a laptop in five minutes with no identity provider.
 
-Design of record: `docs/architecture/memory-mcp-server.md` + ADR-013 (in the `@agent-memory` repo).
+## Five-minute run
 
-## Clone
+Needs Docker and git.
 
-```bash
-git clone --recurse-submodules <url>   # control-files is a git submodule
+```sh
+git clone --recurse-submodules https://github.com/alvseek/agent-memory-server
+cd agent-memory-server
+docker compose up -d --build
+curl http://127.0.0.1:8200/health      # {"status":"ok","service":"munnin","version":"0.1.0"}
 ```
 
-The framework procedures/templates served as `content/` live in the **`control-files/`** submodule (`agent-memory-system`).
+Connect a client. Claude Code:
 
-## Dev
+```sh
+claude mcp add --transport http munnin http://127.0.0.1:8200/mcp
+```
 
-```bash
+or in a project's `.mcp.json`:
+
+```json
+{ "mcpServers": { "munnin": { "type": "http", "url": "http://127.0.0.1:8200/mcp" } } }
+```
+
+Then, in a session: `ping` answers `pong`, `list_procedures` returns the 13 memory procedures, and `read_procedure("create-agent")` walks you through making the first agent. No sign-in happens: this is **local mode** — one tenant, reachable from this machine only, and the server refuses to start any other way ([how that guard works](docs/README.md#local-mode)).
+
+No Docker? `uv sync && MUNNIN_AUTH=off uv run python -m munnin` does the same on `127.0.0.1:8200`.
+
+## Hosting it
+
+The default is **token mode**: every `/mcp` and `/api` call needs a bearer token from an OIDC issuer that binds tokens to this server (`aud` = `https://<your-host>/mcp`), and each person who signs in gets their own tenant. Set `MUNNIN_PUBLIC_BASE_URL` and `MUNNIN_LOGTO_ENDPOINT`, put it behind TLS, and paste `https://<your-host>/mcp` into claude.ai's connectors or `claude mcp add`. The issuer requirements, the one-identifier rule, and the prebuilt image are in [How Is It Deployed](docs/README.md#how-is-it-deployed).
+
+## Develop
+
+```sh
 uv sync
-uv run python -m munnin      # boots on 127.0.0.1:8200 → /mcp (MCP) + /api + /health
-uv run pytest
+uv run pytest        # 446 tests
 uv run ruff check
 ```
 
-## Deploy
-
-Two supported shapes, both driven by the same `MUNNIN_*` settings ([.env.example](.env.example)):
-
-- **Container** — [Dockerfile](Dockerfile) + [compose.yaml](compose.yaml). One unit, non-root, SQLite on a named volume mounted at the data *directory*.
-- **Process** — `.venv/bin/python -m munnin` under any supervisor; no uv needed at runtime.
-
-Both bind loopback by default and expect a reverse proxy or tunnel in front. Host-specific configuration and release orchestration live outside this repo.
-
-## Status
-
-Working locally. The full surface is in place on both faces — **11 data tools** (`awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`) over a SQLite + FTS5 store, plus **13 procedures served as MCP Prompts** and **4 templates as Resources** — both also reachable as tools (`list_procedures`/`read_procedure`, `list_resources`/`read_resource`), the one primitive an agent may invoke itself — and a lossless markdown→DB importer.
-
-**Not yet deployed** — the fleet still awakens from markdown; the RackNerd rollout is the remaining step. Full architecture, surface reference, and known debts: [docs/README.md](docs/README.md).
+Full architecture, the tool and endpoint surface, the data model, and known debts: [docs/README.md](docs/README.md).
 
 ## License
 
