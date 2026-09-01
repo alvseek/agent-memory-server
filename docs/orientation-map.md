@@ -41,11 +41,11 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **scope**: shared
 - **roles**: []
 - **status**: useful
-- **tags**: [overview, entry-point, non-7q, pointer]
-- **last_verified**: "2026-08-21"
-- **verified_by**: "meta / awaken-agent served-prompt session"
-- **update_trigger**: "when setup/deploy invocation or the served surface changes; slim to a thin pointer to docs/README.md per the placement contract"
-- **notes**: "Root README (non-7Q). Status line corrected 2026-08-15 — it had claimed an empty Phase 4 scaffold 'boots + health only', ~5 phases stale; now states the real surface (11 data tools, 12 Prompts, 4 Resources, importer) with deployment named as the open step, verified by introspection rather than recall. Content is accurate; the structural decision to slim it to a thin pointer at docs/README.md is still pending (A/B/C)."
+- **tags**: [overview, entry-point, first-screen, five-minute-run, pointer]
+- **last_verified**: "2026-09-01"
+- **verified_by**: "software-architect / launch-map step 3 (docs rewrite) + step 4"
+- **update_trigger**: "when the five-minute run, the connect commands, the hosting requirements, or the licence change"
+- **notes**: "Root README, rewritten 2026-09-01 as the first screen a stranger sees: the agent-identity pitch, the five-minute local run (clone → compose → /health → claude mcp add or .mcp.json → pong), the no-Docker line, one hosting paragraph pointing at docs/README.md, licence. Walked end to end on a clean compose build with a real client. The hosted demo URL is deliberately absent until launch-map steps 5–7 hold. The old thin-pointer question is settled: it is the entry page, and docs/README.md is the depth."
 
 ### `docs/README.md`
 
@@ -54,10 +54,10 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **roles**: []
 - **status**: useful
 - **tags**: [readme, 7q, project-entry-point, munnin, mcp-server]
-- **last_verified**: "2026-08-21"
-- **verified_by**: "meta / awaken-agent served-prompt session"
-- **update_trigger**: "when tech stack, the tool/endpoint surface, the data model, deploy topology, or known debts change"
-- **notes**: "Full project 7Q README for Munnin — two-adapters-over-one-core architecture, full MCP+HTTP surface, uniform-record data model, RackNerd deploy, ADR-012/013, and the awaken process-instruction gap. Generated 2026-08-13 from code. 2026-08-15: Served Content section now describes the **two-stage** delivery (component inlining then seam substitution); the closed no-remote debt (D3) retired from Debts, CI/CD, and Rollback; recorded that control-files runs its own CI so this repo's testpaths stays scoped to tests/. 2026-08-17: the HTTP API table + the paragraph under it now state the served-content response split — the two list endpoints answer JSON, a single prompt or template answers raw `text/markdown`."
+- **last_verified**: "2026-09-01"
+- **verified_by**: "software-architect / launch-map step 3 (docs rewrite) + step 4"
+- **update_trigger**: "when tech stack, the tool/endpoint surface, the data model, auth or tenancy, deploy topology, or known debts change"
+- **notes**: "Full project 7Q README, rewritten 2026-09-01 to the built system: local vs token mode stated once in a table, the auth and tenancy model ((iss, sub) → account, one resource identifier), the five-table schema, 19 tools / 13 prompts / 4 resources with the initialize instructions and the tool hints described, the HTTP twin table with the /api/agents rows, CI + the ghcr.io/alvseek/munnin image, the hosted-shape issuer requirements stated inline (Authentra's repo is private), and a current debts list. Every claim traced to code read that day and to a real-client walk. The old RackNerd / no-auth / SSH-tunnel description is gone."
 
 ### `docs/flows/awaken-db.md`
 
