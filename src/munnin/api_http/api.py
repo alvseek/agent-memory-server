@@ -97,23 +97,36 @@ def build_router(
     factory: ServiceFactory,
     content: ContentLoader | None = None,
     *,
-    auth: AuthProvider,
+    auth: AuthProvider | None,
     identity: IdentityService,
+    local_user_id: str | None = None,
 ) -> APIRouter:
     """The HTTP face.
 
-    ``auth`` and ``identity`` are required rather than optional: an unauthenticated HTTP
-    face is not a configuration this server has, and a default of ``None`` would make one
-    reachable by omission.
+    Exactly one of ``auth`` (token mode) and ``local_user_id`` (local mode) must be given,
+    and the check below is what keeps an unguarded face unreachable by omission: passing
+    neither raises rather than quietly building a router that answers everyone, and
+    passing both raises rather than guessing which one decides who the caller is.
+    ``identity`` is required in both modes because the served-content routes lean on it.
     """
+    if (auth is None) == (local_user_id is None):
+        raise ValueError(
+            "build_router needs exactly one of auth (token mode) or local_user_id (local "
+            "mode); neither would leave the HTTP face unguarded, both would leave it "
+            "ambiguous who a request acts as"
+        )
 
     async def _caller(request: Request) -> str:
         """The tenant behind this request, or 401.
 
-        Uses the **same** provider object the MCP face was given. Two independently
+        In local mode every request acts as the one configured tenant. Otherwise this
+        uses the **same** provider object the MCP face was given. Two independently
         configured verifiers would have to agree with each other forever, with nothing
         reporting the moment they stopped.
         """
+        if local_user_id is not None:
+            return local_user_id
+        assert auth is not None  # the constructor check above guarantees it
         scheme, _, token = request.headers.get("authorization", "").partition(" ")
         if scheme.lower() != "bearer" or not token:
             raise HTTPException(401, "missing bearer token", headers=_UNAUTHENTICATED)

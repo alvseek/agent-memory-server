@@ -26,9 +26,10 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/opt/uv-cache \
     uv sync --locked --no-dev --no-install-project
 
-# README.md is required: pyproject declares `readme = "README.md"`, so the
-# uv_build backend cannot build the project without it.
-COPY README.md ./
+# README.md, LICENSE and NOTICE are required: pyproject declares
+# `readme = "README.md"` and `license-files = ["LICENSE", "NOTICE"]`, and the
+# uv_build backend refuses to build the project when any of them is missing.
+COPY README.md LICENSE NOTICE ./
 COPY src ./src
 RUN --mount=type=cache,target=/opt/uv-cache \
     uv sync --locked --no-dev

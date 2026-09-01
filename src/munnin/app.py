@@ -16,6 +16,7 @@ catch, applied to the one seam where drift means an open door.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI
 from fastmcp.server.auth import AuthProvider, MultiAuth, RemoteAuthProvider
@@ -28,9 +29,14 @@ from munnin.api_http.api import build_router
 from munnin.api_mcp.server import build_mcp
 from munnin.business_services.identity_service import IdentityService
 from munnin.business_services.service_factory import ServiceFactory
-from munnin.business_services.tenant_resolver import TokenTenantResolver
+from munnin.business_services.tenant_resolver import (
+    LocalTenantResolver,
+    TenantResolver,
+    TokenTenantResolver,
+)
 from munnin.configuration.config import Config, load_config
 from munnin.content.loader import ContentLoader
+from munnin.data_entities.identity import Account
 from munnin.data_repositories.identity_repository import IdentityRepository
 
 #: Where the MCP face is mounted, and therefore the address clients actually connect to.
@@ -102,6 +108,28 @@ class _NormalisePath:
 
 class AuthNotConfiguredError(RuntimeError):
     """Raised when the server is started without an issuer to verify tokens against."""
+
+
+class LocalModeNotLoopbackError(RuntimeError):
+    """Raised when ``MUNNIN_AUTH=off`` is combined with a public base URL that is not loopback.
+
+    Local mode serves everyone's memory to whoever can reach the port, which is safe on a
+    laptop and a disclosure anywhere else. The public base URL is the one setting that
+    states where this server believes it is reachable from, so it is the one the guard
+    reads — the bind address cannot serve, because a container has to bind ``0.0.0.0``
+    to be reachable even from its own host.
+    """
+
+
+#: Hosts a URL may name and still be "this machine only". ``urlsplit`` strips the brackets
+#: from an IPv6 literal, so ``::1`` is compared bare.
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def is_loopback_url(url: str) -> bool:
+    """Whether ``url`` names this machine and nothing beyond it."""
+    host = urlsplit(url).hostname
+    return host is not None and host.lower() in _LOOPBACK_HOSTS
 
 
 class _ResourceBoundVerifier(JWTVerifier):
@@ -223,8 +251,8 @@ class _PinnedMultiAuth(MultiAuth):
         return super()._get_resource_url(path)
 
 
-def build_auth(config: Config) -> MultiAuth:
-    """The single verifier both faces share.
+def build_auth(config: Config) -> MultiAuth | None:
+    """The single verifier both faces share — or ``None``, in local mode.
 
     Exactly one issuer owns discovery — it is the address a client is sent to in order to
     log in. A second one, when present, contributes verification only, and that asymmetry
@@ -237,7 +265,22 @@ def build_auth(config: Config) -> MultiAuth:
     ``ClerkProvider`` appears anywhere here: both call the vendor on every single request,
     and ``ClerkProvider`` additionally proxies OAuth, which would put a client secret on
     the box and make this server the issuer of its own tokens.
+
+    ``None`` is returned in exactly one case: ``MUNNIN_AUTH=off`` with a loopback public
+    base URL. That is the laptop shape — no identity provider, one tenant — and the guard
+    lives here rather than in the config loader so that the same refusal fires whether the
+    config came from the environment or was constructed directly.
     """
+    if config.auth_mode == "off":
+        if not is_loopback_url(config.public_base_url):
+            raise LocalModeNotLoopbackError(
+                f"MUNNIN_AUTH=off is only accepted while MUNNIN_PUBLIC_BASE_URL names this "
+                f"machine (127.0.0.1, localhost or ::1); it is {config.public_base_url!r}. "
+                "Refusing to start: a server anyone can reach and nobody has to log in to "
+                "serves everyone's memory to anyone."
+            )
+        return None
+
     if not config.logto_endpoint and not config.authkit_domain:
         raise AuthNotConfiguredError(
             "Neither MUNNIN_LOGTO_ENDPOINT nor MUNNIN_AUTHKIT_DOMAIN is set, so no issuer "
@@ -284,12 +327,14 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     """Wire the whole graph.
 
     ``auth`` exists so tests can present a chosen subject through a doubled verifier.
-    It replaces *which* issuer is trusted and never whether verification happens — there
-    is deliberately no value here that switches auth off, because the path under test
-    has to stay the path that ships.
+    It replaces *which* issuer is trusted and never whether verification happens — no
+    value of this parameter switches auth off. The one way to run without verification is
+    ``MUNNIN_AUTH=off`` in the config, which ``build_auth`` grants only for a loopback
+    public URL; ``local`` below is true exactly when it did.
     """
     config = config or load_config()
     auth = auth if auth is not None else build_auth(config)
+    local = auth is None
 
     # DI graph: store -> per-tenant service factory -> adapters; content served live from
     # the submodule. The factory replaces the single boot-time service: the tenant is now
@@ -297,11 +342,20 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     factory = ServiceFactory(config.db_path)
     content = ContentLoader(config.content_root)
 
-    # Both faces resolve their tenant from the same verified token, through the same
-    # identity service — the MCP face from FastMCP's request context, the HTTP face from
-    # a dependency, because those are the only places each transport exposes it.
-    identity = IdentityService(IdentityRepository(config.db_path))
-    mcp = build_mcp(factory, TokenTenantResolver(identity), content, auth=auth)
+    # Both faces resolve their tenant the same way — the MCP face from FastMCP's request
+    # context, the HTTP face from a dependency, because those are the only places each
+    # transport exposes it. In token mode that is the verified token's (iss, sub) pair
+    # through the identity service; in local mode it is the one constant tenant, whose
+    # account row is created here so the first write does not fail its foreign key.
+    identity_repo = IdentityRepository(config.db_path)
+    identity = IdentityService(identity_repo)
+    resolver: TenantResolver
+    if local:
+        identity_repo.ensure_account(Account(user_id=config.user_id))
+        resolver = LocalTenantResolver(config.user_id)
+    else:
+        resolver = TokenTenantResolver(identity)
+    mcp = build_mcp(factory, resolver, content, auth=auth)
     mcp_app = mcp.http_app(path="/")  # StarletteWithLifespan (streamable-HTTP)
 
     # The parent app takes the MCP app's lifespan, or its session manager never starts.
@@ -316,7 +370,15 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
         lifespan=mcp_app.lifespan,
         openapi_url="/openapi.json" if config.docs_enabled else None,
     )
-    app.include_router(build_router(factory, content, auth=auth, identity=identity))
+    app.include_router(
+        build_router(
+            factory,
+            content,
+            auth=auth,
+            identity=identity,
+            local_user_id=config.user_id if local else None,
+        )
+    )
     app.mount(MCP_MOUNT_PATH, mcp_app)
 
     # OAuth discovery, served from the **root**. FastMCP builds its app believing it sits
@@ -328,8 +390,11 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     # standard flow would fail discovery and never reach a login screen.
     #
     # These two are deliberately unauthenticated, and must be: a client reads them to find
-    # out how to obtain a token, so requiring one would be circular (RFC 9728).
-    app.router.routes.extend(auth.get_well_known_routes())
+    # out how to obtain a token, so requiring one would be circular (RFC 9728). In local
+    # mode there is nothing to discover — no issuer exists — so advertising one would only
+    # send a client to a login that cannot happen.
+    if auth is not None:
+        app.router.routes.extend(auth.get_well_known_routes())
 
     # Outermost, so the rewrite happens before any router looks at the path — see the
     # class for why a redirect here is a broken login rather than a detour.

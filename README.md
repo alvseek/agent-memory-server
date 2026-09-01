@@ -37,3 +37,7 @@ Both bind loopback by default and expect a reverse proxy or tunnel in front. Hos
 Working locally. The full surface is in place on both faces — **11 data tools** (`awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`) over a SQLite + FTS5 store, plus **13 procedures served as MCP Prompts** and **4 templates as Resources** — both also reachable as tools (`list_procedures`/`read_procedure`, `list_resources`/`read_resource`), the one primitive an agent may invoke itself — and a lossless markdown→DB importer.
 
 **Not yet deployed** — the fleet still awakens from markdown; the RackNerd rollout is the remaining step. Full architecture, surface reference, and known debts: [docs/README.md](docs/README.md).
+
+## License
+
+[Apache License 2.0](LICENSE) — Copyright 2026 Alviandi Widiasto. The `control-files` submodule ([agent-memory-system](https://github.com/alvseek/agent-memory-system)) is licensed the same way, so a clone with submodules is one licence throughout.

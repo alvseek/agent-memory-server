@@ -53,9 +53,18 @@ class Config:
     # refreshing against another mints tokens under both. Comma-separated, so a rename
     # never needs a window in which neither form is accepted.
     logto_audience: tuple[str, ...] = ()
+    # Whether the faces require a verified token. ``token`` (the default) is the shipped
+    # behaviour: an issuer must be configured or the server refuses to start. ``off`` is
+    # local mode — no issuer, every call acts as the one constant tenant ``user_id`` — and
+    # ``build_auth`` accepts it only while ``public_base_url`` is a loopback address, so a
+    # deployment cannot reach it by misconfiguration. Any other value reads as ``token``:
+    # a typo keeps authentication on, never off.
+    auth_mode: str = "token"
     # This server's own public URL. Tokens are bound to it as their audience, so it must
-    # match the Resource Indicator registered with whichever issuer is in use.
-    public_base_url: str = "https://munnin.lok.quest"
+    # match the Resource Indicator registered with whichever issuer is in use. Loopback by
+    # default — the only value local mode accepts, and the right one for a laptop; a
+    # deployment behind a public hostname sets its own, as the hosted config does.
+    public_base_url: str = "http://127.0.0.1:8200"
     # FastAPI's own /openapi.json, /docs and /redoc. They sit outside the router the auth
     # guard is attached to, so they cannot be protected — only present or absent. Off by
     # default: forgetting to disable them publishes the API's shape, whereas forgetting to
@@ -78,6 +87,7 @@ def load_config() -> Config:
             for entry in os.getenv("MUNNIN_LOGTO_AUDIENCE", "").split(",")
             if entry.strip()
         ),
-        public_base_url=os.getenv("MUNNIN_PUBLIC_BASE_URL", "https://munnin.lok.quest"),
+        auth_mode="off" if os.getenv("MUNNIN_AUTH", "").strip().lower() == "off" else "token",
+        public_base_url=os.getenv("MUNNIN_PUBLIC_BASE_URL", "http://127.0.0.1:8200"),
         docs_enabled=os.getenv("MUNNIN_DOCS", "").lower() in {"1", "true", "yes"},
     )

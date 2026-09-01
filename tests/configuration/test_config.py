@@ -124,3 +124,41 @@ def test_docs_are_off_when_the_variable_is_absent(monkeypatch: pytest.MonkeyPatc
     monkeypatch.delenv("MUNNIN_DOCS", raising=False)
     assert load_config().docs_enabled is False
     assert Config().docs_enabled is False
+
+
+# --- local mode ---------------------------------------------------------------------------
+
+
+def test_auth_mode_defaults_to_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Absent means token — the deployed case, where nothing sets it, keeps auth on."""
+    monkeypatch.delenv("MUNNIN_AUTH", raising=False)
+    assert load_config().auth_mode == "token"
+    assert Config().auth_mode == "token"
+
+
+@pytest.mark.parametrize("value", ["off", "OFF", " off "])
+def test_off_is_read_as_local_mode(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("MUNNIN_AUTH", value)
+    assert load_config().auth_mode == "off"
+
+
+@pytest.mark.parametrize("value", ["", "on", "token", "false", "0", "of", "disabled", "none"])
+def test_anything_else_keeps_token_mode(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    """A typo turns authentication on, never off — the same fail-safe as ``MUNNIN_DOCS``.
+
+    ``of`` and ``none`` are the near-misses worth pinning: both look like an attempt to
+    switch auth off, and both must leave it on.
+    """
+    monkeypatch.setenv("MUNNIN_AUTH", value)
+    assert load_config().auth_mode == "token"
+
+
+def test_public_base_url_defaults_to_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A public repo must not default to one deployment's hostname.
+
+    Loopback is the only value local mode accepts, and the hosted config sets its own URL
+    explicitly, so nothing deployed depends on this default.
+    """
+    monkeypatch.delenv("MUNNIN_PUBLIC_BASE_URL", raising=False)
+    assert load_config().public_base_url == "http://127.0.0.1:8200"
+    assert Config().public_base_url == "http://127.0.0.1:8200"

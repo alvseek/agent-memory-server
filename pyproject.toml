@@ -3,6 +3,8 @@ name = "munnin"
 version = "0.1.0"
 description = "Munnin — the agent-memory MCP server (owns Valaskjalf/memory)."
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [
     { name = "Alviandi Widiasto", email = "alviandi@msn.com" }
 ]

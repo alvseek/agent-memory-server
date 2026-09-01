@@ -21,7 +21,12 @@ from __future__ import annotations
 import pytest
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
-from munnin.app import AuthNotConfiguredError, LogtoAuthProvider, build_auth
+from munnin.app import (
+    AuthNotConfiguredError,
+    LocalModeNotLoopbackError,
+    LogtoAuthProvider,
+    build_auth,
+)
 from munnin.configuration.config import Config
 
 DOMAIN = "https://munnin-test.authkit.app"
@@ -228,3 +233,55 @@ def test_scopes_are_advertised_but_not_required() -> None:
     )
     assert not provider.required_scopes
     assert not provider.token_verifier.required_scopes
+
+
+# --- local mode ---------------------------------------------------------------------------
+
+
+def test_local_mode_on_loopback_builds_no_verifier() -> None:
+    """``None`` is the local-mode answer: no issuer, no verifier, one constant tenant."""
+    assert build_auth(Config(auth_mode="off")) is None
+
+
+@pytest.mark.parametrize(
+    "url", ["http://localhost:8200", "http://[::1]:8200", "http://127.0.0.1", "HTTP://LOCALHOST"]
+)
+def test_every_loopback_spelling_is_accepted(url: str) -> None:
+    assert build_auth(Config(auth_mode="off", public_base_url=url)) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://munnin.lok.quest",
+        "http://0.0.0.0:8200",
+        "http://192.168.1.10:8200",
+        "http://munnin.internal",
+        "http://localhost.example.com",
+    ],
+)
+def test_local_mode_is_refused_off_loopback(url: str) -> None:
+    """The guard that keeps local mode on the laptop.
+
+    ``0.0.0.0`` is deliberately in the refused set: it is where a container binds, but as
+    a *public* URL it says "reachable from anywhere", which is the one thing local mode
+    must never be. ``localhost.example.com`` pins that the check is on the whole host,
+    not on a prefix of it.
+    """
+    with pytest.raises(LocalModeNotLoopbackError):
+        build_auth(Config(auth_mode="off", public_base_url=url))
+
+
+def test_local_mode_needs_no_issuer_and_token_mode_still_does() -> None:
+    """The two refusals are independent: ``off`` never asks for an issuer, and ``token``
+    with none configured still stops exactly as before this mode existed."""
+    assert build_auth(Config(auth_mode="off", logto_endpoint="", authkit_domain="")) is None
+    with pytest.raises(AuthNotConfiguredError):
+        build_auth(Config(auth_mode="token", logto_endpoint="", authkit_domain=""))
+
+
+def test_off_wins_over_a_stray_issuer_setting() -> None:
+    """An explicit ``off`` is honoured even if an issuer variable is still set — the
+    operator asked for local mode, and the loopback guard is what keeps that safe, not
+    the presence or absence of an issuer name."""
+    assert build_auth(Config(auth_mode="off", logto_endpoint=LOGTO)) is None

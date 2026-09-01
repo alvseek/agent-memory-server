@@ -1,0 +1,10 @@
+agent-memory-server (Munnin)
+Copyright 2026 Alviandi Widiasto (alvseek)
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file at the root of this repository, or
+http://www.apache.org/licenses/LICENSE-2.0
+
+The framework procedures and templates it serves live in the control-files
+submodule (agent-memory-system), which carries its own NOTICE under the same
+license.

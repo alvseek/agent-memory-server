@@ -4,11 +4,14 @@ One seam, and the adapters ask it nothing else — they never learn where the an
 from, which is what let the tenant move from a process-wide constant to a verified token
 claim without a single handler changing shape.
 
-There is exactly one implementation here, and that is the point: a tenant can be chosen
-only from a token that has already been verified. The temporary static resolver that
-carried the refactor through its middle phases has been deleted, so no code path in this
-server reaches a tenant any other way. The test suite keeps a double of its own, which is
-visibly a double and never shipped.
+Two implementations live here, and the second is deliberately hard to reach. A tenant is
+normally chosen only from a token that has already been verified; the temporary static
+resolver that carried the refactor through its middle phases was deleted so that no
+code path reached a tenant any other way. ``LocalTenantResolver`` reintroduces a fixed
+tenant for exactly one situation — local mode, ``MUNNIN_AUTH=off`` on a loopback public
+URL — and ``build_app`` selects it only when ``build_auth`` has returned no provider,
+which is the one place that guard is enforced. The test suite keeps a double of its own,
+which is visibly a double and never shipped.
 
 ``TokenTenantResolver`` trusts the verification completely and deliberately — by the time
 a tool body runs, an invalid token has already been refused at the transport, so a
@@ -67,3 +70,20 @@ class TokenTenantResolver:
             email=claims.get("email"),
             display_name=claims.get("name"),
         )
+
+
+class LocalTenantResolver:
+    """One fixed tenant for every call — local mode only.
+
+    Shipped, unlike the test double, because a laptop running Munnin with no identity
+    provider still needs an answer to "whose memory is this". It is constructed only by
+    ``build_app`` and only after ``build_auth`` has accepted ``MUNNIN_AUTH=off``, which it
+    does solely for a loopback public URL — so a deployment cannot arrive here through a
+    missing setting, only by choosing local mode on a machine nobody else can reach.
+    """
+
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+
+    def current_user_id(self) -> str:
+        return self._user_id
