@@ -44,14 +44,60 @@ from munnin.data_repositories.identity_repository import IdentityRepository
 #: every connection paid several failed round trips first.
 MCP_MOUNT_PATH = "/mcp"
 
+#: The document a client fetches to learn who issues tokens for this server, at the
+#: path RFC 9728 derives from the resource identifier: the well-known prefix followed by
+#: the identifier's own path. It is spelled out here only so the normaliser below can
+#: name it without reconstructing the derivation.
+PROTECTED_RESOURCE_METADATA_PATH = f"/.well-known/oauth-protected-resource{MCP_MOUNT_PATH}"
+
 
 def mcp_resource_url(public_base_url: str) -> str:
-    """The one identifier that names the MCP face, trailing slash included.
+    """The one identifier that names the MCP face — deliberately without a trailing slash.
 
-    The slash is not cosmetic: it is the string a client sends as ``resource`` on both the
-    authorization and the refresh request, and the issuer matches it literally.
+    This string is what a client sends as ``resource`` on both the authorization and the
+    refresh request, and the issuer matches it character for character, so the slash
+    question is not cosmetic. The MCP specification settles it: implementations *should
+    consistently use the form without the trailing slash*, and clients act on that by
+    normalising away any slash they are configured with. The identifier therefore has to
+    be the no-slash form, because a client can be made to send nothing else.
     """
-    return f"{public_base_url.rstrip('/')}{MCP_MOUNT_PATH}/"
+    return f"{public_base_url.rstrip('/')}{MCP_MOUNT_PATH}"
+
+
+class _NormalisePath:
+    """Serve the MCP face and its metadata document under both slash forms, no redirect.
+
+    Starlette's ``Mount`` only matches paths *below* the mount, so a request to the bare
+    ``/mcp`` never reaches the sub-app — the router answers with a slash-appending 307
+    instead. Behind a TLS-terminating proxy that redirect is worse than a detour: it is
+    built from the scheme uvicorn saw, so it points at ``http://``, and a client that
+    dropped the slash (which the specification tells it to do) is bounced to plaintext
+    before it ever sees a 401. The same happens in the other direction for the metadata
+    document, which the SDK registers at the no-slash path.
+
+    Rewriting the path before routing is the smallest change that removes the redirect
+    entirely: both forms land on the one handler, and nothing on ``/mcp*`` can answer 3xx.
+    It rewrites only the two exact paths it names, so every other route keeps Starlette's
+    default behaviour. ``raw_path`` is kept in step because middleware further down may
+    read either.
+    """
+
+    _REWRITES = {
+        MCP_MOUNT_PATH: f"{MCP_MOUNT_PATH}/",
+        f"{PROTECTED_RESOURCE_METADATA_PATH}/": PROTECTED_RESOURCE_METADATA_PATH,
+    }
+
+    def __init__(self, app):  # noqa: ANN001 — ASGI callable, typed by the protocol
+        self.app = app
+
+    async def __call__(self, scope, receive, send):  # noqa: ANN001
+        if scope["type"] == "http":
+            target = self._REWRITES.get(scope["path"])
+            if target is not None:
+                scope = dict(scope)
+                scope["path"] = target
+                scope["raw_path"] = target.encode("ascii")
+        await self.app(scope, receive, send)
 
 
 class AuthNotConfiguredError(RuntimeError):
@@ -159,6 +205,24 @@ class LogtoAuthProvider(RemoteAuthProvider):
             self.token_verifier.audience = str(self._resource_url)
 
 
+class _PinnedMultiAuth(MultiAuth):
+    """``MultiAuth`` that lets the provider it wraps name the resource identifier.
+
+    FastMCP asks the *outer* auth object for the resource URL when it builds the 401
+    challenge, and ``MultiAuth`` inherits the base derivation: ``resource_base_url`` plus
+    whatever path the sub-app believes it serves at — ``/`` here, since the app is built
+    for the root and re-hosted under the mount. That turns ``…/mcp`` into ``…/mcp/`` on
+    the challenge alone, while the route and the document underneath already say
+    ``…/mcp``. The mismatch was invisible for as long as the identifier itself ended in a
+    slash, which is exactly why it is pinned in one place and every path to it delegates.
+    """
+
+    def _get_resource_url(self, path: str | None = None) -> AnyHttpUrl | None:
+        if self.server is not None:
+            return self.server._get_resource_url(path)
+        return super()._get_resource_url(path)
+
+
 def build_auth(config: Config) -> MultiAuth:
     """The single verifier both faces share.
 
@@ -182,7 +246,7 @@ def build_auth(config: Config) -> MultiAuth:
         )
 
     if not config.logto_endpoint:
-        return MultiAuth(
+        return _PinnedMultiAuth(
             server=AuthKitProvider(
                 authkit_domain=config.authkit_domain,
                 base_url=config.public_base_url,
@@ -205,7 +269,7 @@ def build_auth(config: Config) -> MultiAuth:
         if config.authkit_domain
         else []
     )
-    return MultiAuth(
+    return _PinnedMultiAuth(
         server=LogtoAuthProvider(
             endpoint=config.logto_endpoint,
             base_url=config.public_base_url,
@@ -266,4 +330,8 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     # These two are deliberately unauthenticated, and must be: a client reads them to find
     # out how to obtain a token, so requiring one would be circular (RFC 9728).
     app.router.routes.extend(auth.get_well_known_routes())
+
+    # Outermost, so the rewrite happens before any router looks at the path — see the
+    # class for why a redirect here is a broken login rather than a detour.
+    app.add_middleware(_NormalisePath)
     return app

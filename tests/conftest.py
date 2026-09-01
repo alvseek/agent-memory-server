@@ -148,7 +148,12 @@ def mcp_client_for(app: Any, token: str) -> Client:
 
     return Client(
         StreamableHttpTransport(
-            url="http://test/mcp/", auth=token, httpx_client_factory=factory
+            # The no-slash form, which is what a spec-following client sends: every
+            # test that drives the MCP face through this client therefore also proves
+            # the path normaliser, since without it this URL answers a redirect.
+            url="http://test/mcp",
+            auth=token,
+            httpx_client_factory=factory,
         )
     )
 
