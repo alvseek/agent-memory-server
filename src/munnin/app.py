@@ -87,10 +87,10 @@ class _NormalisePath:
         f"{PROTECTED_RESOURCE_METADATA_PATH}/": PROTECTED_RESOURCE_METADATA_PATH,
     }
 
-    def __init__(self, app):  # noqa: ANN001 — ASGI callable, typed by the protocol
+    def __init__(self, app):
         self.app = app
 
-    async def __call__(self, scope, receive, send):  # noqa: ANN001
+    async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             target = self._REWRITES.get(scope["path"])
             if target is not None:

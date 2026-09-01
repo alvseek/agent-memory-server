@@ -81,19 +81,23 @@ def test_the_pinned_audience_is_empty_by_default(monkeypatch: pytest.MonkeyPatch
 
 
 def test_more_than_one_audience_can_be_pinned(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Two identifiers have to be trusted together while a client moves between them.
+    """Several identifiers have to be trusted together while the canonical one changes.
 
-    Claude Code authorizes against the identifier this server advertises and refreshes
-    against its own MCP URL, so tokens legitimately arrive carrying either one. A single
-    accepted value would fail whichever of the two it asked for second.
+    A refresh token is frozen to its resource at issuance, so when the advertised
+    identifier moves — as it did from the root, to ``/mcp/``, to ``/mcp`` — tokens minted
+    against the earlier spellings stay alive until each client signs in again. The list
+    is what lets the server accept all of them in the meantime; a single value would
+    refuse every session that had not yet re-authenticated.
     """
     monkeypatch.setenv(
         "MUNNIN_LOGTO_AUDIENCE",
-        "https://munnin.example.test/, https://munnin.example.test/mcp/",
+        "https://munnin.example.test/mcp, https://munnin.example.test/mcp/, "
+        "https://munnin.example.test/",
     )
     assert load_config().logto_audience == (
-        "https://munnin.example.test/",
+        "https://munnin.example.test/mcp",
         "https://munnin.example.test/mcp/",
+        "https://munnin.example.test/",
     )
 
 
