@@ -54,10 +54,10 @@ Index of orientation artifacts in this repo. Used by agents at awakening (load i
 - **roles**: []
 - **status**: useful
 - **tags**: [readme, 7q, project-entry-point, munnin, mcp-server]
-- **last_verified**: "2026-09-01"
-- **verified_by**: "software-architect / launch-map step 3 (docs rewrite) + step 4"
+- **last_verified**: "2026-09-02"
+- **verified_by**: "software-architect / launch-map step 6 (anonymous pages)"
 - **update_trigger**: "when tech stack, the tool/endpoint surface, the data model, auth or tenancy, deploy topology, or known debts change"
-- **notes**: "Full project 7Q README, rewritten 2026-09-01 to the built system: local vs token mode stated once in a table, the auth and tenancy model ((iss, sub) → account, one resource identifier), the five-table schema, 19 tools / 13 prompts / 4 resources with the initialize instructions and the tool hints described, the HTTP twin table with the /api/agents rows, CI + the ghcr.io/alvseek/munnin image, the hosted-shape issuer requirements stated inline (Authentra's repo is private), and a current debts list. Every claim traced to code read that day and to a real-client walk. The old RackNerd / no-auth / SSH-tunnel description is gone."
+- **notes**: "Full project 7Q README, rewritten 2026-09-01 to the built system: local vs token mode stated once in a table, the auth and tenancy model ((iss, sub) → account, one resource identifier), the five-table schema, 19 tools / 13 prompts / 4 resources with the initialize instructions and the tool hints described, the HTTP twin table with the /api/agents rows, CI + the ghcr.io/alvseek/munnin image, the hosted-shape issuer requirements stated inline (Authentra's repo is private), and a current debts list. Every claim traced to code read that day and to a real-client walk. The old RackNerd / no-auth / SSH-tunnel description is gone. 2026-09-02: the HTTP surface section and the hosted section now carry the three anonymous HTML pages (/, /privacy, /terms — the api_pages box, Google's consent-screen links), and the open-anonymous-answers sentence lists them beside /health."
 
 ### `docs/flows/awaken-db.md`
 
