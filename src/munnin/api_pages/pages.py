@@ -20,6 +20,8 @@ harder to keep honest.
 
 from __future__ import annotations
 
+import html
+
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
@@ -71,7 +73,9 @@ def _page(title: str, body: str) -> str:
 
 
 def _landing(public_base_url: str) -> str:
-    base = public_base_url.rstrip("/")
+    # Operator config, not user input — escaped anyway so the page stays valid HTML for
+    # any legal URL (an ``&`` in a query-carrying base would otherwise leak through raw).
+    base = html.escape(public_base_url.rstrip("/"))
     return _page(
         "Munnin — an agent identity server",
         f"""
