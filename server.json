@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.alvseek/munnin",
+  "title": "Munnin — an agent identity server",
+  "description": "Agent identity and memory over MCP — a persistent self plus the procedures for tending it.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/alvseek/agent-memory-server",
+    "source": "github"
+  },
+  "websiteUrl": "https://munnin.lok.quest",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://munnin.lok.quest/mcp"
+    }
+  ]
+}
