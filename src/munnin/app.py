@@ -27,6 +27,7 @@ from pydantic import AnyHttpUrl
 from munnin import __version__
 from munnin.api_http.api import build_router
 from munnin.api_mcp.server import build_mcp
+from munnin.api_pages.pages import build_pages_router
 from munnin.business_services.identity_service import IdentityService
 from munnin.business_services.service_factory import ServiceFactory
 from munnin.business_services.tenant_resolver import (
@@ -393,6 +394,12 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
             local_user_id=config.user_id if local else None,
         )
     )
+    # The anonymous HTML pages — landing, privacy, terms. Open by design: a stranger
+    # reads them to decide whether to sign in, and Google's consent screen links them,
+    # so they must answer before any token exists. They carry no data and read nothing
+    # from the store, which is what makes serving them unauthenticated safe.
+    app.include_router(build_pages_router(config.public_base_url))
+
     app.mount(MCP_MOUNT_PATH, mcp_app)
 
     # OAuth discovery, served from the **root**. FastMCP builds its app believing it sits

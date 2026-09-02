@@ -41,6 +41,8 @@ Two thin adapters over one transport-agnostic core, co-hosted on a single uvicor
   ──────────────┤              \                                              │
    HTTP caller  │  /api    → api_http  (FastAPI REST twin)   /health (open)    │
   ──────────────┤              \        /                                     │
+    browser     │  / /privacy /terms → api_pages (anonymous HTML, open)       │
+  ──────────────┤                                                             │
                 │          auth (token mode: one verifier — JWKS, aud = /mcp) │
                 │          tenant resolver (token → account · local: constant)│
                 │                        |                                    │
@@ -147,9 +149,9 @@ Token mode is the default and needs an issuer, or the server refuses to start wi
 2. **Register the resource** on the issuer as an API resource whose identifier is exactly `https://<your-host>/mcp` — no trailing slash. That string is what a client sends as `resource` when it authorizes *and* when it refreshes, and the issuer matches it character for character; a refresh token is stamped with its resource when minted, so changing the identifier later means every client signs in again.
 3. **Configure Munnin**: `MUNNIN_PUBLIC_BASE_URL=https://<your-host>`, `MUNNIN_LOGTO_ENDPOINT=https://<your-issuer>`, no `MUNNIN_AUTH`, no `MUNNIN_LOCAL_BIND_ALL`. Nothing here is a secret — it is a public URL and a public JWKS.
 4. **Put it behind TLS.** Publish no port directly; the proxy in front terminates TLS and forwards `X-Forwarded-Proto`. The container binds `0.0.0.0` on the network the proxy shares with it.
-5. **Verify from outside before connecting anything**: `GET /api/agents` and `POST /mcp` both answer **401** anonymously, the `WWW-Authenticate` challenge names `…/.well-known/oauth-protected-resource/mcp`, and that document's `resource` reads `https://<your-host>/mcp`. Only `GET /health` and the discovery documents answer without a token.
+5. **Verify from outside before connecting anything**: `GET /api/agents` and `POST /mcp` both answer **401** anonymously, the `WWW-Authenticate` challenge names `…/.well-known/oauth-protected-resource/mcp`, and that document's `resource` reads `https://<your-host>/mcp`. Only `GET /health`, the three HTML pages (`/`, `/privacy`, `/terms`) and the discovery documents answer without a token.
 
-Then paste `https://<your-host>/mcp` into claude.ai's connector settings (claude.ai connects from Anthropic's servers, so a public HTTPS URL is a hard requirement — it can never reach a laptop) or `claude mcp add --transport http munnin https://<your-host>/mcp`. The first sign-in creates the person's tenant; there is no admission switch in Munnin — that belongs to the issuer's own sign-up settings.
+Then paste `https://<your-host>/mcp` into claude.ai's connector settings (claude.ai connects from Anthropic's servers, so a public HTTPS URL is a hard requirement — it can never reach a laptop) or `claude mcp add --transport http munnin https://<your-host>/mcp`. The first sign-in creates the person's tenant; there is no admission switch in Munnin — that belongs to the issuer's own sign-up settings. When the sign-in path runs through a Google OAuth client published to production, Google requires the consent screen to link a homepage, privacy policy and terms on the app's own domain — the server's `/`, `/privacy` and `/terms` pages exist to be exactly those three links.
 
 Host provisioning, DNS and release orchestration are deliberately not in this repository — see [How Is It Deployed](#how-is-it-deployed).
 
@@ -212,6 +214,8 @@ Every endpoint is a REST twin of an MCP primitive over the same core; only the n
 | GET | `/api/resources` · `/api/resources/{name}` | `list_resources` · `read_resource` | Names as JSON · one template as raw `text/markdown` |
 
 A *list* is data and arrives as JSON; a *single* procedure or template is a document and arrives as raw markdown with no enclosing object, so `curl -o wrap-up.md` writes exactly the bytes an installed slash command carries. Errors stay JSON: `ValueError → 400`, `LookupError → 404`, and in token mode a missing or invalid token → `401` with a `WWW-Authenticate` challenge.
+
+Beside the API, three anonymous HTML pages answer in both modes: `GET /` (a landing page — what this instance is and how to connect), `GET /privacy` and `GET /terms`. They are open by design: a stranger reads them to decide whether to sign in, and a Google consent screen published to production must link a homepage, privacy policy and terms hosted on the app's own domain.
 
 ---
 

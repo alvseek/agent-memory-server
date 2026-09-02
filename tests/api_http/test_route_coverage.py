@@ -27,14 +27,17 @@ from munnin.app import build_app
 from munnin.configuration.config import Config
 from tests.conftest import auth_for, bearer, seed_login
 
-# The one route that must answer without a credential: Kamal's health gate calls it, so
-# guarding it would fail the deploy and the cutover would never happen (decision 17).
-OPEN_ROUTES = {("GET", "/health")}
+# The routes that must answer without a credential, each for a stated reason:
+# ``/health`` because Kamal's health gate calls it, so guarding it would fail the deploy
+# and the cutover would never happen (decision 17); the three HTML pages because Google's
+# consent screen links them and a stranger reads them to decide whether to sign in —
+# both audiences exist before any token can. Everything else answers 401 anonymously.
+OPEN_ROUTES = {("GET", "/health"), ("GET", "/"), ("GET", "/privacy"), ("GET", "/terms")}
 
 # A coarse tripwire beside the per-route rule below. The rule is what protects a new
 # route; this notices when the surface changes size at all, so growth is a decision
 # somebody made rather than something that happened.
-EXPECTED_OPERATIONS = 18
+EXPECTED_OPERATIONS = 21
 
 
 def _app(tmp_path: Path):
@@ -74,7 +77,7 @@ def _probe(path: str) -> str:
     return path.replace("{uuid}", "x").replace("{name}", "x")
 
 
-async def test_every_route_except_health_rejects_an_absent_token(tmp_path: Path) -> None:
+async def test_every_route_outside_the_open_set_rejects_an_absent_token(tmp_path: Path) -> None:
     app = _app(tmp_path)
     transport = ASGITransport(app=app)
     reachable = []
@@ -89,12 +92,14 @@ async def test_every_route_except_health_rejects_an_absent_token(tmp_path: Path)
     assert reachable == [], f"reachable without a token: {reachable}"
 
 
-async def test_the_open_route_still_answers(tmp_path: Path) -> None:
-    """The other half of the rule — the exception must keep working, or the deploy stops."""
+@pytest.mark.parametrize("method,path", sorted(OPEN_ROUTES))
+async def test_the_open_routes_still_answer(tmp_path: Path, method: str, path: str) -> None:
+    """The other half of the rule — every exception must keep working: a guarded ``/health``
+    stops the deploy, and a guarded page 401s the stranger it was written for."""
     async with httpx.AsyncClient(
         transport=ASGITransport(app=_app(tmp_path)), base_url="http://test"
     ) as client:
-        resp = await client.get("/health")
+        resp = await client.request(method, path)
     assert resp.status_code == 200
 
 

@@ -16,9 +16,12 @@ per-request state, deliberately — the handlers here are synchronous and FastAP
 in a threadpool, so a context variable would be one thread-reuse bug away from serving a
 caller somebody else's rows, and it would fail by returning data rather than by raising.
 
-``/health`` is the sole open route, and deliberately so — the deploy's health gate calls
-it without a credential, so guarding it would fail the cutover. It reads nothing from the
-store, so there is nothing to scope.
+``/health`` is the sole open route on this face, and deliberately so — the deploy's
+health gate calls it without a credential, so guarding it would fail the cutover. It
+reads nothing from the store, so there is nothing to scope. (The anonymous HTML pages —
+landing, privacy, terms — are the other open surface, and they live in ``api_pages`` on
+their own router rather than here, so this file's rule stays one sentence: everything
+under ``/api`` is guarded.)
 """
 
 from __future__ import annotations
