@@ -12,7 +12,15 @@ from httpx import ASGITransport
 
 from munnin.app import build_app
 from munnin.configuration.config import Config
+from munnin.content.loader import ContentLoader
 from tests.conftest import auth_for, bearer, seed_agent, seed_login
+
+CF = Path(__file__).resolve().parents[2] / "control-files"
+
+
+def _ver(resource: str) -> str:
+    """The live stamp of a template — what a well-behaved writer declares."""
+    return ContentLoader(CF).template_version(resource)
 
 
 def _client(tmp_path: Path) -> httpx.AsyncClient:
@@ -20,7 +28,9 @@ def _client(tmp_path: Path) -> httpx.AsyncClient:
     # `meta` has to exist before its memory can be written — the foreign key is the
     # point of the entity, and these tests go through the real repository.
     seed_agent(db, "meta", name="Claude Meta", role="Meta Agent")
-    app = build_app(Config(db_path=db, user_id="alvi"), auth=auth_for("alvi"))
+    app = build_app(
+        Config(db_path=db, content_root=CF, user_id="alvi"), auth=auth_for("alvi")
+    )
     seed_login(db)
     return httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test", headers=bearer()
@@ -31,7 +41,8 @@ async def test_insert_get_round_trip(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         r = await c.post(
             "/api/insert",
-            json={"agent_id": "meta", "record_type": "episode", "content": "body", "uuid": "e1"},
+            json={"agent_id": "meta", "record_type": "episode", "content": "body", "uuid": "e1",
+                  "template_version": _ver("episodic-entry-template")},
         )
         assert r.status_code == 200
         assert r.json()["uuid"] == "e1"
@@ -49,7 +60,8 @@ async def test_get_missing_404(tmp_path: Path) -> None:
 async def test_edit_and_query(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         await c.post("/api/insert", json={"agent_id": "meta", "record_type": "knowledge",
-                                          "content": "hello world", "uuid": "k1"})
+                                          "content": "hello world", "uuid": "k1",
+                                          "template_version": _ver("knowledge-file-template")})
         e = await c.post("/api/edit", json={"uuid": "k1", "old_string": "world",
                                             "new_string": "there"})
         assert e.status_code == 200
@@ -62,7 +74,8 @@ async def test_edit_and_query(tmp_path: Path) -> None:
 async def test_archive_then_search(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         await c.post("/api/insert", json={"agent_id": "meta", "record_type": "knowledge",
-                                          "content": "findable token", "uuid": "k1"})
+                                          "content": "findable token", "uuid": "k1",
+                                          "template_version": _ver("knowledge-file-template")})
         a = await c.post("/api/archive", json={"uuid": "k1"})
         assert a.json() == {"uuid": "k1", "status": "archived"}
         assert (await c.get("/api/query", params={"agent_id": "meta"})).json() == []
@@ -73,7 +86,8 @@ async def test_archive_then_search(tmp_path: Path) -> None:
 async def test_soft_delete_then_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         await c.post("/api/insert", json={"agent_id": "meta", "record_type": "knowledge",
-                                          "content": "x", "uuid": "k1"})
+                                          "content": "x", "uuid": "k1",
+                                          "template_version": _ver("knowledge-file-template")})
         await c.post("/api/soft-delete", json={"uuid": "k1"})
         assert (await c.get("/api/record/k1")).status_code == 404
 
@@ -81,7 +95,8 @@ async def test_soft_delete_then_404(tmp_path: Path) -> None:
 async def test_append_prepend_faces(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
-                                          "content": "mid", "uuid": "e1"})
+                                          "content": "mid", "uuid": "e1",
+                                          "template_version": _ver("episodic-entry-template")})
         a = await c.post("/api/append", json={"uuid": "e1", "text": " end"})
         assert a.status_code == 200
         assert a.json()["content"] == "mid end"
@@ -92,7 +107,8 @@ async def test_append_prepend_faces(tmp_path: Path) -> None:
 async def test_multi_edit_face_atomic(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
-                                          "content": "one two", "uuid": "e1"})
+                                          "content": "one two", "uuid": "e1",
+                                          "template_version": _ver("episodic-entry-template")})
         ok = await c.post("/api/multi-edit", json={"uuid": "e1", "edits": [
             {"old_string": "one", "new_string": "1"},
             {"old_string": "two", "new_string": "2"},
@@ -125,3 +141,20 @@ async def test_edit_missing_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         r = await c.post("/api/edit", json={"uuid": "nope", "old_string": "a", "new_string": "b"})
         assert r.status_code == 404
+
+
+async def test_insert_without_template_version_400(tmp_path: Path) -> None:
+    async with _client(tmp_path) as c:
+        r = await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
+                                              "content": "x"})
+        assert r.status_code == 400
+        assert "template_version is required" in r.json()["detail"]
+
+
+async def test_insert_stale_template_version_400(tmp_path: Path) -> None:
+    async with _client(tmp_path) as c:
+        r = await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
+                                              "content": "x",
+                                              "template_version": "2000-01-01-00-00"})
+        assert r.status_code == 400
+        assert "stale template" in r.json()["detail"]

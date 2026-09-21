@@ -94,6 +94,15 @@ _COMPONENTS_DIR = "procedures/components"
 # Markdown-only file/index scaffold — used by the markdown backend's create-episode `cp`,
 # NOT a DB-world block template. Not served as a resource (a Munnin client never cp's a file).
 _RESOURCE_EXCLUDE = {"episodic-memory-template"}
+# record_type → the resource template governing its shape. `identity` / `user_profile`
+# have no template and are intentionally absent: the write gate does not cover them.
+TEMPLATE_BY_RECORD_TYPE = {
+    "episode": "episodic-entry-template",
+    "reasoning": "reasoning-pattern-template",
+    "emotional": "emotional-moment-template",
+    "knowledge": "knowledge-file-template",
+}
+_TEMPLATE_VERSION_RE = re.compile(r"^template_version:\s*(\S+)\s*$", re.MULTILINE)
 
 
 def _lead_sentence(text: str) -> str:
@@ -104,6 +113,8 @@ def _lead_sentence(text: str) -> str:
     later sentence, so stopping at the first one drops the part no client needs.
     Markdown emphasis and links are flattened because this text is delivered as a
     plain description, where ``**bold**`` would arrive as literal asterisks.
+    A bare ``template_version:`` stamp line is metadata, not prose, so it is skipped
+    by the same definition the write gate uses to recognise it.
 
     Returns ``""`` when there is no prose paragraph to read.
     """
@@ -111,6 +122,8 @@ def _lead_sentence(text: str) -> str:
     for block in body.split("\n\n"):
         paragraph = " ".join(block.split())
         if not paragraph or paragraph.startswith("#"):
+            continue
+        if _TEMPLATE_VERSION_RE.fullmatch(paragraph):
             continue
         sentence = _first_sentence(paragraph)
         return _MD_EMPHASIS.sub("", _MD_LINK.sub(r"\1", sentence)).strip()
@@ -292,3 +305,40 @@ class ContentLoader:
     def get_resource(self, name: str) -> str:
         """Return a template file verbatim. Raises ``KeyError`` if absent or excluded."""
         return self._resource_text(name)
+
+    def template_version(self, name: str) -> str:
+        """The ``template_version`` stamp a resource template carries.
+
+        Read live from the document itself, so the served template is the single
+        source of truth — no second registry to drift. Raises ``KeyError`` for an
+        unknown resource, ``ValueError`` when the document carries no stamp.
+        """
+        match = _TEMPLATE_VERSION_RE.search(self._resource_text(name))
+        if not match:
+            raise ValueError(f"resource '{name}' carries no template_version stamp")
+        return match.group(1)
+
+    def check_template_version(self, record_type: str, declared: str | None) -> None:
+        """The write gate: refuse a gated-type insert built against a stale template.
+
+        ``declared`` is the version the writer claims it built against; it is compared
+        to the stamp in this loader's current copy of that type's template. A missing
+        claim and a mismatch both raise ``ValueError`` — the writer re-reads the
+        template and retries. Types with no template (``identity``, ``user_profile`` —
+        and anything unknown, which the service refuses itself) pass through.
+        """
+        resource = TEMPLATE_BY_RECORD_TYPE.get(record_type)
+        if resource is None:
+            return
+        latest = self.template_version(resource)
+        if declared is None:
+            raise ValueError(
+                f"template_version is required for record_type '{record_type}': declare "
+                f"the version of '{resource}' you built against (read it with "
+                "read_resource first)"
+            )
+        if declared != latest:
+            raise ValueError(
+                f"stale template for record_type '{record_type}': declared '{declared}', "
+                f"latest is '{latest}' — re-read '{resource}' and rebuild against it"
+            )

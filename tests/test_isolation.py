@@ -25,10 +25,13 @@ from httpx import ASGITransport
 
 from munnin.app import build_app
 from munnin.configuration.config import Config
+from munnin.content.loader import ContentLoader
 from tests.conftest import auth_for, mcp_client_for, running, token_for
 
 ALICE, BOB = "subj-alice", "subj-bob"
 SECRET = "alice-private-marker-zebra"
+
+CF = Path(__file__).resolve().parents[1] / "control-files"
 
 
 def _app(tmp_path: Path):
@@ -52,7 +55,9 @@ async def _write_as_alice(app) -> str:
         assert created.status_code == 200, created.text
         written = await alice.post(
             "/api/insert",
-            json={"agent_id": "meta", "record_type": "knowledge", "content": SECRET},
+            json={"agent_id": "meta", "record_type": "knowledge", "content": SECRET,
+                  "template_version": ContentLoader(CF).template_version(
+                      "knowledge-file-template")},
         )
         assert written.status_code == 200, written.text
         return written.json()["uuid"]

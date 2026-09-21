@@ -90,6 +90,18 @@ def build_mcp(
         registration happens once at boot, and the caller is not known until the call."""
         return factory.for_user(resolver.current_user_id())
 
+    def _check_template(record_type: str, declared: str | None) -> None:
+        """The template-version write gate, closed over the build-time loader.
+
+        A separate closure (rather than using ``content`` in the tool body) because
+        ``insert`` takes its own ``content`` — the record body — which would shadow
+        the loader. Skipped when no framework content is available: with nothing to
+        check against, there is no check, the same way an absent submodule yields no
+        procedures rather than failing the boot.
+        """
+        if content is not None and content.available():
+            content.check_template_version(record_type, declared)
+
     @mcp.tool(title="Liveness check", annotations=_READ)
     def ping() -> str:
         """Liveness check — returns 'pong'."""
@@ -174,13 +186,18 @@ def build_mcp(
         tags: list[str] | None = None,
         project: str | None = None,
         uuid: str | None = None,
+        template_version: str | None = None,
     ) -> dict[str, Any]:
         """Append a new memory item. ``scope="agent"`` (the default) writes memory owned
         by ``agent_id``, which must be an existing kebab domain; ``scope="shared"`` writes
         fleet-wide memory owned by nobody and takes no ``agent_id``. ``record_type`` ∈
         episode|knowledge|identity|reasoning|emotional|user_profile, and fleet memory may
         only be reasoning, knowledge or user_profile — the profile is fleet-wide because
-        who the user is does not vary by agent."""
+        who the user is does not vary by agent. ``template_version`` declares which
+        version of the record type's template the content was built against (read it with
+        read_resource first); the gated types (episode|reasoning|emotional|knowledge) are
+        refused without a matching one."""
+        _check_template(record_type, template_version)
         return _svc().insert(
             agent_id=agent_id,
             scope=scope,

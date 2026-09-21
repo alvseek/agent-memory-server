@@ -67,6 +67,7 @@ class InsertBody(BaseModel):
     tags: list[str] | None = None
     project: str | None = None
     uuid: str | None = None
+    template_version: str | None = None
 
 
 class EditBody(BaseModel):
@@ -239,8 +240,12 @@ def build_router(
     @api.post("/api/insert")
     def insert(body: InsertBody, svc: MemoryService = Depends(_tenant_service)) -> dict[str, Any]:
         """Append a new item (record assembled server-side). ``scope="agent"`` (default)
-        needs an ``agent_id`` that already exists; ``scope="shared"`` takes none."""
+        needs an ``agent_id`` that already exists; ``scope="shared"`` takes none. Gated
+        record types (episode|reasoning|emotional|knowledge) need the ``template_version``
+        of the template the content was built against — missing or stale is a 400."""
         try:
+            if content is not None and content.available():
+                content.check_template_version(body.record_type, body.template_version)
             return svc.insert(
                 agent_id=body.agent_id,
                 scope=body.scope,

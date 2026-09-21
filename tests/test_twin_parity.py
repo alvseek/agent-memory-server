@@ -43,12 +43,18 @@ def _http(db: Path) -> httpx.AsyncClient:
     )
 
 
+def _ver(resource: str) -> str:
+    """The live stamp of a template — what a well-behaved writer declares."""
+    return ContentLoader(CF).template_version(resource)
+
+
 async def test_insert_http_get_mcp(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     seed_agent(db, "meta")
     async with _http(db) as http:
         http_rec = (await http.post("/api/insert", json={
             "agent_id": "meta", "record_type": "episode", "content": "twin body", "uuid": "p1",
+            "template_version": _ver("episodic-entry-template"),
         })).json()
     async with Client(_mcp(db)) as mcp:
         mcp_rec = (await mcp.call_tool("get", {"uuid": "p1"})).data
@@ -73,6 +79,7 @@ async def test_append_http_then_multi_edit_mcp_parity(tmp_path: Path) -> None:
     async with _http(db) as http:
         await http.post("/api/insert", json={
             "agent_id": "meta", "record_type": "episode", "content": "one", "uuid": "p1",
+            "template_version": _ver("episodic-entry-template"),
         })
         http_rec = (await http.post("/api/append", json={"uuid": "p1", "text": " two"})).json()
     async with Client(_mcp(db)) as mcp:
@@ -109,6 +116,7 @@ async def test_shared_insert_parity(tmp_path: Path) -> None:
         http_rec = (await http.post("/api/insert", json={
             "scope": "shared", "record_type": "reasoning",
             "content": "fleet pattern", "uuid": "s1",
+            "template_version": _ver("reasoning-pattern-template"),
         })).json()
     async with Client(_mcp(db)) as mcp:
         mcp_rec = (await mcp.call_tool("get", {"uuid": "s1"})).data
@@ -125,6 +133,7 @@ async def test_shared_insert_contradiction_parity(tmp_path: Path) -> None:
         r = await http.post("/api/insert", json={
             "scope": "shared", "agent_id": "meta",
             "record_type": "reasoning", "content": "x",
+            "template_version": _ver("reasoning-pattern-template"),
         })
     assert r.status_code == 400
     assert "no agent_id" in r.json()["detail"]
@@ -133,6 +142,7 @@ async def test_shared_insert_contradiction_parity(tmp_path: Path) -> None:
             await mcp.call_tool("insert", {
                 "scope": "shared", "agent_id": "meta",
                 "record_type": "reasoning", "content": "x",
+                "template_version": _ver("reasoning-pattern-template"),
             })
 
 
