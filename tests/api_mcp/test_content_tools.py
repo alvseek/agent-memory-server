@@ -12,6 +12,8 @@ from fastmcp import Client
 
 from munnin.api_mcp.server import INSTRUCTIONS
 from munnin.content.loader import ContentLoader
+from munnin.data_entities.memory_record import RecordType, SharedRecord
+from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 from tests.conftest import mcp_for
 
 CF = Path(__file__).resolve().parents[2] / "control-files"
@@ -26,7 +28,13 @@ async def test_content_tools_present_only_with_content(tmp_path: Path) -> None:
         bare = {t.name for t in await client.list_tools()}
     async with Client(_mcp(tmp_path)) as client:
         full = {t.name for t in await client.list_tools()}
-    content_tools = {"list_procedures", "read_procedure", "list_resources", "read_resource"}
+    content_tools = {
+        "list_procedures",
+        "read_procedure",
+        "list_resources",
+        "read_resource",
+        "permanent_layer",
+    }
     assert not (content_tools & bare)
     assert content_tools <= full
     assert "help" in bare and "help" in full  # the one door that is always there
@@ -49,7 +57,7 @@ async def test_help_is_the_instructions_plus_the_menu(tmp_path: Path) -> None:
         rows = (await client.call_tool("list_procedures", {})).data
     assert out["instructions"] == INSTRUCTIONS
     assert out["procedures"] == rows  # one row-builder behind both
-    assert len(out["procedures"]) == 13
+    assert len(out["procedures"]) == 14
 
 
 async def test_help_answers_without_served_content(tmp_path: Path) -> None:
@@ -63,7 +71,7 @@ async def test_list_procedures_carries_name_title_and_purpose(tmp_path: Path) ->
     async with Client(_mcp(tmp_path)) as client:
         rows = (await client.call_tool("list_procedures", {})).data
     by_name = {r["name"]: r for r in rows}
-    assert len(rows) == 13
+    assert len(rows) == 14
     assert by_name["awaken-agent"] == {
         "name": "awaken-agent",
         "title": "Awaken Agent",
@@ -72,7 +80,7 @@ async def test_list_procedures_carries_name_title_and_purpose(tmp_path: Path) ->
     assert "wait-options" in by_name  # served with no list naming it
     assert "push-memory" not in by_name  # excluded by policy
     # a menu is only readable if its rows differ
-    assert len({r["description"] for r in rows}) == 13
+    assert len({r["description"] for r in rows}) == 14
 
 
 async def test_read_procedure_composes_for_the_db_backend(tmp_path: Path) -> None:
@@ -145,3 +153,27 @@ async def test_resources_as_tools(tmp_path: Path) -> None:
             "call list_resources() to see what is"
         ),
     }
+
+
+async def test_permanent_layer_is_the_ras_plus_the_digest(tmp_path: Path) -> None:
+    """The pushed slice: the store's universal RAS triggers, then the compacted reasoning
+    digest, plus a derived version. Assembled server-side so a client never hand-formats
+    records into the block it writes into its system prompt."""
+    db = tmp_path / "m.db"
+    mcp = _mcp(tmp_path)  # builds the face and seeds the tenant
+    SqliteMemoryRepository(db, user_id="alvi").insert_shared(
+        SharedRecord(
+            uuid="ras-1",
+            user_id="",
+            record_type=RecordType.ras,
+            title="Memory Recovery",
+            full_content="### **MEMORY RECOVERY**\n\nSTOP and reload.",
+        )
+    )
+    async with Client(mcp) as client:
+        out = (await client.call_tool("permanent_layer", {})).data
+    assert "### **MEMORY RECOVERY**" in out["content"]  # the store half
+    assert "REAQ" in out["content"]  # the digest half
+    assert out["content"].index("MEMORY RECOVERY") < out["content"].index("REAQ")
+    assert out["version"] == "2026-10-06"  # the digest's authored dated stamp
+    assert len(out["hash"]) == 12  # a content hash, derived not typed

@@ -7,6 +7,7 @@ add_reasoning, ...) land in Phase 5; Phase 4 provides only liveness.
 
 from __future__ import annotations
 
+import hashlib
 import uuid as _uuid
 from typing import Any
 
@@ -70,6 +71,19 @@ def _agent(a: Agent) -> dict[str, Any]:
     creation response confirms what was actually stored, while the roster stays three
     short fields per agent because whole identities overrun the client's output cap."""
     return {"agent_id": a.agent_id, "name": a.name, "role": a.role, "uuid": a.uuid}
+
+
+def _permanent_layer_content(ras: list[SharedRecord], digest: str) -> str:
+    """The permanent layer's block: the universal RAS triggers, then the compacted
+    reasoning digest.
+
+    RAS order is the store's own insertion order, which preserves the order the source
+    file authored them in. Both halves are storage-neutral already — the RAS records are
+    imported from ``shared-memory/core-ras-memory.md`` and the digest carries no storage
+    mechanics — so nothing here needs a backend section."""
+    parts = [r.full_content.strip() for r in sorted(ras, key=lambda r: r.id or 0)]
+    parts.append(digest.strip())
+    return "\n\n".join(p for p in parts if p)
 
 
 class MemoryService:
@@ -142,6 +156,27 @@ class MemoryService:
             "knowledge_index": [_index(r) for r in knowledge_idx],
             "episodic_index": [_index(r) for r in episodes],
             "latest_episode": _whole(latest) if latest else None,
+        }
+
+    def permanent_layer(self, digest: str, version: str) -> dict[str, Any]:
+        """The always-on permanent layer a client writes into its system prompt.
+
+        Two halves, both fleet memory: the universal RAS triggers read from the store,
+        and the compacted reasoning digest passed in by the content layer. This is the
+        slice that must survive context compaction, which is why it is assembled here
+        rather than pulled from ``awaken`` — ``awaken`` returns the full, perishable
+        layer, and a tool result is eaten by compaction.
+
+        ``version`` is the digest's authored stamp and ``hash`` a content hash over the
+        whole block. The client stores both beside its local copy and compares the hash
+        on the next anchor to tell a stale install from a current one, so neither is
+        typed here."""
+        ras = [r for r in self._repo.query_shared() if r.record_type is RecordType.ras]
+        content = _permanent_layer_content(ras, digest)
+        return {
+            "version": version,
+            "hash": hashlib.sha256(content.encode("utf-8")).hexdigest()[:12],
+            "content": content,
         }
 
     # --- reads (load by id / browse / full-text) ---

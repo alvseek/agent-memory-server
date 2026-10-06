@@ -176,7 +176,7 @@ async def test_prompt_list_parity(tmp_path: Path) -> None:
     async with _http(db) as http:
         http_names = sorted((await http.get("/api/prompts")).json()["prompts"])
     assert mcp_names == http_names
-    assert len(http_names) == 13
+    assert len(http_names) == 14
     assert "list-agents" in http_names
     assert "awaken-agent" in http_names  # reaches both faces off one discovered set
 
@@ -257,7 +257,14 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # a second way — through the one primitive an agent may invoke itself
     async with Client(_mcp_content(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())
-    assert len(names) == 19
+    assert len(names) == 20
     assert names == sorted(
-        data_tools + ["list_procedures", "read_procedure", "list_resources", "read_resource"]
+        data_tools
+        + [
+            "list_procedures",
+            "read_procedure",
+            "list_resources",
+            "read_resource",
+            "permanent_layer",
+        ]
     )

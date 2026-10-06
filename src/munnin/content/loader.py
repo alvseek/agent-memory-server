@@ -86,6 +86,7 @@ _PROMPT_ARGUMENTS: dict[str, tuple[str, str]] = {
     "create-agent": ("domain", "kebab domain for the new agent; asks if omitted"),
     "list-agents": ("keyword", "filter agents by domain or role"),
     "awaken-agent": ("domain", "the agent domain to awaken; asks if omitted"),
+    "anchor-memory": ("harness", "`claude` or `opencode`; asks if omitted"),
 }
 _ARGUMENTS_PLACEHOLDER = "$ARGUMENTS"
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"
@@ -94,6 +95,16 @@ _COMPONENTS_DIR = "procedures/components"
 # Markdown-only file/index scaffold — used by the markdown backend's create-episode `cp`,
 # NOT a DB-world block template. Not served as a resource (a Munnin client never cp's a file).
 _RESOURCE_EXCLUDE = {"episodic-memory-template"}
+# The compacted reasoning digest — the slice of the reasoning layer that belongs in a
+# client's permanent (always-on, compaction-surviving) memory. Served through the
+# ``permanent_layer`` tool, not as a resource: a resource is a fill-in shape, and this
+# is finished content.
+_PERMANENT_LAYER_DIGEST = "core-memory/3-core-reasoning-memory.md"
+# The digest's authored version stamp — an HTML comment, so the markdown compile and the
+# harnesses strip it and it never renders. Read as the permanent layer's version.
+_PERMANENT_LAYER_VERSION = re.compile(
+    r"^<!--\s*permanent_layer_version:\s*(\S+)\s*-->\s*$", re.MULTILINE
+)
 # record_type → the resource template governing its shape. `identity` / `user_profile`
 # have no template and are intentionally absent: the write gate does not cover them.
 TEMPLATE_BY_RECORD_TYPE = {
@@ -305,6 +316,32 @@ class ContentLoader:
     def get_resource(self, name: str) -> str:
         """Return a template file verbatim. Raises ``KeyError`` if absent or excluded."""
         return self._resource_text(name)
+
+    # --- the permanent layer (the pushed, compaction-surviving slice) ---
+
+    def permanent_layer_source(self) -> tuple[str, str]:
+        """``(version, digest)`` for the permanent layer.
+
+        Read live from ``core-memory/3-core-reasoning-memory.md`` — the same file the
+        markdown compile pipeline folds into the global instructions file, so both
+        backends push the same reasoning. The version is an authored HTML-comment stamp,
+        stripped from the body so the served block carries only the reasoning.
+
+        Raises ``KeyError`` when the file is absent and ``ValueError`` when it carries no
+        stamp: a broken content tree is a failure to surface, not an empty answer.
+        """
+        path = self._root / _PERMANENT_LAYER_DIGEST
+        if not path.exists():
+            raise KeyError(f"permanent-layer digest not found: {_PERMANENT_LAYER_DIGEST}")
+        text = path.read_text(encoding="utf-8")
+        match = _PERMANENT_LAYER_VERSION.search(text)
+        if not match:
+            raise ValueError(
+                "permanent-layer digest carries no permanent_layer_version stamp: "
+                f"{_PERMANENT_LAYER_DIGEST}"
+            )
+        body = _PERMANENT_LAYER_VERSION.sub("", text, count=1).lstrip("\n")
+        return match.group(1), body
 
     def template_version(self, name: str) -> str:
         """The ``template_version`` stamp a resource template carries.

@@ -27,7 +27,7 @@ or in a project's `.mcp.json`:
 { "mcpServers": { "munnin": { "type": "http", "url": "http://127.0.0.1:8200/mcp" } } }
 ```
 
-Then, in a session: `ping` answers `pong`, `list_procedures` returns the 13 memory procedures, and `read_procedure("create-agent")` walks you through making the first agent. No sign-in happens: this is **local mode** — one tenant, reachable from this machine only, and the server refuses to start any other way ([how that guard works](docs/README.md#local-mode)).
+Then, in a session: `ping` answers `pong`, `list_procedures` returns the 14 memory procedures, and `read_procedure("create-agent")` walks you through making the first agent. No sign-in happens: this is **local mode** — one tenant, reachable from this machine only, and the server refuses to start any other way ([how that guard works](docs/README.md#local-mode)).
 
 No Docker? `uv sync && MUNNIN_AUTH=off uv run python -m munnin` does the same on `127.0.0.1:8200`.
 

@@ -178,7 +178,7 @@ Munnin's MCP face is streamable-HTTP at `<public URL>/mcp` — both `/mcp` and `
 - **claude.ai**: paste the public `https://<host>/mcp` under connectors — hosted shape only.
 - **Anything else**: any MCP client that speaks streamable-HTTP; in token mode it must handle the OAuth flow the 401 challenge advertises.
 
-In a session, `ping` → `pong` is the connectivity check; `list_procedures` shows the 13 procedures; `read_procedure("create-agent")` is where a new tenant starts, and `read_procedure("awaken-agent", argument="<domain>")` is how a returning agent loads itself.
+In a session, `ping` → `pong` is the connectivity check; `list_procedures` shows the 14 procedures; `read_procedure("create-agent")` is where a new tenant starts, and `read_procedure("awaken-agent", argument="<domain>")` is how a returning agent loads itself.
 
 ### MCP surface (agent face)
 
@@ -191,7 +191,7 @@ At `initialize` the server returns four sentences of **instructions** — what M
 - *Agent lifecycle* — `create_agent`, `list_agents`. An agent exists when it has a row; every memory record names one under a foreign key, so `create_agent` is the strict twin of the first write.
 - *Served content* — `list_procedures`, `read_procedure(name, argument?)`, `list_resources`, `read_resource(name)`. The same procedures and templates are also served as MCP **prompts** and **resources**, but a prompt is user-invoked and a resource client-attached; a tool is the one primitive the agent may call itself, which is what lets a served procedure that says *execute `/wrap-up`* resolve to `read_procedure("wrap-up")`.
 
-**13 prompts** — the framework's command set, discovered from `control-files` at serve time (never a list kept in the server) minus `push`/`pull`/`refresh`-memory, which have no meaning against a database: `update-episodic`, `add-reasoning`, `update-emotional`, `update-knowledge`, `load-episodic`, `load-knowledge`, `archive-old-memories`, `update-memory`, `wrap-up`, `create-agent`, `list-agents`, `awaken-agent` (the awakening *process* — `awaken` returns the data, this says what to do with it), `wait-options`. Each carries its title and, where the procedure takes one, its argument.
+**14 prompts** — the framework's command set, discovered from `control-files` at serve time (never a list kept in the server) minus `push`/`pull`/`refresh`-memory, which have no meaning against a database: `update-episodic`, `add-reasoning`, `update-emotional`, `update-knowledge`, `load-episodic`, `load-knowledge`, `archive-old-memories`, `update-memory`, `wrap-up`, `create-agent`, `list-agents`, `awaken-agent` (the awakening *process* — `awaken` returns the data, this says what to do with it), `wait-options`, `anchor-memory` (installs the permanent layer into a client's system-prompt file). Each carries its title and, where the procedure takes one, its argument.
 
 **4 resources** — the framework's block templates, served as `resource://templates/<name>` and by the same name to `read_resource`: `episodic-entry-template`, `reasoning-pattern-template`, `emotional-moment-template`, `knowledge-file-template`.
 

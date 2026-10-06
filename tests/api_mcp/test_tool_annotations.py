@@ -20,6 +20,7 @@ CF = Path(__file__).resolve().parents[2] / "control-files"
 READ_ONLY = {
     "ping", "help", "awaken", "get", "query", "search", "list_agents",
     "list_procedures", "read_procedure", "list_resources", "read_resource",
+    "permanent_layer",
 }
 ADDITIVE = {"insert", "create_agent", "append", "prepend"}
 DESTRUCTIVE = {"edit", "multi_edit", "archive", "soft_delete"}

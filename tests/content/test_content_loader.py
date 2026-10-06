@@ -20,7 +20,7 @@ def loader() -> ContentLoader:
 
 def test_lists_served_prompts(loader: ContentLoader) -> None:
     names = loader.list_prompts()
-    assert len(names) == 13
+    assert len(names) == 14
     assert "update-episodic" in names
     assert "wrap-up" in names
     assert "create-agent" in names
@@ -73,10 +73,10 @@ def test_prompt_descriptions_are_distinct_and_read_from_the_procedures(
     loader: ContentLoader,
 ) -> None:
     described = {name: loader.describe_prompt(name) for name in loader.list_prompts()}
-    assert len(described) == 13
+    assert len(described) == 14
     # a command menu is only readable if its rows differ — one templated sentence with
     # the name swapped in gives twelve entries that all say the same thing
-    assert len(set(described.values())) == 13
+    assert len(set(described.values())) == 14
     assert described["awaken-agent"] == "Load agent memory and activate a domain-specific agent."
     assert described["update-episodic"] == "Capture session context as rolling per-theme episodes."
 
@@ -120,7 +120,7 @@ def test_prompt_with_no_prose_falls_back_to_naming_itself(tmp_path: Path) -> Non
 
 def test_every_prompt_has_a_title_from_its_own_heading(loader: ContentLoader) -> None:
     titles = {name: loader.title_prompt(name) for name in loader.list_prompts()}
-    assert len(set(titles.values())) == 13
+    assert len(set(titles.values())) == 14
     assert titles["awaken-agent"] == "Awaken Agent"
     assert titles["wrap-up"] == "Wrap Up Session"
     # a title is a display name, never the slug it replaces
@@ -209,6 +209,31 @@ def test_missing_submodule_is_graceful() -> None:
     assert loader.available() is False
     assert loader.list_prompts() == []
     assert loader.list_resources() == []
+
+
+def test_permanent_layer_source_is_the_digest_and_its_stamp(loader: ContentLoader) -> None:
+    """The permanent layer's reasoning half is the *compacted* digest, not the full
+    27-pattern file ``awaken`` serves — the full one is the perishable copy. The stamp is
+    metadata: read as the version, stripped from the body."""
+    version, text = loader.permanent_layer_source()
+    assert version == "2026-10-06"
+    assert "REAQ" in text
+    assert "permanent_layer_version" not in text  # the stamp never reaches the block
+    assert "## Storage Mechanics" not in text
+
+
+def test_permanent_layer_source_missing_raises(tmp_path: Path) -> None:
+    with pytest.raises(KeyError):
+        ContentLoader(tmp_path / "absent").permanent_layer_source()
+
+
+def test_permanent_layer_source_without_a_stamp_raises(tmp_path: Path) -> None:
+    root = tmp_path / "control-files"
+    digest = root / "core-memory" / "3-core-reasoning-memory.md"
+    digest.parent.mkdir(parents=True)
+    digest.write_text("### A pattern\n", encoding="utf-8", newline="\n")
+    with pytest.raises(ValueError, match="permanent_layer_version"):
+        ContentLoader(root).permanent_layer_source()
 
 
 # --- discovery: the served set is the framework's command set, never a list kept here ---

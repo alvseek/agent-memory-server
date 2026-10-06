@@ -18,6 +18,7 @@ lets a tool run.
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from typing import Any
 
 from fastmcp import FastMCP
@@ -249,12 +250,14 @@ def build_mcp(
         return _svc().soft_delete(uuid)
 
     if content is not None and content.available():
-        _register_content(mcp, content)
+        _register_content(mcp, content, _svc)
 
     return mcp
 
 
-def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
+def _register_content(
+    mcp: FastMCP, content: ContentLoader, svc: Callable[[], MemoryService]
+) -> None:
     """Register served procedures as Prompts, templates as Resources — and both as tools.
 
     All read live from the control-files submodule; procedures are composed with the db
@@ -396,3 +399,18 @@ def _register_content(mcp: FastMCP, content: ContentLoader) -> None:
         except KeyError:
             return _not_served("resource", name, "list_resources()")
         return {"served": True, "name": name, "content": text}
+
+    # --- the permanent layer: the slice a client pushes into its system prompt ---
+
+    @mcp.tool(title="Read the permanent layer", annotations=_READ)
+    def permanent_layer() -> dict[str, Any]:
+        """The always-on memory a client writes into its system-prompt file: the
+        universal RAS triggers plus the compacted reasoning digest, with a content hash.
+
+        This is the slice that must survive context compaction, which is why it is
+        pushed into the harness's instruction file rather than pulled per session — a
+        tool result is conversation history and compaction eats it. The hash tells a
+        stale local copy from a current one. Follow read_procedure("anchor-memory") to
+        install it."""
+        version, digest = content.permanent_layer_source()
+        return svc().permanent_layer(digest=digest, version=version)
