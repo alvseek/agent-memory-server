@@ -33,11 +33,10 @@ class ServiceFactory:
         """The service acting as ``user_id``. Every query it runs is scoped to that tenant.
 
         Services are kept per tenant rather than rebuilt per request, for one concrete
-        reason: the repository applies ``schema.sql`` on its first connection and then
-        remembers, so a fresh instance per request would re-run five ``CREATE TABLE IF NOT
-        EXISTS`` statements plus indexes and triggers on every single call. The cached
-        objects hold a path and a string, so the cost of keeping one per tenant is
-        nothing next to that."""
+        reason: the repository runs the schema migrations on its first connection and then
+        remembers, so a fresh instance per request would re-check ``migration_history`` on
+        every single call. The cached objects hold a path and a string, so the cost of
+        keeping one per tenant is nothing next to that."""
         service = self._services.get(user_id)
         if service is None:
             repo = SqliteMemoryRepository(self._db_path, user_id=user_id)

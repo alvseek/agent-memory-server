@@ -51,8 +51,8 @@ RUN groupadd --system --gid 10001 munnin \
 
 # The environment, then the source it points at. uv installs the project
 # editable by default, so /app/src must exist at the same path it did at build
-# time — which also keeps schema.sql resolvable via its __file__-relative load,
-# exactly as it resolves under the existing systemd deployment.
+# time — which also keeps the data_entities/migrations/ SQL files resolvable via
+# their __file__-relative load, exactly as they resolve under systemd.
 COPY --from=build --chown=munnin:munnin /app/.venv /app/.venv
 COPY --chown=munnin:munnin src ./src
 

@@ -20,10 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from munnin.data_entities.identity import Account, UserIdentity
-
-_SCHEMA_SQL = (
-    Path(__file__).resolve().parent.parent / "data_entities" / "schema.sql"
-).read_text(encoding="utf-8")
+from munnin.data_entities.schema_migrations import apply_migrations
 
 
 def _now() -> str:
@@ -46,7 +43,7 @@ class IdentityRepository:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys = ON")
         if not self._ensured:
-            conn.executescript(_SCHEMA_SQL)
+            apply_migrations(conn)
             self._ensured = True
         try:
             yield conn

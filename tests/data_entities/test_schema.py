@@ -10,14 +10,10 @@ fails the other, which is exactly the failure mode worth keeping apart.
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-_DDL = (
-    Path(__file__).resolve().parents[2]
-    / "src" / "munnin" / "data_entities" / "schema.sql"
-).read_text(encoding="utf-8")
+from munnin.data_entities.schema_migrations import apply_migrations
 
 _INSERT_SHARED = (
     "INSERT INTO shared_record (uuid,user_id,record_type,created_date,modified_date,full_content)"
@@ -31,7 +27,7 @@ _INSERT_MEMORY = (
 
 def _db() -> sqlite3.Connection:
     conn = sqlite3.connect(":memory:")
-    conn.executescript(_DDL)
+    apply_migrations(conn)  # the store's schema is the migration set
     conn.execute("PRAGMA foreign_keys = ON")
     # The tenant first: an agent references it, so the chain has to be built downwards.
     conn.execute("INSERT INTO account (user_id, created_date) VALUES ('alvi','2026-08-28')")
@@ -61,8 +57,8 @@ def test_five_tables_and_two_fts_indexes() -> None:
 def test_schema_is_idempotent() -> None:
     """Applied on every repository init, so a second run must be a no-op, not an error."""
     conn = sqlite3.connect(":memory:")
-    conn.executescript(_DDL)
-    conn.executescript(_DDL)
+    apply_migrations(conn)
+    apply_migrations(conn)
     assert _TABLES <= _names(conn, "table")
 
 
@@ -135,7 +131,8 @@ def test_the_declared_shared_types_match_the_schema_check() -> None:
     the drift is invisible until a caller reads a message listing the wrong set."""
     from munnin.data_entities.memory_record import SHARED_RECORD_TYPES
 
-    check = _DDL.split("record_type   TEXT    NOT NULL CHECK (record_type IN (")[1]
+    ddl = _db().execute("SELECT sql FROM sqlite_master WHERE name = 'shared_record'").fetchone()[0]
+    check = ddl.split("record_type   TEXT    NOT NULL CHECK (record_type IN (")[1]
     declared_in_schema = [v.strip().strip("'") for v in check.split("))")[0].split(",")]
     assert [t.value for t in SHARED_RECORD_TYPES] == declared_in_schema
 

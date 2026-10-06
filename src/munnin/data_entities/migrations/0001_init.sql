@@ -51,14 +51,14 @@ CREATE TABLE IF NOT EXISTS agent (
 
 -- Fleet-shared memory. No agent_id at all — this memory has no owner, which is why it
 -- cannot live in memory_record without weakening that table's foreign key. The CHECK
--- enforces what used to be convention only: shared memory is reasoning, knowledge, the
--- universal RAS triggers, and the user profile — never an episode, an identity or an
--- emotional moment, all of which belong to some particular agent.
+-- enforces what used to be convention only: shared memory is reasoning, knowledge, and
+-- the user profile — never an episode, an identity or an emotional moment, all of which
+-- belong to some particular agent.
 CREATE TABLE IF NOT EXISTS shared_record (
   id            INTEGER PRIMARY KEY,    -- internal rowid; storage + FTS5 link (never leaves the store)
   uuid          TEXT    NOT NULL UNIQUE,-- global/portable identity; the idempotency key
   user_id       TEXT    NOT NULL,
-  record_type   TEXT    NOT NULL CHECK (record_type IN ('reasoning','knowledge','ras','user_profile')),
+  record_type   TEXT    NOT NULL CHECK (record_type IN ('reasoning','knowledge','user_profile')),
   project       TEXT,                   -- reserved for Hermod's project scope; unused by Munnin
   title         TEXT,
   tags          TEXT,                   -- JSON array (stored as text)

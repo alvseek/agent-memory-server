@@ -28,10 +28,7 @@ from munnin.data_entities.memory_record import (
     SharedRecord,
     validate_domain,
 )
-
-_SCHEMA_SQL = (
-    Path(__file__).resolve().parent.parent / "data_entities" / "schema.sql"
-).read_text(encoding="utf-8")
+from munnin.data_entities.schema_migrations import apply_migrations
 
 # One source of truth for column order.
 _COL = (
@@ -103,7 +100,7 @@ class SqliteMemoryRepository:
         # the constraint fails silently. Connection-per-operation means it must be set here.
         conn.execute("PRAGMA foreign_keys = ON")
         if not self._ensured:
-            conn.executescript(_SCHEMA_SQL)
+            apply_migrations(conn)
             self._ensured = True
         try:
             yield conn

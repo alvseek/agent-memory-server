@@ -241,16 +241,17 @@ The payload is data. The awakening *process* — what to do with it, the first-r
 
 ### Data model
 
-Five tables (`data_entities/schema.sql`), all foreign keys live because each repository sets `PRAGMA foreign_keys = ON` per connection (SQLite defaults it off):
+Six tables (`data_entities/migrations/`, applied by the schema-migration runner at startup), all foreign keys live because each repository sets `PRAGMA foreign_keys = ON` per connection (SQLite defaults it off):
 
 ```
-account        (user_id PK, display_name, email, created_date)          — the tenant
-user_identity  (iss, sub) PK → account                                  — which issuer+subject is whom
-agent          (user_id, agent_id) PK → account, name, role, uuid       — an agent exists because it has a row
-shared_record  (id, uuid UNIQUE, user_id, record_type ∈ {reasoning, knowledge, ras, user_profile},
-                project, title, tags JSON, created/modified/archived/deleted_date, full_content)
-memory_record  = shared_record + agent_id, record_type ∈ {episode, knowledge, identity, reasoning, emotional},
-                FK (user_id, agent_id) → agent
+account           (user_id PK, display_name, email, created_date)       — the tenant
+user_identity     (iss, sub) PK → account                               — which issuer+subject is whom
+agent             (user_id, agent_id) PK → account, name, role, uuid    — an agent exists because it has a row
+shared_record     (id, uuid UNIQUE, user_id, record_type ∈ {reasoning, knowledge, ras, user_profile},
+                   project, title, tags JSON, created/modified/archived/deleted_date, full_content)
+memory_record     = shared_record + agent_id, record_type ∈ {episode, knowledge, identity, reasoning, emotional},
+                   FK (user_id, agent_id) → agent
+migration_history (version PK, name, checksum, applied_at)              — which schema migrations have run
 ```
 
 - Fleet-shared memory has no owner, so it cannot live in `memory_record` without weakening that table's foreign key; the `CHECK` keeps episodes, identities and emotional moments — which always belong to some agent — out of it. There is no sentinel agent.
