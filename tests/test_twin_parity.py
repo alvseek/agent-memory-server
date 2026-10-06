@@ -169,6 +169,19 @@ async def test_resource_parity(tmp_path: Path) -> None:
     assert mcp_txt == expected == http_txt
 
 
+async def test_script_resource_parity(tmp_path: Path) -> None:
+    # an agent-facing script is served through the same surface as a template, under its own
+    # URI root and the bare name on the HTTP twin
+    db = tmp_path / "m.db"
+    expected = ContentLoader(CF).get_resource("copy-lines")
+    async with Client(_mcp_content(db)) as mcp:
+        mcp_txt = (await mcp.read_resource("resource://scripts/copy-lines"))[0].text
+    async with _http(db) as http:
+        http_txt = (await http.get("/api/resources/copy-lines")).text
+    assert mcp_txt == expected == http_txt
+    assert expected.startswith("#!/bin/bash")
+
+
 async def test_prompt_list_parity(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     async with Client(_mcp_content(db)) as mcp:
