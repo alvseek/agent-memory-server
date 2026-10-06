@@ -189,11 +189,11 @@ At `initialize` the server returns four sentences of **instructions** — what M
 - *Orientation* — `help`: the same instructions text plus the served procedure list, for clients that never show instructions. Always present, even with no served content.
 - *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically.
 - *Agent lifecycle* — `create_agent`, `list_agents`. An agent exists when it has a row; every memory record names one under a foreign key, so `create_agent` is the strict twin of the first write.
-- *Served content* — `list_procedures`, `read_procedure(name, argument?)`, `list_resources`, `read_resource(name)`. The same procedures and templates are also served as MCP **prompts** and **resources**, but a prompt is user-invoked and a resource client-attached; a tool is the one primitive the agent may call itself, which is what lets a served procedure that says *execute `/wrap-up`* resolve to `read_procedure("wrap-up")`.
+- *Served content* — `list_procedures`, `read_procedure(name, argument?)`, `list_resources`, `read_resource(name)`. The same procedures, templates and scripts are also served as MCP **prompts** and **resources**, but a prompt is user-invoked and a resource client-attached; a tool is the one primitive the agent may call itself, which is what lets a served procedure that says *execute `/wrap-up`* resolve to `read_procedure("wrap-up")`.
 
 **14 prompts** — the framework's command set, discovered from `control-files` at serve time (never a list kept in the server) minus `push`/`pull`/`refresh`-memory, which have no meaning against a database: `update-episodic`, `add-reasoning`, `update-emotional`, `update-knowledge`, `load-episodic`, `load-knowledge`, `archive-old-memories`, `update-memory`, `wrap-up`, `create-agent`, `list-agents`, `awaken-agent` (the awakening *process* — `awaken` returns the data, this says what to do with it), `wait-options`, `anchor-memory` (installs the permanent layer into a client's system-prompt file). Each carries its title and, where the procedure takes one, its argument.
 
-**4 resources** — the framework's block templates, served as `resource://templates/<name>` and by the same name to `read_resource`: `episodic-entry-template`, `reasoning-pattern-template`, `emotional-moment-template`, `knowledge-file-template`.
+**4 templates + 1 script** — the framework's block templates, served as `resource://templates/<name>`, and the agent-facing helper `copy-lines`, served as `resource://scripts/<name>`; all are addressed by their bare stem at `read_resource`: `episodic-entry-template`, `reasoning-pattern-template`, `emotional-moment-template`, `knowledge-file-template`, `copy-lines`. Only scripts a served instruction tells an agent to run are served — the harness hooks, the CI guard and the setup installers are installed locally, never fetched.
 
 ### HTTP API (REST twin)
 
@@ -211,7 +211,7 @@ Every endpoint is a REST twin of an MCP primitive over the same core; only the n
 | POST | `/api/edit` · `/api/append` · `/api/prepend` · `/api/multi-edit` | the same names | Body edits with Edit-tool parity |
 | POST | `/api/archive` · `/api/soft-delete` | `archive` · `soft_delete` | Out of the hot index but searchable · tombstoned |
 | GET | `/api/prompts` · `/api/prompts/{name}` | `list_procedures` · `read_procedure` | Names as JSON · one procedure as raw `text/markdown` |
-| GET | `/api/resources` · `/api/resources/{name}` | `list_resources` · `read_resource` | Names as JSON · one template as raw `text/markdown` |
+| GET | `/api/resources` · `/api/resources/{name}` | `list_resources` · `read_resource` | Names as JSON · one resource as raw text |
 
 A *list* is data and arrives as JSON; a *single* procedure or template is a document and arrives as raw markdown with no enclosing object, so `curl -o wrap-up.md` writes exactly the bytes an installed slash command carries. Errors stay JSON: `ValueError → 400`, `LookupError → 404`, and in token mode a missing or invalid token → `401` with a `WWW-Authenticate` challenge.
 

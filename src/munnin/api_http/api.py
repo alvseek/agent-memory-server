@@ -343,13 +343,13 @@ def build_router(
 
     @api.get("/api/resources")
     def list_resources() -> dict[str, list[str]]:
-        """List the served template resource names."""
+        """List the served resource names — templates and agent-facing scripts."""
         names = content.list_resources() if content is not None else []
         return {"resources": names}
 
     @api.get("/api/resources/{name}", response_class=MarkdownResponse)
     def get_resource(name: str) -> MarkdownResponse:
-        """Return a framework template verbatim."""
+        """Return a framework resource verbatim — a template or a script."""
         if content is None:
             raise HTTPException(status_code=404, detail="content not available")
         try:

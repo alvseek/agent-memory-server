@@ -48,6 +48,7 @@ async def test_resources_list_get_404(tmp_path: Path) -> None:
         resources = (await c.get("/api/resources")).json()["resources"]
         assert "episodic-entry-template" in resources
         assert "knowledge-file-template" in resources
+        assert "copy-lines" in resources
 
         ok = await c.get("/api/resources/reasoning-pattern-template")
         assert ok.status_code == 200

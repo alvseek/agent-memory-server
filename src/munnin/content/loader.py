@@ -91,10 +91,23 @@ _PROMPT_ARGUMENTS: dict[str, tuple[str, str]] = {
 _ARGUMENTS_PLACEHOLDER = "$ARGUMENTS"
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"
 _TEMPLATES_DIR = "procedures/memory/resources"
+_SCRIPTS_DIR = "scripts"
 _COMPONENTS_DIR = "procedures/components"
 # Markdown-only file/index scaffold — used by the markdown backend's create-episode `cp`,
 # NOT a DB-world block template. Not served as a resource (a Munnin client never cp's a file).
 _RESOURCE_EXCLUDE = {"episodic-memory-template"}
+# Agent-facing executable helpers, served as resources beside the templates. Only a script a
+# served instruction tells an agent to RUN belongs here: the harness hooks
+# (claude/codex-agent-refresh), the CI invariant guard, stop.wav and the setup installers are
+# installed locally and are never fetched from the server. Authored name -> (title,
+# description), because a shell script has no prose opening paragraph to derive either from.
+# Serving them is what gives a materialized artifact (ADR-017 condition 1) a fetch channel.
+_SERVED_SCRIPTS: dict[str, tuple[str, str]] = {
+    "copy-lines": (
+        "Copy lines between files",
+        "Copy a line range from one file into another verbatim, with an automatic backup.",
+    ),
+}
 # The compacted reasoning digest — the slice of the reasoning layer that belongs in a
 # client's permanent (always-on, compaction-surviving) memory. Served through the
 # ``permanent_layer`` tool, not as a resource: a resource is a fill-in shape, and this
@@ -285,36 +298,56 @@ class ContentLoader:
     # --- resources (templates, verbatim) ---
 
     def list_resources(self) -> list[str]:
-        """The served template names (file stems under ``procedures/memory/resources/``)."""
-        d = self._root / _TEMPLATES_DIR
-        if not d.exists():
+        """The served resource names — template stems plus agent-facing scripts."""
+        if not self.available():
             return []
-        return sorted(p.stem for p in d.glob("*.md") if p.stem not in _RESOURCE_EXCLUDE)
+        d = self._root / _TEMPLATES_DIR
+        templates = (
+            sorted(p.stem for p in d.glob("*.md") if p.stem not in _RESOURCE_EXCLUDE)
+            if d.exists()
+            else []
+        )
+        return sorted(templates + list(_SERVED_SCRIPTS))
+
+    def is_script(self, name: str) -> bool:
+        """True when ``name`` is a served script rather than a template (they differ only
+        in which directory they are read from and how their title/description is sourced)."""
+        return name in _SERVED_SCRIPTS
 
     def describe_resource(self, name: str) -> str:
-        """A one-line purpose for a served template, read from the template itself.
+        """A one-line purpose for a served resource.
 
-        Same derivation as the procedures, and for the same reason: four templates sharing
-        one sentence with the name swapped in tells a reader nothing, and an authored copy
-        would drift from the file it describes.
+        A template's is read from the template itself — same derivation as the procedures,
+        and for the same reason: four templates sharing one sentence with the name swapped
+        in tells a reader nothing, and an authored copy would drift from the file it
+        describes. A script has no prose opening to read, so its pair is authored in
+        ``_SERVED_SCRIPTS``.
         """
+        if name in _SERVED_SCRIPTS:
+            return _SERVED_SCRIPTS[name][1]
         return _lead_sentence(self._resource_text(name)) or f"Framework template '{name}'."
 
     def title_resource(self, name: str) -> str:
-        """A display title for a served template, taken from its own `#` heading."""
+        """A display title for a served resource, taken from its own `#` heading (template)
+        or from its authored pair (script)."""
+        if name in _SERVED_SCRIPTS:
+            return _SERVED_SCRIPTS[name][0]
         return _h1_title(self._resource_text(name)) or name
 
     def _resource_text(self, name: str) -> str:
-        """The raw template body. Raises ``KeyError`` if absent or excluded."""
-        if name in _RESOURCE_EXCLUDE:
+        """The raw resource body. Raises ``KeyError`` if absent or excluded."""
+        if name in _SERVED_SCRIPTS:
+            path = self._root / _SCRIPTS_DIR / f"{name}.sh"
+        elif name in _RESOURCE_EXCLUDE:
             raise KeyError(f"unknown resource: {name}")
-        path = self._root / _TEMPLATES_DIR / f"{name}.md"
+        else:
+            path = self._root / _TEMPLATES_DIR / f"{name}.md"
         if not path.exists():
             raise KeyError(f"unknown resource: {name}")
         return path.read_text(encoding="utf-8")
 
     def get_resource(self, name: str) -> str:
-        """Return a template file verbatim. Raises ``KeyError`` if absent or excluded."""
+        """Return a resource file verbatim. Raises ``KeyError`` if absent or excluded."""
         return self._resource_text(name)
 
     # --- the permanent layer (the pushed, compaction-surviving slice) ---

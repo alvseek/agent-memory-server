@@ -132,6 +132,7 @@ async def test_resources_as_tools(tmp_path: Path) -> None:
         body = (
             await client.call_tool("read_resource", {"name": "reasoning-pattern-template"})
         ).data
+        script = (await client.call_tool("read_resource", {"name": "copy-lines"})).data
         missing = (
             await client.call_tool("read_resource", {"name": "episodic-memory-template"})
         ).data
@@ -140,10 +141,15 @@ async def test_resources_as_tools(tmp_path: Path) -> None:
         "emotional-moment-template",
         "knowledge-file-template",
         "reasoning-pattern-template",
+        "copy-lines",
     }
     assert all(r["title"] and r["description"] for r in rows)
     assert body["served"] is True
     assert "Reasoning Pattern Template" in body["content"]
+    # an agent-facing script is served verbatim through the same door as a template
+    assert script["served"] is True
+    assert script["content"].startswith("#!/bin/bash")
+    assert "copy-lines.sh" in script["content"]
     # the markdown scaffold is excluded from the resource surface on every door
     assert missing == {
         "served": False,

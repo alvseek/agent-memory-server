@@ -308,28 +308,29 @@ def _register_content(
             description=content.describe_prompt(name),
         )(_make_prompt(name, content.argument_prompt(name)))
 
-    def _make_resource(template: str):
+    def _make_resource(resource: str):
         # Zero-arg so FastMCP registers a static resource, not a URI template.
         def fn() -> str:
-            return content.get_resource(template)
+            return content.get_resource(resource)
 
-        fn.__name__ = f"resource_{template.replace('-', '_')}"
+        fn.__name__ = f"resource_{resource.replace('-', '_')}"
         return fn
 
     for name in content.list_resources():
+        script = content.is_script(name)
         mcp.resource(
-            f"resource://templates/{name}",
+            f"resource://{'scripts' if script else 'templates'}/{name}",
             name=name,
             title=content.title_resource(name),
             description=content.describe_resource(name),
-            mime_type="text/markdown",
-            # A fill-in template is written by an agent and read by nobody else, hence the
-            # assistant audience. The priority is near the floor because `priority` scores
-            # whether a client should pull something into context unasked, and a template
-            # earns its place only at the moment that memory layer is being written —
-            # deliberately fetched, never speculatively included. Not 0.0: that is the
-            # spec's "entirely optional", and a client could reasonably read it as "hide",
-            # which would take these out of a picker where they do belong.
+            mime_type="text/x-shellscript" if script else "text/markdown",
+            # A fill-in template is written by an agent and read by nobody else, and a
+            # script is run by one; either way the audience is the assistant. The priority
+            # is near the floor because `priority` scores whether a client should pull
+            # something into context unasked, and both earn their place only when
+            # deliberately fetched. Not 0.0: that is the spec's "entirely optional", and a
+            # client could reasonably read it as "hide", which would take these out of a
+            # picker where they do belong.
             annotations={"audience": ["assistant"], "priority": 0.1},
         )(_make_resource(name))
 
@@ -370,12 +371,13 @@ def _register_content(
             return _not_served("procedure", name, "list_procedures()")
         return {"served": True, "name": name, "content": text}
 
-    @mcp.tool(title="List served templates", annotations=_READ)
+    @mcp.tool(title="List served resources", annotations=_READ)
     def list_resources() -> list[dict[str, str]]:
-        """List the framework templates this server serves — name, title, one-line purpose.
+        """List the framework resources this server serves — name, title, one-line purpose.
 
-        A template is the format of one memory entry, filled in when that layer is written.
-        Read one with read_resource(name).
+        A resource is a template (the format of one memory entry, filled in when that layer
+        is written) or an agent-facing script (a helper you fetch and run). Read one with
+        read_resource(name).
         """
         return [
             {
@@ -386,13 +388,14 @@ def _register_content(
             for name in content.list_resources()
         ]
 
-    @mcp.tool(title="Read a served template", annotations=_READ)
+    @mcp.tool(title="Read a served resource", annotations=_READ)
     def read_resource(name: str) -> dict[str, Any]:
-        """Read a served framework template verbatim.
+        """Read a served framework resource verbatim — a template or a script.
 
-        Use this when a procedure points at a template by relative path — a reference to
-        `resources/episodic-entry-template.md` is read_resource("episodic-entry-template").
-        A name that is not served returns served=false rather than an error.
+        Use this when a served instruction points at a file by relative path: a reference
+        to `resources/episodic-entry-template.md` or `scripts/copy-lines.sh` is
+        read_resource("episodic-entry-template") / read_resource("copy-lines"). A name that
+        is not served returns served=false rather than an error.
         """
         try:
             text = content.get_resource(name)
