@@ -19,7 +19,7 @@ Two **modes**, chosen by `MUNNIN_AUTH`:
 - A server started with no `MUNNIN_AUTH` behaves exactly as before 2026-09-01: no issuer → no boot; issuer → every `/api/*` and `/mcp` call needs a bearer.
 - A local-mode server is reachable from `127.0.0.1` and from nowhere else — on any shape: process, compose, bare `docker run`.
 - In local mode every write lands under `MUNNIN_USER_ID`, and the importer stamps the same tenant, so import → awaken round-trips.
-- Local mode changes nothing about *what* is served: 13 procedures, 4 templates, byte-identical to the compiled commands.
+- Local mode changes nothing about *what* is served: 14 procedures, 4 templates, byte-identical to the compiled commands.
 - The default `public_base_url` moving to loopback changed no deployed audience: the hosted container still advertises `https://munnin.lok.quest/mcp`.
 - Both repos read as Apache-2.0 to GitHub, to `uv build`, and to the image build.
 
@@ -28,7 +28,7 @@ Two **modes**, chosen by `MUNNIN_AUTH`:
 1. On a machine with Docker and no Munnin running: `git clone --recurse-submodules https://github.com/alvseek/agent-memory-server && cd agent-memory-server` → *Checks: Licence* (the clone's `LICENSE` and `control-files/LICENSE` both open with "Apache License").
 2. `docker compose up -d --build` → within 30 s `curl http://127.0.0.1:8200/health` → `{"status":"ok",…}` → *Checks: Local — compose*.
 3. `claude mcp add --transport http munnin-local http://127.0.0.1:8200/mcp` → in a Claude Code session `/mcp` shows it **Connected** with no sign-in → *Checks: Local — real client*.
-4. In that session: `ping` → `pong`; `list_procedures` → 13; `create_agent("meta", …)` then `list_agents` → `meta` → *Checks: Local — tenant*.
+4. In that session: `ping` → `pong`; `list_procedures` → 14; `create_agent("meta", …)` then `list_agents` → `meta` → *Checks: Local — tenant*.
 5. `docker compose down` → `docker compose up -d` → `list_agents` still returns `meta` (the named volume survived) → *Checks: Local — compose*.
 6. From the same machine: `curl http://<this machine's LAN IP>:8200/health` → **connection refused** → *Checks: Local — reachability*.
 7. `docker compose down -v`.
@@ -74,7 +74,7 @@ Two **modes**, chosen by `MUNNIN_AUTH`:
 
 ### Local — real client
 - [ ] `claude mcp add --transport http munnin-local http://127.0.0.1:8200/mcp` (no `--client-id`) → `/mcp` shows **Connected**; no browser opens, no sign-in prompt.
-- [ ] From that session: `ping` → `pong`; `list_procedures` → 13 names; `read_procedure("awaken-agent", argument="meta")` returns the DB-composed text with `$ARGUMENTS` substituted.
+- [ ] From that session: `ping` → `pong`; `list_procedures` → 14 names; `read_procedure("awaken-agent", argument="meta")` returns the DB-composed text with `$ARGUMENTS` substituted.
 - [ ] `POST /mcp` with no `Authorization` header from `curl` → **200/202**, never a `401` with `WWW-Authenticate`.
 - [ ] `GET /.well-known/oauth-protected-resource/mcp` → **404**; `GET /.well-known/oauth-authorization-server` → 404.
 
@@ -86,7 +86,7 @@ Two **modes**, chosen by `MUNNIN_AUTH`:
 ### Token mode — the hosted deploy did not move (after the next Kamal deploy of ≥ `f4c89d8`)
 - [ ] On the box: `docker exec munnin-web-<sha> env | grep MUNNIN_` → **no** `MUNNIN_AUTH`, **no** `MUNNIN_LOCAL_BIND_ALL`, `MUNNIN_PUBLIC_BASE_URL=https://munnin.lok.quest`, `MUNNIN_LOGTO_ENDPOINT=https://auth.lok.quest`.
 - [ ] Anonymous from outside: `GET /api/agents` → **401**; `POST /mcp` → **401** with `resource_metadata="https://munnin.lok.quest/.well-known/oauth-protected-resource/mcp"`; that document's `resource` is `https://munnin.lok.quest/mcp` (the default flip changed nothing advertised).
-- [ ] A live authenticated session (Claude Code or claude.ai) still gets `pong` and `list_procedures` = 13.
+- [ ] A live authenticated session (Claude Code or claude.ai) still gets `pong` and `list_procedures` = 14.
 - [ ] Logto `logs`: no new `Error` rows for `resource = https://munnin.lok.quest/mcp` after the deploy.
 
 ### Untouched surfaces (regression)

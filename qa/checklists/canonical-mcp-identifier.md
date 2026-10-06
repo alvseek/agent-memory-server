@@ -23,7 +23,7 @@
 1. Anonymous `POST https://munnin.lok.quest/mcp` and `…/mcp/` → both **401**, identical `WWW-Authenticate`, `resource_metadata` ending in `/mcp` (no slash) → *Checks: Wire*.
 2. `GET` the advertised document → `resource` is `https://munnin.lok.quest/mcp`; the slashed spelling of the document URL answers the same body → *Checks: Wire*.
 3. In claude.ai, remove the Munnin connector and re-add it with `https://munnin.lok.quest/mcp`; complete the Google login → the connector lists Munnin's tools → *Checks: Clients*.
-4. In Claude Code, reconnect Munnin and re-authenticate; call `list_procedures` → 13 procedures → *Checks: Clients*.
+4. In Claude Code, reconnect Munnin and re-authenticate; call `list_procedures` → 14 procedures → *Checks: Clients*.
 5. On the Authentra box, query Logto's `logs` for `resource = https://munnin.lok.quest/mcp` → at least one `Success` row newer than the deploy, and no new `Error` rows for that resource → *Checks: Issuer*.
 6. A session that has **not** re-logged in (old token) still gets `pong` → *Checks: Transition*.
 
@@ -69,12 +69,12 @@
 
 ### Clients (UI-bound)
 - [ ] claude.ai connector re-added with `https://munnin.lok.quest/mcp` connects and lists tools — no 502 from claude.ai's proxy.
-- [ ] Claude Code (`.mcp.json` now `…/mcp`) reconnects; `list_procedures` returns 13; `read_procedure("wrap-up")` returns the procedure body.
+- [ ] Claude Code (`.mcp.json` now `…/mcp`) reconnects; `list_procedures` returns 14; `read_procedure("wrap-up")` returns the procedure body.
 - [ ] VS Code: Munnin's prompts appear in the slash-command picker on a fresh window — the failed-refresh round trips that pushed the connect past the picker's snapshot are gone. (Known client-side snapshot behaviour; a miss here is not necessarily this change.)
 
 ### Untouched surfaces (regression)
 - [ ] `awaken("software-architect")` from an authenticated session returns the full payload — the mounted app's lifespan still starts under the new outermost middleware.
-- [ ] `GET /api/prompts` with a valid token → the 13 served procedures; `/api/prompts` anonymous → 401.
+- [ ] `GET /api/prompts` with a valid token → the 14 served procedures; `/api/prompts` anonymous → 401.
 
 ## Result
 

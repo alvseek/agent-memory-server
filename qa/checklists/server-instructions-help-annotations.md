@@ -19,8 +19,8 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 
 **Key invariants** (each is a thing to *disprove*):
 - The installed markdown command set is byte-identical to before — `update-episodic.md` installed under `~/.claude/commands/` shows no `<domain>` note after a reinstall.
-- Every procedure that reaches the wire (13) carries the preamble exactly once, ahead of its first `### §` op; `wait-options` (no seam) carries none.
-- The preamble never *creates* a served procedure: the served set is still 13 and `push`/`pull`/`refresh`-memory are still absent.
+- Every procedure that reaches the wire (14) carries the preamble exactly once, ahead of its first `### §` op; `wait-options` (no seam) carries none.
+- The preamble never *creates* a served procedure: the served set is still 14 and `push`/`pull`/`refresh`-memory are still absent.
 - `tools/list` has 19 entries, each with a title and `readOnlyHint`; every non-read-only tool states `destructiveHint` explicitly; nothing claims `openWorldHint=true`.
 - The destructive set is exactly `{edit, multi_edit, archive, soft_delete}` — an additive write (`insert`, `create_agent`, `append`, `prepend`) is never shown to a person as destructive.
 - In token mode `help` needs a bearer like every other tool; in local mode it answers without one. `help` exists with no served content and then lists no procedures.
@@ -34,7 +34,7 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 4. Have the agent `create_agent("qa-scratch")` then `insert(agent_id="qa-scratch", record_type="knowledge", content="x", uuid="qa-1")` → no confirmation prompt for either (additive) → *Checks: Titles and hints reach the client*.
 5. Have the agent `soft_delete("qa-1")` → the client asks before running it (destructive) → *Checks: Titles and hints reach the client*.
 6. Have the agent `read_procedure("update-episodic")` → the returned text opens (after the procedure's own heading and intro) with the blockquote *"`<domain>` in the ops below is the agent you are acting as…"* **before** the first `### §` → *Checks: Preamble*.
-7. Have the agent call `help` → instructions text + 13 rows, identical to `list_procedures` → *Checks: help*.
+7. Have the agent call `help` → instructions text + 14 rows, identical to `list_procedures` → *Checks: help*.
 8. `soft_delete` is tombstoned; `claude mcp remove munnin-local`; stop the server.
 
 ## Automated coverage
@@ -48,7 +48,7 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 | `help` guarded in token mode | `tests/api_mcp/test_mcp_auth.py` (whole MCP face rejects an absent token at the transport) | An explicit `tools/call help` with no bearer against the **live** box after the next deploy → 401 |
 | Preamble in `update-episodic`, `wrap-up`, `awaken-agent`; absent from `wait-options`; ahead of `### §` | `tests/content/test_content_loader.py::test_backend_preamble_reaches_every_seam_procedure`; framework `tests/test_compile_procedures.py::test_db_preamble_opens_every_composed_procedure` | The remaining 9 served procedures are covered by the mechanism, not enumerated — spot-check two (`add-reasoning`, `create-agent`) |
 | Preamble reaches all three doors identically (tool, prompt, HTTP) | `tests/test_twin_parity.py::test_read_procedure_tool_parity`, `::test_prompt_parity` (same loader behind all three) | — |
-| Preamble never wires a procedure; served set still 13 | framework `test_compile_procedures.py::test_preamble_rides_along_but_never_wires_a_procedure`; `test_twin_parity.py::test_prompt_list_parity` (13) | — |
+| Preamble never wires a procedure; served set still 14 | framework `test_compile_procedures.py::test_preamble_rides_along_but_never_wires_a_procedure`; `test_twin_parity.py::test_prompt_list_parity` (14) | — |
 | Markdown command set unchanged | framework `test_compile_procedures.py::test_markdown_defines_no_preamble_and_is_unchanged_by_it` (asserts absence of the marker); `tests/content/test_markdown_fidelity.py` | **Byte identity** was proven once by diffing 16 compiled files before/after (2026-09-01), not by a test that keeps a baseline — re-run the installer and `cmp` the installed `update-episodic.md` against the one installed today |
 | Hosted box unchanged | none — pin only | Anonymous `POST /mcp` on `munnin.lok.quest` → 401; its `initialize` (authenticated) shows no `instructions` until the deploy |
 
@@ -65,7 +65,7 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 - [ ] `tools/list` over raw HTTP: `jq '.result.tools | map(select(.annotations.readOnlyHint == null or .title == null)) | length'` → `0`; `map(select(.annotations.destructiveHint == true) | .name)` → exactly the four.
 
 ### help
-- [ ] Local mode: `help` with no `Authorization` header → 200 with `instructions` + 13 `procedures`.
+- [ ] Local mode: `help` with no `Authorization` header → 200 with `instructions` + 14 `procedures`.
 - [ ] `MUNNIN_CONTENT_ROOT=/nonexistent MUNNIN_AUTH=off uv run python -m munnin` → server boots, `help` → `{"instructions": …, "procedures": []}`, `list_procedures` absent from `tools/list`, tool count 15.
 - [ ] Token mode (live box, after deploy): `tools/call help` with no bearer → 401 with the `WWW-Authenticate` challenge, same as any data tool.
 
@@ -74,7 +74,7 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 - [ ] Spot-check `read_procedure("add-reasoning")` and `read_procedure("create-agent")`: same sentence, same position, once each.
 - [ ] `read_procedure("wait-options")` carries no `<domain>` sentence (no seam, nothing composed).
 - [ ] `GET /api/prompts/update-episodic` (bearer in token mode; none in local) returns the same bytes `read_procedure` returned.
-- [ ] `list_procedures` → 13; `push-memory`, `pull-memory`, `refresh-memory` absent.
+- [ ] `list_procedures` → 14; `push-memory`, `pull-memory`, `refresh-memory` absent.
 - [ ] After `bash control-files/setup-scripts/setup-all-claude-code.sh` on a machine with the fleet installed: `cmp ~/.claude/commands/update-episodic.md <copy saved before the reinstall>` → identical; `grep -c '<domain>` in the ops below' ~/.claude/commands/*.md` → 0 everywhere.
 
 ### Hosted deploy did not move (pin only)
@@ -83,7 +83,7 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 
 ### Untouched surfaces (regression)
 - [ ] `uv run pytest -q` → 453 passed (or more), `ruff check` clean; framework `uv run pytest -q` → 41 passed, strict compile exit 0, core invariant holds.
-- [ ] `list_prompts` → 13 and `list_resources` → 4, unchanged; `read_resource("episodic-entry-template")` byte-identical to before (templates are not composed, so the preamble cannot reach them).
+- [ ] `list_prompts` → 14 and `list_resources` → 4, unchanged; `read_resource("episodic-entry-template")` byte-identical to before (templates are not composed, so the preamble cannot reach them).
 
 ### Noted, not this checklist's to fix
 - A future procedure named `all-procedures` would collide with the preamble section name; `command_set` would then try to serve it. Unlikely, recorded.
