@@ -102,9 +102,10 @@ def test_the_same_pair_cannot_map_twice() -> None:
         conn.execute("INSERT INTO user_identity VALUES ('https://a.example','sub_a','alvi','d')")
 
 
-@pytest.mark.parametrize("rtype", ["reasoning", "knowledge", "user_profile"])
-def test_shared_accepts_its_three_record_types(rtype: str) -> None:
-    """Fleet memory is two kinds of shared thinking plus one fact about the user."""
+@pytest.mark.parametrize("rtype", ["reasoning", "knowledge", "ras", "user_profile"])
+def test_shared_accepts_its_four_record_types(rtype: str) -> None:
+    """Fleet memory is two kinds of shared thinking, the universal RAS triggers, and one
+    fact about the user."""
     _db().execute(_INSERT_SHARED, (f"s-{rtype}", "alvi", rtype))
 
 

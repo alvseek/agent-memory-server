@@ -89,8 +89,9 @@ class MemoryService:
     def awaken(self, domain: str) -> dict[str, Any]:
         """Assemble an agent's memory payload from the DB (4-layer model, C-2).
 
-        Always-load whole: layer i (fleet-shared reasoning, knowledge and the user
-        profile) + layer ii (domain identity/reasoning/emotional). Index-only: layer iii
+        Always-load whole: layer i (fleet-shared reasoning, knowledge, the universal RAS
+        triggers and the user profile) + layer ii (domain identity/reasoning/emotional).
+        Index-only: layer iii
         (domain episode/knowledge) + the latest episode body. All reads are hot-read
         filtered (deleted + archived excluded) by the repository.
 
@@ -108,6 +109,7 @@ class MemoryService:
         shared = self._repo.query_shared()
         shared_reasoning = [r for r in shared if r.record_type is RecordType.reasoning]
         shared_knowledge = [r for r in shared if r.record_type is RecordType.knowledge]
+        shared_ras = [r for r in shared if r.record_type is RecordType.ras]
         # Filtered from the same fetch rather than re-queried — layer i is one round trip.
         profile = next((r for r in shared if r.record_type is RecordType.user_profile), None)
 
@@ -129,6 +131,7 @@ class MemoryService:
             "shared": {
                 "reasoning": [_whole(r) for r in shared_reasoning],
                 "knowledge": [_whole(r) for r in shared_knowledge],
+                "ras": [_whole(r) for r in shared_ras],
                 "user_profile": _whole(profile) if profile else None,
             },
             # layer ii — this agent's identity

@@ -45,7 +45,11 @@ class RecordType(str, Enum):
     vary by agent, so it lives in ``shared_record`` alongside reasoning and knowledge.
     It is deliberately *not* the auth identity — that belongs to a future ``user`` table
     fed by verified token claims, and the two hold different facts (an account name vs
-    what the user wants agents to call them)."""
+    what the user wants agents to call them).
+
+    ``ras`` is fleet memory as well: the universal Reticular Activation triggers, each an
+    automatic trigger-to-action protocol (memory recovery, copy-paste). It is loaded whole
+    at awaken alongside reasoning and knowledge, and like them it belongs to no agent."""
 
     episode = "episode"
     knowledge = "knowledge"
@@ -53,6 +57,7 @@ class RecordType(str, Enum):
     reasoning = "reasoning"
     emotional = "emotional"
     user_profile = "user_profile"
+    ras = "ras"
 
 
 #: The record types ``shared_record``'s CHECK admits, in the order the schema lists them.
@@ -62,6 +67,7 @@ class RecordType(str, Enum):
 SHARED_RECORD_TYPES: tuple[RecordType, ...] = (
     RecordType.reasoning,
     RecordType.knowledge,
+    RecordType.ras,
     RecordType.user_profile,
 )
 
@@ -85,7 +91,8 @@ class Agent:
 
 @dataclass(kw_only=True)
 class SharedRecord:
-    """A fleet-shared memory item — reasoning or knowledge that belongs to no agent.
+    """A fleet-shared memory item — reasoning, knowledge, a universal RAS trigger, or the
+    user profile; memory that belongs to no agent.
 
     ``id`` is the internal rowid (assigned by the store); ``uuid`` is the global/portable
     identity used across stores and for idempotency. ``kw_only`` is required rather than

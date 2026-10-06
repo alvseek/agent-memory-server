@@ -170,6 +170,15 @@ def parse_shared_knowledge(text: str) -> list[ParsedItem]:
     return items
 
 
+def parse_shared_ras(text: str) -> list[ParsedItem]:
+    """The universal RAS triggers — level-3 blocks, each carrying a ``**UUID**`` to reuse.
+
+    A trigger is a titled protocol with a stable identity, which is the same shape as a
+    reasoning pattern; only the record type differs, so the shared pattern parser serves
+    both."""
+    return _patterns(text, "ras")
+
+
 # The line marker the profile is recognized by. It is also what `user-profile-claude.sh`
 # greps, which makes this string a contract between bash and Python with no shared
 # schema to enforce it — hence the round-trip test rather than trust.

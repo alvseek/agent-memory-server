@@ -191,9 +191,10 @@ def build_mcp(
         """Append a new memory item. ``scope="agent"`` (the default) writes memory owned
         by ``agent_id``, which must be an existing kebab domain; ``scope="shared"`` writes
         fleet-wide memory owned by nobody and takes no ``agent_id``. ``record_type`` ∈
-        episode|knowledge|identity|reasoning|emotional|user_profile, and fleet memory may
-        only be reasoning, knowledge or user_profile — the profile is fleet-wide because
-        who the user is does not vary by agent. ``template_version`` declares which
+        episode|knowledge|identity|reasoning|emotional|user_profile|ras, and fleet memory
+        may only be reasoning, knowledge, ras or user_profile — ras is the universal RAS
+        triggers and the profile is fleet-wide because who the user is does not vary by
+        agent. ``template_version`` declares which
         version of the record type's template the content was built against (read it with
         read_resource first); the gated types (episode|reasoning|emotional|knowledge) are
         refused without a matching one."""

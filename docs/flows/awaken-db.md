@@ -33,7 +33,7 @@ sequenceDiagram
     R-->>-S: knowledge index · episode list
 
     S->>S: sort episodes desc → latest_episode (or None)
-    S-->>-A: payload {shared{reasoning,knowledge,user_profile}, identity,<br/>reasoning, emotional, knowledge_index, episodic_index, latest_episode}
+    S-->>-A: payload {shared{reasoning,knowledge,ras,user_profile}, identity,<br/>reasoning, emotional, knowledge_index, episodic_index, latest_episode}
     A-->>-C: JSON payload (DATA only)
 
     Note over C: ⚠ GAP — the awakening PROCESS is NOT in the payload:<br/>Phase 1/Phase 2 flow, sub-agent-read prohibition, report format.<br/>The client must supply it from its own bootstrap.
@@ -43,7 +43,7 @@ sequenceDiagram
 
 1. **Entry** — client calls `awaken(domain)`. MCP: [`awaken` tool](../../src/munnin/api_mcp/server.py) (`server.py:27`). HTTP twin: [`GET /api/awaken`](../../src/munnin/api_http/api.py) (`api.py:47`). Both delegate straight to `service.awaken(domain)`.
 2. **Validate** — `MemoryService.awaken()` (`memory_service.py:77`) runs `validate_domain(domain)` (kebab domain, and not the reserved word `shared` — fleet memory is not an agent and has no awaken target of its own).
-3. **Layer i — fleet-shared always-load** — `repo.query_shared()`, split into `reasoning`, `knowledge` and a single `user_profile`, each projected **whole** (full body). Fleet memory lives in its own `shared_record` table and is owned by no agent; the `__shared__` sentinel that used to stand in for an owner is gone. `user_profile` is `None` when nobody has been asked yet — that is what triggers Phase 1's first-run bootstrap, and it is distinct from a record that exists with an empty field inside it.
+3. **Layer i — fleet-shared always-load** — `repo.query_shared()`, split into `reasoning`, `knowledge`, `ras` and a single `user_profile`, each projected **whole** (full body). Fleet memory lives in its own `shared_record` table and is owned by no agent; the `__shared__` sentinel that used to stand in for an owner is gone. `ras` holds the universal Reticular Activation triggers (memory recovery, copy-paste), each an automatic trigger-to-action protocol. `user_profile` is `None` when nobody has been asked yet — that is what triggers Phase 1's first-run bootstrap, and it is distinct from a record that exists with an empty field inside it.
 4. **Layer ii — agent identity** — three `repo.query(domain, …)` calls for `identity` / `reasoning` / `emotional`, projected **whole**.
 5. **Layer iii — indexes** — `repo.query(domain, knowledge)` → `_index` (metadata only) and `repo.query(domain, episode)` sorted `created_date desc, id desc` → `episodic_index`; `latest_episode` = `episodes[0]` projected **whole** (or `None` when the agent has no episodes).
 6. **Assemble + return** — service returns the payload dict; the adapter serializes it to the client as JSON.

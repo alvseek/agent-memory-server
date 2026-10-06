@@ -247,7 +247,7 @@ Five tables (`data_entities/schema.sql`), all foreign keys live because each rep
 account        (user_id PK, display_name, email, created_date)          — the tenant
 user_identity  (iss, sub) PK → account                                  — which issuer+subject is whom
 agent          (user_id, agent_id) PK → account, name, role, uuid       — an agent exists because it has a row
-shared_record  (id, uuid UNIQUE, user_id, record_type ∈ {reasoning, knowledge, user_profile},
+shared_record  (id, uuid UNIQUE, user_id, record_type ∈ {reasoning, knowledge, ras, user_profile},
                 project, title, tags JSON, created/modified/archived/deleted_date, full_content)
 memory_record  = shared_record + agent_id, record_type ∈ {episode, knowledge, identity, reasoning, emotional},
                 FK (user_id, agent_id) → agent

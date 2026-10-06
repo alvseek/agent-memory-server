@@ -78,6 +78,13 @@ def _fake_source(root: Path) -> Path:
         "# KNOWLEDGE\n## AREA\n### **Line Endings**\nuse LF\n",
         encoding="utf-8",
     )
+    (root / "shared-memory" / "core-ras-memory.md").write_text(
+        "# CORE RAS\n"
+        "### **COPY-PASTE**\n"
+        "**UUID**: 076a9843-71dc-4285-9788-bc3ea7ce5dd3\n"
+        "**Trigger**: about to retype\ndo not retype\n",
+        encoding="utf-8",
+    )
     return root
 
 
@@ -92,6 +99,7 @@ def test_import_fake_tree_counts_and_layers(tmp_path: Path) -> None:
     assert counts["meta/emotional"] == 2
     assert shared["shared/reasoning"] == 1
     assert shared["shared/knowledge"] == 1
+    assert shared["shared/ras"] == 1
     assert counts["meta/knowledge"] == 2  # 1 active (pain) + 1 archived (orphan); proj.md skipped
     assert counts["meta/episode"] == 3  # 2 active + 1 archived
 
@@ -142,9 +150,9 @@ def test_import_fleet_imports_all_agents_shared_once(tmp_path: Path) -> None:
     totals = import_fleet(repo, src)
     assert totals["meta/identity"] == 3
     assert totals["foo/identity"] == 1
-    # shared imported exactly once (2 rows total), not once-per-agent
+    # shared imported exactly once (3 rows total), not once-per-agent
     shared_rows = repo.query_shared(include_archived=True)
-    assert len(shared_rows) == 2
+    assert len(shared_rows) == 3
 
 
 def test_import_is_idempotent(tmp_path: Path) -> None:
@@ -169,6 +177,7 @@ def test_awaken_latest_episode_is_newest_by_real_date(tmp_path: Path) -> None:
     (src / "shared-memory").mkdir(parents=True)
     (src / "shared-memory" / "core-reasoning-memory.md").write_text("# R\n", encoding="utf-8")
     (src / "shared-memory" / "core-knowledge-memory.md").write_text("# K\n", encoding="utf-8")
+    (src / "shared-memory" / "core-ras-memory.md").write_text("# RAS\n", encoding="utf-8")
     (agent / "agent-core-memory.md").write_text(
         "# DOMAIN AGENT IDENTITY\nI am arch.\n**Name**: Claude Arch\n", encoding="utf-8"
     )

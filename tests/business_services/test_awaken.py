@@ -45,6 +45,7 @@ def _service(tmp_path: Path) -> MemoryService:
     # not what awaken returns.
     repo.insert_shared(_shared("sr1", RecordType.reasoning))
     repo.insert_shared(_shared("sk1", RecordType.knowledge))
+    repo.insert_shared(_shared("sras1", RecordType.ras))
     # layer ii (domain)
     repo.insert(_rec("id1", "meta", RecordType.identity))
     repo.insert(_rec("em1", "meta", RecordType.emotional))
@@ -64,6 +65,7 @@ def test_awaken_assembles_four_layers(tmp_path: Path) -> None:
     # layer i — shared, whole (has body)
     assert [r["uuid"] for r in payload["shared"]["reasoning"]] == ["sr1"]
     assert [r["uuid"] for r in payload["shared"]["knowledge"]] == ["sk1"]
+    assert [r["uuid"] for r in payload["shared"]["ras"]] == ["sras1"]
     assert payload["shared"]["reasoning"][0]["content"] == "body-sr1"
 
     # layer ii — whole (has body)
@@ -131,3 +133,19 @@ def test_the_profile_does_not_leak_into_reasoning_or_knowledge(tmp_path: Path) -
     assert [r["uuid"] for r in shared["reasoning"]] == ["sr1"]
     assert shared["knowledge"] == []
     assert shared["user_profile"]["uuid"] == "up1"
+
+
+def test_ras_is_carried_whole_and_kept_out_of_reasoning(tmp_path: Path) -> None:
+    """The universal triggers share the fleet table with reasoning, knowledge and the
+    profile, so the filters must stay disjoint: a trigger arriving under `reasoning`
+    would be read as a pattern to reason with rather than a protocol to run."""
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    repo.insert_shared(_shared("sras1", RecordType.ras, full_content="**Trigger**: compacted"))
+    repo.insert_shared(_shared("sr1", RecordType.reasoning))
+    repo.insert(_rec("id1", "meta", RecordType.identity))
+
+    shared = MemoryService(repo, user_id="alvi").awaken("meta")["shared"]
+
+    assert [r["uuid"] for r in shared["ras"]] == ["sras1"]
+    assert shared["ras"][0]["content"] == "**Trigger**: compacted"
+    assert [r["uuid"] for r in shared["reasoning"]] == ["sr1"]
