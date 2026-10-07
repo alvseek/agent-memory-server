@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from munnin.business_services.memory_service import MemoryService
-from munnin.data_entities.memory_record import RecordType
+from munnin.data_entities.memory_record import MemoryRecord, RecordType
 from munnin.data_migrations.importer import (
     ImportAborted,
     import_agent,
@@ -395,3 +395,108 @@ def test_running_the_import_twice_leaves_one_tenant(
     repo = IdentityRepository(db)
     with repo._conn() as conn:  # noqa: SLF001 — counting rows, not exercising a path
         assert conn.execute("SELECT COUNT(*) FROM account").fetchone()[0] == 1
+
+
+def test_archived_moments_import_as_archived(tmp_path: Path) -> None:
+    """Archiving takes a moment out of the live core memory, so the archive file is the
+    only place a fresh import can learn it existed — and it must land archived, not hot."""
+    src = _fake_source(tmp_path / "src")
+    agent = src / "agent-meta"
+    (agent / "archive").mkdir()
+    (agent / "archive" / "2026-archived-moments.md").write_text(
+        "## 📅 Archived Moments (2026-09-04 pass)\n"
+        "### [2026-09-01 15.12] - AN ARCHIVED MOMENT\nbody\n",
+        encoding="utf-8",
+    )
+
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    counts = import_agent(repo, src, "meta")
+    assert counts["meta/emotional"] == 3  # the two live moments plus the archived one
+
+    with repo._conn() as conn:  # noqa: SLF001 — counting rows, not exercising a path
+        rows = conn.execute(
+            "SELECT title, archived_date FROM memory_record WHERE record_type = 'emotional'"
+        ).fetchall()
+    archived = [r for r in rows if r[1]]
+    assert len(rows) == 3
+    assert len(archived) == 1
+    assert archived[0][1] == "2026-09-01"
+
+
+def test_a_shortened_moment_keeps_its_live_stub(tmp_path: Path) -> None:
+    """A shortened moment's full text sits in the archive under the *same* title as the stub
+    the live file keeps, so importing it would upsert over that stub and archive the moment
+    out of the hot layer. The live title wins."""
+    src = _fake_source(tmp_path / "src")
+    agent = src / "agent-meta"
+    (agent / "agent-core-memory.md").write_text(
+        "# DOMAIN AGENT IDENTITY\nI am meta.\n**Name**: Claude Meta\n**Role**: Meta Agent\n"
+        "# DOMAIN CORE KNOWLEDGE\ncore\n"
+        "# DOMAIN RAS\ntrig\n"
+        "# DOMAIN REASONING MEMORY\n<!-- content here -->\n"
+        "# DOMAIN EMOTIONAL MEMORY\n"
+        "### [2026-08-09 10:00] - SHORTENED MOMENT\nstub\n",
+        encoding="utf-8",
+    )
+    (agent / "archive").mkdir()
+    (agent / "archive" / "2026-archived-moments.md").write_text(
+        "## 📅 Archived Moments (2026-09-04 pass)\n"
+        "### [2026-08-09 10:00] - SHORTENED MOMENT\nfull text\n"
+        "### [2026-09-01 15.12] - ARCHIVED WHOLE\nbody\n",
+        encoding="utf-8",
+    )
+
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    counts = import_agent(repo, src, "meta")
+    assert counts["meta/emotional"] == 2  # the stub, plus the fully-archived one
+
+    with repo._conn() as conn:  # noqa: SLF001 — counting rows, not exercising a path
+        rows = conn.execute(
+            "SELECT title, archived_date FROM memory_record WHERE record_type = 'emotional'"
+        ).fetchall()
+    by_title = {title: archived for title, archived in rows}
+    assert by_title["[2026-08-09 10:00] - SHORTENED MOMENT"] is None  # the stub stays hot
+    assert by_title["[2026-09-01 15.12] - ARCHIVED WHOLE"] == "2026-09-01"
+
+
+def test_purge_removes_rows_the_markdown_no_longer_has(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A renamed or moved file mints a new id, so without a purge the old row survives as an
+    orphan — which is the whole difference between a store that mirrors markdown and one
+    that accumulates."""
+    src = _fake_source(tmp_path / "src")
+    db = tmp_path / "m.db"
+    monkeypatch.setattr(
+        sys, "argv", ["importer", "--source", str(src), "--db", str(db), "--all"]
+    )
+    main()
+
+    # a row markdown does not have: exactly what a rename leaves behind
+    repo = AutoAgentRepository(db, user_id="alvi")
+    repo.insert(
+        MemoryRecord(
+            uuid="00000000-0000-5000-a000-000000000001",
+            user_id="",
+            agent_id="meta",
+            record_type=RecordType.knowledge,
+            full_content="orphan",
+        )
+    )
+    with repo._conn() as conn:  # noqa: SLF001
+        before = conn.execute("SELECT COUNT(*) FROM memory_record").fetchone()[0]
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["importer", "--source", str(src), "--db", str(db), "--all", "--purge"],
+    )
+    main()
+
+    with repo._conn() as conn:  # noqa: SLF001
+        orphans = conn.execute(
+            "SELECT COUNT(*) FROM memory_record WHERE full_content = 'orphan'"
+        ).fetchone()[0]
+        after = conn.execute("SELECT COUNT(*) FROM memory_record").fetchone()[0]
+    assert orphans == 0
+    assert after == before - 1

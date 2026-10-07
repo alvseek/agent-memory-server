@@ -105,6 +105,40 @@ def parse_agent_core(text: str) -> dict[str, list[ParsedItem]]:
     return result
 
 
+# --- archived emotional moments (agent-<domain>/archive/…) ---
+
+# A moment block's title opens with a bracketed date: `### [2026-09-01 15.12] - TITLE`.
+# That bracket is what separates a moment from the other level-3 headings an archive file
+# carries at the same depth — `### Archiving Reasons`, `### Archived Content` — which are
+# structure, not moments.
+_MOMENT_TITLE = re.compile(r"^\[\d{4}-\d{2}-\d{2}[^\]]*\]\s*-\s*\S")
+
+
+def parse_archived_moments(text: str) -> list[ParsedItem]:
+    """Emotional moments out of an archive file: level-3 blocks whose title opens with a
+    bracketed date.
+
+    Archiving *removes* a moment from the live core memory and keeps it in
+    ``archive/<year>-archived-moments.md`` (one pass per archiving run) or the older
+    ``archive/moments/emotional-key-moments.md``. The importer reads the live file, so
+    without this the archived moments are invisible to a fresh import while the rows an
+    *earlier* import wrote stay active in the store.
+
+    A moment's key is its title, which is what makes the two archive forms safe to read
+    together: they overlap (a 2025 moment appears in both the older file and the year
+    archive) and a shared key upserts to one record instead of two.
+    """
+    items: list[ParsedItem] = []
+    for title, body in split_sections(text, 3):
+        t = title.strip()
+        if not _MOMENT_TITLE.match(t):
+            continue
+        items.append(
+            ParsedItem(title=t, body=f"### {t}\n{body}".strip(), key=t, date=_first_date(t))
+        )
+    return items
+
+
 def _patterns(text: str, record_type: str) -> list[ParsedItem]:
     """Level-3 items that may carry an embedded **UUID** to reuse."""
     items: list[ParsedItem] = []

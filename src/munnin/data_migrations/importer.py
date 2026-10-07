@@ -3,15 +3,19 @@
 Two passes: the ``agent`` rows first, then the memory that points at them — the foreign
 key makes that order mandatory, not stylistic. Full-fleet, all 5 record types, the
 fleet-shared layer imported **once** into its own table, and BOTH **active** +
-**archived** episodes/knowledge — where *archived* = a file **absent from the agent
-index** (``archived_date`` set; excluded from awaken's hot index, still searchable).
+**archived** items — where *archived* = an episode or knowledge file **absent from the
+agent index**, or an emotional moment **moved out of the live core memory** into
+``archive/`` (``archived_date`` set; excluded from awaken's hot index, still searchable).
 Real file bodies. Idempotent: deterministic ``uuid5`` → re-run upserts, never dups.
+``--purge`` clears the tenant first, which is how the store is made to match markdown
+exactly rather than accumulate rows for content that has since moved or been renamed.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import sqlite3
 from collections import Counter
 from pathlib import Path
 
@@ -45,6 +49,12 @@ class ImportAborted(RuntimeError):
 # archived episodes carry a YYYY-MM-DD filename prefix). The value only needs to be
 # non-null so the row drops out of the hot awaken index.
 _ARCHIVED_FALLBACK = "1970-01-01"
+
+# Archived emotional moments. Archiving *removes* a moment from the live core memory, so
+# these files are the only place a fresh import can learn it existed. They overlap — the
+# older single-file form and a year archive both carry some of the same moments — which is
+# safe because a moment's key is its title, so a shared key upserts to one record.
+_ARCHIVE_MOMENT_GLOBS = ("archive/*-archived-moments.md", "archive/moments/*.md")
 
 
 def _read(path: Path) -> str:
@@ -256,6 +266,14 @@ def _import_knowledge(
         counts[f"{agent_id}/knowledge"] += 1
 
 
+def _archived_moment_files(agent_dir: Path) -> list[Path]:
+    """Every archive file that can carry this agent's emotional moments."""
+    found: list[Path] = []
+    for pattern in _ARCHIVE_MOMENT_GLOBS:
+        found.extend(sorted(agent_dir.glob(pattern)))
+    return found
+
+
 def import_agent(repo: MemoryRepository, source_root: Path | str, agent_id: str) -> dict[str, int]:
     """Import ONE agent's own memory — identity/reasoning/emotional (whole) + knowledge +
     episodes (active AND archived). Does **not** import the shared layer (see
@@ -265,12 +283,35 @@ def import_agent(repo: MemoryRepository, source_root: Path | str, agent_id: str)
     counts: Counter[str] = Counter()
 
     core_path = agent_dir / "agent-core-memory.md"
+    live_moment_titles: set[str] = set()
     if core_path.is_file():
         ac = P.parse_agent_core(_read(core_path))
         for rtype in (RecordType.identity, RecordType.reasoning, RecordType.emotional):
             for it in ac[rtype.value]:
                 repo.insert(_to_record(it, agent_id, rtype))
                 counts[f"{agent_id}/{rtype.value}"] += 1
+        live_moment_titles = {it.title for it in ac["emotional"]}
+
+    # The moments archiving took out of the live file, imported archived: they belong in the
+    # store (searchable, out of the hot index) and a fresh import cannot see them otherwise.
+    # Dated by the moment's own timestamp, the same approximation archived episodes use.
+    #
+    # A title the live file still carries is skipped, and that filter is load-bearing: a
+    # *shortened* moment keeps a stub in the live file under the same title as its full
+    # archived copy, so importing it would upsert over the live record and archive the
+    # moment out of the hot layer. The stub is the live record; the full text stays
+    # recoverable from markdown.
+    for path in _archived_moment_files(agent_dir):
+        for it in P.parse_archived_moments(_read(path)):
+            if it.title in live_moment_titles:
+                continue
+            repo.insert(
+                _to_record(
+                    it, agent_id, RecordType.emotional,
+                    archived_date=it.date or _ARCHIVED_FALLBACK,
+                )
+            )
+            counts[f"{agent_id}/emotional"] += 1
 
     _import_knowledge(repo, agent_dir, agent_id, counts)
     _import_episodes(repo, agent_dir, agent_id, counts)
@@ -303,6 +344,28 @@ def import_fleet(repo: MemoryRepository, source_root: Path | str) -> dict[str, i
     return dict(totals)
 
 
+def _purge_tenant(db: Path, user_id: str) -> int:
+    """Delete every memory row this tenant owns, so an import lands on an empty tenant.
+
+    Children go before parents rather than leaning on the foreign key's cascade:
+    ``PRAGMA foreign_keys`` defaults OFF and this module opens its own connection, so a
+    cascade nobody enabled would leave behind exactly the orphans the purge exists to
+    remove. Both tables carry an ``AFTER DELETE`` trigger that keeps their FTS index in
+    step. The ``account`` row is left alone; the import reuses it.
+    """
+    conn = sqlite3.connect(db)
+    try:
+        removed = 0
+        for table in ("memory_record", "shared_record", "agent"):
+            removed += conn.execute(
+                f"delete from {table} where user_id = ?", (user_id,)
+            ).rowcount
+        conn.commit()
+        return removed
+    finally:
+        conn.close()
+
+
 def main() -> None:
     config = load_config()
     parser = argparse.ArgumentParser(description="Import markdown memory into the DB.")
@@ -317,6 +380,12 @@ def main() -> None:
         "--all", action="store_true", help="import the whole fleet (the default)"
     )
     parser.add_argument("--db", default=str(config.db_path), help="target SQLite db path")
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="delete this tenant's rows first, so the result is exactly what the markdown "
+        "holds rather than accumulating rows for content that has since moved or been renamed",
+    )
     args = parser.parse_args()
 
     # The tenant first. An agent references an `account` row, so the chain has to be
@@ -326,6 +395,11 @@ def main() -> None:
     IdentityRepository(Path(args.db)).ensure_account(Account(user_id=config.user_id))
 
     repo = SqliteMemoryRepository(Path(args.db), user_id=config.user_id)
+
+    if args.purge:
+        removed = _purge_tenant(Path(args.db), config.user_id)
+        print(f"purged {removed} row(s) for tenant {config.user_id}")
+
     if args.agent and not args.all:
         # Pass 1 for this one agent only — a sibling folder being unreadable is not a
         # reason to refuse an import that never touches it.

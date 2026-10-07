@@ -343,3 +343,55 @@ def test_a_file_without_the_marker_is_not_a_profile() -> None:
     than importing nothing."""
     assert P.parse_shared_profile("# Some other document\n\nnothing to see here\n") == []
     assert P.parse_shared_profile("") == []
+
+
+_ARCHIVE_MOMENTS = """\
+# Agent meta - Archived Emotional Moments 2026
+
+> **ARCHIVED MOMENTS**: kept verbatim below, newest-first.
+
+## 📅 Archiving Rationale (2026-09-04 pass)
+
+- **[2026-09-01 15.12]** — *[full-archive]*: redundant with a kept sibling
+- **[2026-08-25 07.01]** — *[shortened]*: its lesson moved into a reasoning UUID
+
+## 📅 Archived Moments (2026-09-04 pass)
+
+### [2026-09-01 15.12] - "LOL, SO MANY GAPS" - THE REVIEW THAT CAUGHT IT
+first moment body
+
+### [2026-08-25 07.01] - THE SKILL I WROTE YESTERDAY RAN CLEAN TODAY
+second moment body
+"""
+
+
+def test_archived_moments_parse_only_the_bracketed_blocks() -> None:
+    """The rationale list sits at the same depth as the moments, so the bracketed date in
+    the title is the only thing that separates them."""
+    items = P.parse_archived_moments(_ARCHIVE_MOMENTS)
+    assert [i.title for i in items] == [
+        '[2026-09-01 15.12] - "LOL, SO MANY GAPS" - THE REVIEW THAT CAUGHT IT',
+        "[2026-08-25 07.01] - THE SKILL I WROTE YESTERDAY RAN CLEAN TODAY",
+    ]
+    assert items[0].date == "2026-09-01"
+    assert items[0].body.startswith("### [2026-09-01 15.12]")
+
+
+def test_archived_moments_ignore_structural_headings() -> None:
+    """`### Archiving Reasons` and `### Archived Content` are structure, not moments."""
+    text = (
+        "## Archived Happy Moments\n"
+        "### Archiving Reasons\n"
+        "### Archived Content\n"
+        "### [2025-11-14 10:42] - A REAL MOMENT\nbody\n"
+    )
+    items = P.parse_archived_moments(text)
+    assert [i.title for i in items] == ["[2025-11-14 10:42] - A REAL MOMENT"]
+
+
+def test_overlapping_archive_forms_share_a_key() -> None:
+    """The older single-file form and a year archive carry some of the same moments, and a
+    shared key is what keeps that one record instead of two."""
+    older = "## Emotional Moments\n### [2025-11-14 10:42] - SAME MOMENT\nbody A\n"
+    year = "## Archived Moments (2026 pass)\n### [2025-11-14 10:42] - SAME MOMENT\nbody B\n"
+    assert P.parse_archived_moments(older)[0].key == P.parse_archived_moments(year)[0].key
