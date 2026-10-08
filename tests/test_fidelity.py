@@ -25,15 +25,15 @@ _UUID_RE = re.compile(r"\*\*UUID\*\*:\s*`?([0-9a-fA-F]{8}-[0-9a-fA-F-]{27})`?")
 pytestmark = pytest.mark.skipif(not _REAL.exists(), reason="real @agent-memory source not present")
 
 
-def _awaken_meta(tmp_path: Path) -> dict:
+def _awaken_meta(tmp_path: Path) -> tuple[dict, SqliteMemoryRepository]:
     repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     import_shared(repo, _REAL)
     import_agent(repo, _REAL, "meta")
-    return MemoryService(repo, user_id="alvi").awaken("meta")
+    return MemoryService(repo, user_id="alvi").awaken("meta"), repo
 
 
 def test_shared_reasoning_uuids_all_present(tmp_path: Path) -> None:
-    payload = _awaken_meta(tmp_path)
+    payload, _repo = _awaken_meta(tmp_path)
     src = (_REAL / "shared-memory" / "core-reasoning-memory.md").read_text(encoding="utf-8")
     file_uuids = set(_UUID_RE.findall(src))
     got = {r["uuid"] for r in payload["shared"]["reasoning"]}
@@ -42,17 +42,27 @@ def test_shared_reasoning_uuids_all_present(tmp_path: Path) -> None:
 
 
 def test_identity_and_emotional_counts_match_source(tmp_path: Path) -> None:
-    payload = _awaken_meta(tmp_path)
+    payload, repo = _awaken_meta(tmp_path)
     core = (_REAL / "agent-meta" / "agent-core-memory.md").read_text(encoding="utf-8")
     parsed = P.parse_agent_core(core)
     assert len(payload["identity"]) == 3
-    assert len(payload["emotional"]) == len(parsed["emotional"]) >= 10
+    # Every live moment is stored. A moment the archive also holds (a shortened one, whose
+    # live entry is a stub) lands archived with the archive's full body, so the hot layer is
+    # the live moments minus those the archive carries.
+    stored = repo.query(
+        agent_id="meta", record_type=RecordType.emotional, include_archived=True
+    )
+    stored_titles = {r.title for r in stored}
+    archived_titles = {r.title for r in stored if r.archived_date}
+    live_titles = {m.title for m in parsed["emotional"]}
+    assert live_titles <= stored_titles  # no live moment lost
+    assert len(payload["emotional"]) == len(live_titles - archived_titles) >= 10
     # bodies are present for always-load sections
     assert all(item["content"] for item in payload["emotional"])
 
 
 def test_episodic_and_knowledge_index_match_source(tmp_path: Path) -> None:
-    payload = _awaken_meta(tmp_path)
+    payload, _repo = _awaken_meta(tmp_path)
     idx = (_REAL / "agent-meta" / "agent-memory-index.md").read_text(encoding="utf-8")
     active = P.parse_active_episodes(idx)
     assert len(payload["episodic_index"]) == len(active) >= 5
@@ -63,7 +73,7 @@ def test_episodic_and_knowledge_index_match_source(tmp_path: Path) -> None:
 
 
 def test_shared_knowledge_present(tmp_path: Path) -> None:
-    payload = _awaken_meta(tmp_path)
+    payload, _repo = _awaken_meta(tmp_path)
     assert len(payload["shared"]["knowledge"]) >= 1
     assert all(item["content"] for item in payload["shared"]["knowledge"])
 
@@ -98,7 +108,19 @@ def test_fleet_fidelity_all_agents(_fleet: _Fleet) -> None:
         # always-load layers: exact per-section item counts vs the source markdown
         assert len(payload["identity"]) == len(parsed["identity"]), f"{agent} identity"
         assert len(payload["reasoning"]) == len(parsed["reasoning"]), f"{agent} reasoning"
-        assert len(payload["emotional"]) == len(parsed["emotional"]), f"{agent} emotional"
+        # every live moment is stored; one the archive also holds lands archived, so the hot
+        # layer is the live moments the archive does not carry (a shortened live stub's full
+        # body comes from the archive, and it is archived rather than hot).
+        stored_emotional = _repo.query(
+            agent_id=agent, record_type=RecordType.emotional, include_archived=True
+        )
+        stored_titles = {r.title for r in stored_emotional}
+        archived_titles = {r.title for r in stored_emotional if r.archived_date}
+        live_titles = {m.title for m in parsed["emotional"]}
+        assert live_titles <= stored_titles, f"{agent} emotional lost"
+        assert len(payload["emotional"]) == len(live_titles - archived_titles), (
+            f"{agent} emotional"
+        )
         # on-demand indexes: active only (archived excluded). A dangling index ref (points
         # at a file no longer on disk) can't be migrated, so compare against refs that exist.
         active_refs = [r for r in P.parse_active_episodes(idx) if (agent_dir / r["file"]).is_file()]

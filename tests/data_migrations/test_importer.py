@@ -423,10 +423,10 @@ def test_archived_moments_import_as_archived(tmp_path: Path) -> None:
     assert archived[0][1] == "2026-09-01"
 
 
-def test_a_shortened_moment_keeps_its_live_stub(tmp_path: Path) -> None:
-    """A shortened moment's full text sits in the archive under the *same* title as the stub
-    the live file keeps, so importing it would upsert over that stub and archive the moment
-    out of the hot layer. The live title wins."""
+def test_a_shortened_moment_imports_its_full_body_archived(tmp_path: Path) -> None:
+    """A shortened moment keeps a stub in the live file under the *same* title as its full
+    archived copy. The archive is the source of truth there: the record takes the full body
+    and lands archived, and the stub is not imported on its own."""
     src = _fake_source(tmp_path / "src")
     agent = src / "agent-meta"
     (agent / "agent-core-memory.md").write_text(
@@ -448,15 +448,20 @@ def test_a_shortened_moment_keeps_its_live_stub(tmp_path: Path) -> None:
 
     repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     counts = import_agent(repo, src, "meta")
-    assert counts["meta/emotional"] == 2  # the stub, plus the fully-archived one
+    assert counts["meta/emotional"] == 2  # the shortened one, plus the fully-archived one
 
     with repo._conn() as conn:  # noqa: SLF001 — counting rows, not exercising a path
         rows = conn.execute(
-            "SELECT title, archived_date FROM memory_record WHERE record_type = 'emotional'"
+            "SELECT title, archived_date, full_content FROM memory_record "
+            "WHERE record_type = 'emotional'"
         ).fetchall()
-    by_title = {title: archived for title, archived in rows}
-    assert by_title["[2026-08-09 10:00] - SHORTENED MOMENT"] is None  # the stub stays hot
-    assert by_title["[2026-09-01 15.12] - ARCHIVED WHOLE"] == "2026-09-01"
+    by_title = {title: (archived, body) for title, archived, body in rows}
+    # the shortened moment lands archived, and its body is the archive's full text, not the stub
+    shortened_date, shortened_body = by_title["[2026-08-09 10:00] - SHORTENED MOMENT"]
+    assert shortened_date == "2026-08-09"
+    assert "full text" in shortened_body
+    assert "stub" not in shortened_body
+    assert by_title["[2026-09-01 15.12] - ARCHIVED WHOLE"][0] == "2026-09-01"
 
 
 def test_purge_removes_rows_the_markdown_no_longer_has(

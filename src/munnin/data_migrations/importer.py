@@ -4,8 +4,9 @@ Two passes: the ``agent`` rows first, then the memory that points at them — th
 key makes that order mandatory, not stylistic. Full-fleet, all 5 record types, the
 fleet-shared layer imported **once** into its own table, and BOTH **active** +
 **archived** items — where *archived* = an episode or knowledge file **absent from the
-agent index**, or an emotional moment **moved out of the live core memory** into
-``archive/`` (``archived_date`` set; excluded from awaken's hot index, still searchable).
+agent index**, or an emotional moment **the archive file holds** (``archived_date`` set;
+excluded from awaken's hot index, still searchable). For an emotional moment the archive
+also carries the full body, so it is imported from there rather than as the live copy.
 Real file bodies. Idempotent: deterministic ``uuid5`` → re-run upserts, never dups.
 ``--purge`` clears the tenant first, which is how the store is made to match markdown
 exactly rather than accumulate rows for content that has since moved or been renamed.
@@ -50,10 +51,12 @@ class ImportAborted(RuntimeError):
 # non-null so the row drops out of the hot awaken index.
 _ARCHIVED_FALLBACK = "1970-01-01"
 
-# Archived emotional moments. Archiving *removes* a moment from the live core memory, so
-# these files are the only place a fresh import can learn it existed. They overlap — the
-# older single-file form and a year archive both carry some of the same moments — which is
-# safe because a moment's key is its title, so a shared key upserts to one record.
+# Archived emotional moments. The archive holds the full body of every moment archiving has
+# touched, and for a *shortened* moment it is the only place that body exists (the live file
+# keeps a short stub under the same title). It is therefore the source of truth for a moment
+# it holds: the import takes the body from here and marks the record archived. The files
+# overlap — the older single-file form and a year archive both carry some of the same moments
+# — which is safe because a moment's key is its title, so a shared key upserts to one record.
 _ARCHIVE_MOMENT_GLOBS = ("archive/*-archived-moments.md", "archive/moments/*.md")
 
 
@@ -313,35 +316,55 @@ def import_agent(repo: MemoryRepository, source_root: Path | str, agent_id: str)
     counts: Counter[str] = Counter()
 
     core_path = agent_dir / "agent-core-memory.md"
-    live_moment_titles: set[str] = set()
+    live_emotional: list[P.ParsedItem] = []
     if core_path.is_file():
         ac = P.parse_agent_core(_read(core_path))
-        for rtype in (RecordType.identity, RecordType.reasoning, RecordType.emotional):
+        for rtype in (RecordType.identity, RecordType.reasoning):
             for it in ac[rtype.value]:
                 repo.insert(_to_record(it, agent_id, rtype))
                 counts[f"{agent_id}/{rtype.value}"] += 1
-        live_moment_titles = {it.title for it in ac["emotional"]}
+        live_emotional = ac["emotional"]
 
-    # The moments archiving took out of the live file, imported archived: they belong in the
-    # store (searchable, out of the hot index) and a fresh import cannot see them otherwise.
-    # Dated by the moment's own timestamp, the same approximation archived episodes use.
-    #
-    # A title the live file still carries is skipped, and that filter is load-bearing: a
-    # *shortened* moment keeps a stub in the live file under the same title as its full
-    # archived copy, so importing it would upsert over the live record and archive the
-    # moment out of the hot layer. The stub is the live record; the full text stays
-    # recoverable from markdown.
+    # Every archived moment this agent has, keyed by title. A moment's key is its title, so
+    # the older single-file form and the year archive upsert to one record instead of two.
+    archived: dict[str, P.ParsedItem] = {}
     for path in _archived_moment_files(agent_dir):
         for it in P.parse_archived_moments(_read(path)):
-            if it.title in live_moment_titles:
-                continue
+            archived.setdefault(it.title, it)
+
+    # Emotional moments, each taking its body and its archived status from whichever source
+    # is authoritative. A moment the archive holds is archived: a shortened one keeps a stub
+    # in the live file under the same title as its full archived copy, so the archive is the
+    # only place its real body exists, and importing the stub would store the short text.
+    # The archive wins for those, and the stub is not imported on its own.
+    for it in live_emotional:
+        arch = archived.pop(it.title, None)
+        if arch is None:
+            repo.insert(_to_record(it, agent_id, RecordType.emotional))
+        else:
             repo.insert(
                 _to_record(
-                    it, agent_id, RecordType.emotional,
-                    archived_date=it.date or _ARCHIVED_FALLBACK,
+                    arch,
+                    agent_id,
+                    RecordType.emotional,
+                    archived_date=arch.date or _ARCHIVED_FALLBACK,
                 )
             )
-            counts[f"{agent_id}/emotional"] += 1
+        counts[f"{agent_id}/emotional"] += 1
+
+    # The moments archiving took out of the live file entirely: the archive is the only place
+    # a fresh import can learn they existed. Dated by the moment's own timestamp, the same
+    # approximation archived episodes use.
+    for it in archived.values():
+        repo.insert(
+            _to_record(
+                it,
+                agent_id,
+                RecordType.emotional,
+                archived_date=it.date or _ARCHIVED_FALLBACK,
+            )
+        )
+        counts[f"{agent_id}/emotional"] += 1
 
     _import_knowledge(repo, agent_dir, agent_id, counts)
     _import_episodes(repo, agent_dir, agent_id, counts)
