@@ -74,6 +74,7 @@ def _to_record(
     record_type: RecordType,
     *,
     archived_date: str | None = None,
+    project: str | None = None,
 ) -> MemoryRecord:
     uid = item.uuid or P.stable_uuid(agent_id, record_type.value, item.key)
     return MemoryRecord(
@@ -84,6 +85,7 @@ def _to_record(
         full_content=item.body,
         title=item.title,
         tags=item.tags,
+        project=project,
         created_date=item.date,  # None → repo defaults (undated identity/knowledge)
         archived_date=archived_date,
     )
@@ -204,7 +206,9 @@ def _import_episodes(
     repo: MemoryRepository, agent_dir: Path, agent_id: str, counts: Counter[str]
 ) -> None:
     """Every ``episodes/*.md`` → a record. In the index = active (archived_date NULL);
-    absent from the index = archived (archived_date set). Body = the real file."""
+    absent from the index = archived (archived_date set). Body = the real file minus any
+    frontmatter; ``project`` and ``tags`` come from that frontmatter, and the title is the
+    filename without its date prefix."""
     ep_dir = agent_dir / "episodes"
     if not ep_dir.is_dir():
         return
@@ -213,15 +217,29 @@ def _import_episodes(
     active = {ep["file"]: ep["date"] for ep in P.parse_active_episodes(index)}
     for ep_path in sorted(ep_dir.glob("*.md")):
         rel = f"episodes/{ep_path.name}"
-        body = _read(ep_path)
+        meta, body = P.split_frontmatter(_read(ep_path))
         if rel in active:
             date = active[rel] or P.date_from_filename(ep_path.name)
             archived = None
         else:
             date = P.date_from_filename(ep_path.name)
             archived = date or _ARCHIVED_FALLBACK
-        item = P.ParsedItem(title=ep_path.stem, body=body, key=rel, date=date)
-        repo.insert(_to_record(item, agent_id, RecordType.episode, archived_date=archived))
+        item = P.ParsedItem(
+            title=P.title_from_filename(ep_path.name),
+            body=body,
+            key=rel,
+            date=date,
+            tags=P.meta_tags(meta),
+        )
+        repo.insert(
+            _to_record(
+                item,
+                agent_id,
+                RecordType.episode,
+                archived_date=archived,
+                project=P.meta_str(meta, "project"),
+            )
+        )
         counts[f"{agent_id}/episode"] += 1
 
 
@@ -229,9 +247,10 @@ def _import_knowledge(
     repo: MemoryRepository, agent_dir: Path, agent_id: str, counts: Counter[str]
 ) -> None:
     """Indexed knowledge = active, imported with its **real file body** (fallback to the
-    index description if the file is missing). Unindexed non-project files = archived.
-    ``knowledge-base/`` subdirs holding a ``context-index.md`` are project-scoped → Hermod,
-    skipped."""
+    index description if the file is missing) and any ``tags`` from its frontmatter.
+    Unindexed non-project files = archived. ``knowledge-base/`` subdirs holding a
+    ``context-index.md`` are project-scoped → Hermod, skipped. ``project`` is left unset:
+    Munnin is project-blind for knowledge, so project-scoped knowledge never reaches here."""
     index_path = agent_dir / "agent-memory-index.md"
     index = _read(index_path) if index_path.exists() else ""
     active_items = P.parse_knowledge_index(index)
@@ -241,8 +260,13 @@ def _import_knowledge(
     # active — indexed, real body (fallback to the index description)
     for it in active_items:
         fpath = kb / it.key
-        body = _read(fpath) if fpath.is_file() else it.body
-        item = P.ParsedItem(title=it.title, body=body, key=it.key, tags=it.tags)
+        if fpath.is_file():
+            meta, body = P.split_frontmatter(_read(fpath))
+        else:
+            meta, body = {}, it.body
+        item = P.ParsedItem(
+            title=it.title, body=body, key=it.key, tags=P.meta_tags(meta) or it.tags
+        )
         repo.insert(_to_record(item, agent_id, RecordType.knowledge))
         counts[f"{agent_id}/knowledge"] += 1
 
@@ -258,9 +282,15 @@ def _import_knowledge(
         rel = f.relative_to(kb).as_posix()
         if rel in active_paths:
             continue  # already imported as active
-        body = _read(f)
+        meta, body = P.split_frontmatter(_read(f))
         date = P.date_from_filename(f.name)
-        item = P.ParsedItem(title=P.first_heading(body) or f.stem, body=body, key=rel, date=date)
+        item = P.ParsedItem(
+            title=P.first_heading(body) or f.stem,
+            body=body,
+            key=rel,
+            date=date,
+            tags=P.meta_tags(meta),
+        )
         archived = date or _ARCHIVED_FALLBACK
         repo.insert(_to_record(item, agent_id, RecordType.knowledge, archived_date=archived))
         counts[f"{agent_id}/knowledge"] += 1

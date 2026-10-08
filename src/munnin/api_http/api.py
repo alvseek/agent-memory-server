@@ -173,10 +173,15 @@ def build_router(
         return {"status": "ok", "service": "munnin", "version": __version__}
 
     @api.get("/api/awaken")
-    def awaken(agent_id: str, svc: MemoryService = Depends(_tenant_service)) -> dict[str, Any]:
-        """Assemble + return an agent's full memory payload from the DB (M0)."""
+    def awaken(
+        agent_id: str,
+        project: str | None = None,
+        svc: MemoryService = Depends(_tenant_service),
+    ) -> dict[str, Any]:
+        """Assemble + return an agent's full memory payload from the DB (M0). ``project``
+        scopes the ``latest_episode`` body (newest for that project, else the newest)."""
         try:
-            return svc.awaken(agent_id)
+            return svc.awaken(agent_id, project)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

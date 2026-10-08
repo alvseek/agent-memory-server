@@ -33,15 +33,41 @@ def _whole(r: SharedRecord) -> dict[str, Any]:
     }
 
 
+def _episode(r: SharedRecord | None) -> dict[str, Any] | None:
+    """The latest-episode item: the whole record plus its ``project``, so a caller can
+    tell a project-matched episode from the fallback without a second field."""
+    if r is None:
+        return None
+    return {**_whole(r), "project": r.project}
+
+
 def _index(r: SharedRecord) -> dict[str, Any]:
-    """Browse section item — metadata only, no body (fetched on demand)."""
+    """Browse section item — metadata only, no body (fetched on demand). Carries
+    ``project`` so a caller can pick the episode for a project without loading bodies."""
     return {
         "uuid": r.uuid,
         "title": r.title,
         "tags": r.tags,
+        "project": r.project,
         "created_date": r.created_date,
         "modified_date": r.modified_date,
     }
+
+
+def _select_latest(
+    episodes: list[SharedRecord], project: str | None
+) -> SharedRecord | None:
+    """The newest episode for ``project`` (``episodes`` arrives newest-first), else the
+    newest overall. The fallback is deliberate and matches the awakening protocol: a
+    project with no episode of its own still gets the newest context, and the caller can
+    tell it is not project-specific because the returned record's own ``project`` differs."""
+    if not episodes:
+        return None
+    if project:
+        for r in episodes:
+            if r.project == project:
+                return r
+    return episodes[0]
 
 
 def _record(r: SharedRecord) -> dict[str, Any]:
@@ -100,7 +126,7 @@ class MemoryService:
     def version(self) -> str:
         return __version__
 
-    def awaken(self, domain: str) -> dict[str, Any]:
+    def awaken(self, domain: str, project: str | None = None) -> dict[str, Any]:
         """Assemble an agent's memory payload from the DB (4-layer model, C-2).
 
         Always-load whole: layer i (fleet-shared reasoning, knowledge, the universal RAS
@@ -108,6 +134,13 @@ class MemoryService:
         Index-only: layer iii
         (domain episode/knowledge) + the latest episode body. All reads are hot-read
         filtered (deleted + archived excluded) by the repository.
+
+        ``project`` scopes only which episode's body comes back as ``latest_episode``: the
+        newest episode whose own ``project`` matches, falling back to the newest overall
+        exactly as the awakening protocol describes (marked, there, as not project-specific).
+        The whole ``episodic_index`` is still returned, with ``project`` on each entry, so a
+        caller can select a different episode and fetch it by id. Identity, reasoning,
+        emotional and knowledge are project-independent and unaffected.
 
         ``shared.user_profile`` is a single record or ``None`` — who the user is does not
         vary by agent, so it is fleet memory rather than anyone's identity. ``None`` is a
@@ -137,7 +170,7 @@ class MemoryService:
             key=lambda r: (r.created_date or "", r.id or 0),
             reverse=True,
         )
-        latest = episodes[0] if episodes else None
+        latest = _select_latest(episodes, project)
 
         return {
             "agent_id": domain,
@@ -155,7 +188,7 @@ class MemoryService:
             # layer iii — index only (+ latest episode body)
             "knowledge_index": [_index(r) for r in knowledge_idx],
             "episodic_index": [_index(r) for r in episodes],
-            "latest_episode": _whole(latest) if latest else None,
+            "latest_episode": _episode(latest),
         }
 
     def permanent_layer(self, digest: str, version: str) -> dict[str, Any]:

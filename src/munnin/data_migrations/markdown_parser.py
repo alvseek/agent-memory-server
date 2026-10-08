@@ -31,6 +31,64 @@ def stable_uuid(agent_id: str, record_type: str, key: str) -> str:
     return str(_uuidlib.uuid5(_NS, f"{agent_id}|{record_type}|{key}"))
 
 
+# --- frontmatter: the authored metadata a document carries above its body ---
+
+_FRONTMATTER_DELIM = "---"
+
+
+def _parse_frontmatter_lines(lines: list[str]) -> dict[str, object]:
+    """A deliberate subset of YAML, not a general parser. The store authors a fixed
+    shape — scalars and inline lists — so `project: x` and `tags: [a, b]` are all that
+    must parse. Anything else is skipped rather than guessed at, because a wrong value
+    (a project that is not the project) is worse than a missing one."""
+    meta: dict[str, object] = {}
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key, value = key.strip(), value.strip()
+        if value.startswith("[") and value.endswith("]"):
+            items = [v.strip().strip("\"'") for v in value[1:-1].split(",")]
+            meta[key] = [v for v in items if v]
+        else:
+            meta[key] = value.strip("\"'")
+    return meta
+
+
+def split_frontmatter(text: str) -> tuple[dict[str, object], str]:
+    """Split a leading ``---`` frontmatter block from the body: ``(meta, body)``.
+
+    No frontmatter (or an unterminated one) returns ``({}, text)`` unchanged, so a file
+    without metadata is imported exactly as before. The returned body has the metadata
+    block removed, so ``full_content`` carries the document, not a copy of its columns."""
+    lines = text.lstrip("\ufeff").split("\n")
+    if not lines or lines[0].strip() != _FRONTMATTER_DELIM:
+        return {}, text
+    close = next(
+        (i for i in range(1, len(lines)) if lines[i].strip() == _FRONTMATTER_DELIM), None
+    )
+    if close is None:
+        return {}, text
+    return _parse_frontmatter_lines(lines[1:close]), "\n".join(lines[close + 1 :])
+
+
+def meta_str(meta: dict[str, object], key: str) -> str | None:
+    """A scalar frontmatter value, or ``None`` when absent/blank. A blank is absent."""
+    value = meta.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def meta_tags(meta: dict[str, object]) -> list[str]:
+    """The ``tags`` frontmatter value as a string list; ``[]`` when absent or malformed."""
+    value = meta.get("tags")
+    if isinstance(value, list):
+        return [v for v in value if isinstance(v, str) and v]
+    if isinstance(value, str) and value:
+        return [value]
+    return []
+
+
 @dataclass
 class ParsedItem:
     title: str
@@ -107,11 +165,14 @@ def parse_agent_core(text: str) -> dict[str, list[ParsedItem]]:
 
 # --- archived emotional moments (agent-<domain>/archive/…) ---
 
-# A moment block's title opens with a bracketed date: `### [2026-09-01 15.12] - TITLE`.
-# That bracket is what separates a moment from the other level-3 headings an archive file
-# carries at the same depth — `### Archiving Reasons`, `### Archived Content` — which are
-# structure, not moments.
-_MOMENT_TITLE = re.compile(r"^\[\d{4}-\d{2}-\d{2}[^\]]*\]\s*-\s*\S")
+# A moment block's title opens with a date: `### 2026-08-13 17.15 - TITLE` (what the
+# archive files actually author) or the bracketed `### [2026-09-01 15.12] - TITLE` (an
+# older template). Both forms are accepted; the date prefix is what separates a moment
+# from the other level-3 headings an archive file carries at the same depth
+# (`### Archived Content`, `### Archiving Reasons`), which are structure, not moments.
+_MOMENT_TITLE = re.compile(
+    r"^(?:\[\d{4}-\d{2}-\d{2}[^\]]*\]|\d{4}-\d{2}-\d{2}(?:\s+\d{2}\.\d{2})?)\s*-\s*\S"
+)
 
 
 def parse_archived_moments(text: str) -> list[ParsedItem]:
@@ -299,3 +360,18 @@ def date_from_filename(name: str) -> str | None:
     Legacy archived episodes carry this prefix; rolling files (no prefix) don't."""
     m = _FILENAME_DATE.match(name)
     return m.group(1) if m else None
+
+
+# A legacy filename's leading date and optional time, with its separator: `2025-09-07-`
+# or `2026-05-26-23.36-`. Stripped so the title is the name, not the name plus a date.
+_FILENAME_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}(?:-\d{2}\.\d{2})?[-_]?")
+
+
+def title_from_filename(name: str) -> str:
+    """The record title for an episode file: the filename without its date prefix, so a
+    legacy `2026-05-26-23.36-agent-memory-task-system.md` titles as
+    `agent-memory-task-system` and a rolling file is already clean. Falls back to the
+    date-stripped stem if stripping would leave nothing."""
+    stem = name[:-3] if name.endswith(".md") else name
+    stripped = _FILENAME_DATE_PREFIX.sub("", stem)
+    return stripped or stem

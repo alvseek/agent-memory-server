@@ -149,3 +149,45 @@ def test_ras_is_carried_whole_and_kept_out_of_reasoning(tmp_path: Path) -> None:
     assert [r["uuid"] for r in shared["ras"]] == ["sras1"]
     assert shared["ras"][0]["content"] == "**Trigger**: compacted"
     assert [r["uuid"] for r in shared["reasoning"]] == ["sr1"]
+
+
+# --- project-scoped latest episode (the decoupled selection) ---
+
+
+def test_awaken_scopes_latest_episode_to_project(tmp_path: Path) -> None:
+    """`project` picks the newest episode of that project for the embedded body. A project
+    with no episode of its own falls back to the newest overall, which the caller can spot
+    because the returned record's own `project` differs."""
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    repo.insert(_rec("id1", "meta", RecordType.identity))
+    repo.insert(
+        _rec("ep_a", "meta", RecordType.episode, project="alpha", created_date="2026-08-01")
+    )
+    repo.insert(_rec("ep_b", "meta", RecordType.episode, project="beta", created_date="2026-08-09"))
+    svc = MemoryService(repo, user_id="alvi")
+
+    matched = svc.awaken("meta", project="alpha")
+    assert matched["latest_episode"]["uuid"] == "ep_a"
+    assert matched["latest_episode"]["project"] == "alpha"
+
+    fallback = svc.awaken("meta", project="gamma")
+    assert fallback["latest_episode"]["uuid"] == "ep_b"
+    assert fallback["latest_episode"]["project"] == "beta"  # not the requested project
+
+    unscoped = svc.awaken("meta")
+    assert unscoped["latest_episode"]["uuid"] == "ep_b"  # unchanged default
+
+
+def test_awaken_index_entries_carry_project(tmp_path: Path) -> None:
+    """The whole index still comes back, each entry labelled with its project, so an agent
+    can select a different episode and fetch it by id."""
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    repo.insert(_rec("id1", "meta", RecordType.identity))
+    repo.insert(
+        _rec("ep_a", "meta", RecordType.episode, project="alpha", created_date="2026-08-01")
+    )
+
+    payload = MemoryService(repo, user_id="alvi").awaken("meta")
+
+    assert payload["episodic_index"][0]["project"] == "alpha"
+    assert "content" not in payload["episodic_index"][0]

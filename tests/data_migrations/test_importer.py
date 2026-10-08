@@ -128,10 +128,10 @@ def test_archived_episode_split(tmp_path: Path) -> None:
     allep = repo.query(agent_id="meta", record_type=RecordType.episode, include_archived=True)
     assert len(hot) == 2
     assert len(allep) == 3
-    archived = next(e for e in allep if e.title == "2025-01-01-old-session")
+    archived = next(e for e in allep if e.title == "old-session")  # date prefix dropped
     assert archived.archived_date == "2025-01-01"
     # archived is out of the hot index but still searchable
-    assert any(r.title == "2025-01-01-old-session" for r in repo.search("archived"))
+    assert any(r.title == "old-session" for r in repo.search("archived"))
 
 
 def test_project_knowledge_skipped(tmp_path: Path) -> None:
@@ -500,3 +500,90 @@ def test_purge_removes_rows_the_markdown_no_longer_has(
         after = conn.execute("SELECT COUNT(*) FROM memory_record").fetchone()[0]
     assert orphans == 0
     assert after == before - 1
+
+
+# --- project + tags from frontmatter, and the title without its date ---
+
+
+def test_episode_title_drops_the_date_prefix(tmp_path: Path) -> None:
+    """The title is the name, not the name plus a date: a legacy
+    `2026-05-26-23.36-agent-memory-task-system.md` titles as `agent-memory-task-system`."""
+    src = _fake_source(tmp_path / "src")
+    (src / "agent-meta" / "episodes" / "2026-05-26-23.36-agent-memory-task-system.md").write_text(
+        "# Old\nbody", encoding="utf-8"
+    )
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    import_agent(repo, src, "meta")
+    titles = {
+        e.title
+        for e in repo.query(
+            agent_id="meta", record_type=RecordType.episode, include_archived=True
+        )
+    }
+    assert "agent-memory-task-system" in titles
+    assert "2026-05-26-23.36-agent-memory-task-system" not in titles
+
+
+def test_episode_frontmatter_fills_project_and_tags(tmp_path: Path) -> None:
+    """Project and tags are authored, not derived. The importer reads them from the file's
+    frontmatter, and the body it stores excludes the metadata block."""
+    src = _fake_source(tmp_path / "src")
+    agent = src / "agent-meta"
+    (agent / "episodes" / "e3.md").write_text(
+        "---\nproject: agent-memory\ntags: [munnin, importer]\n---\n# Themed\nbody3\n",
+        encoding="utf-8",
+    )
+    (agent / "agent-memory-index.md").write_text(
+        (agent / "agent-memory-index.md").read_text(encoding="utf-8")
+        + "📂 2026-08-10:\n- [e3.md](episodes/e3.md) - themed\n",
+        encoding="utf-8",
+    )
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    import_agent(repo, src, "meta")
+    e3 = next(
+        e for e in repo.query(agent_id="meta", record_type=RecordType.episode) if e.title == "e3"
+    )
+    assert e3.project == "agent-memory"
+    assert e3.tags == ["munnin", "importer"]
+    assert "project:" not in e3.full_content  # metadata is not duplicated into the body
+    assert "body3" in e3.full_content
+
+
+def test_knowledge_frontmatter_fills_tags(tmp_path: Path) -> None:
+    src = _fake_source(tmp_path / "src")
+    (src / "agent-meta" / "knowledge-base" / "memory-architecture" / "pain.md").write_text(
+        "---\ntags: [memory, pain]\n---\n# Pain\nreal pain body", encoding="utf-8"
+    )
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    import_agent(repo, src, "meta")
+    pain = next(
+        k
+        for k in repo.query(agent_id="meta", record_type=RecordType.knowledge)
+        if k.title == "Pain"
+    )
+    assert pain.tags == ["memory", "pain"]
+    assert "tags:" not in pain.full_content
+
+
+def test_archived_moments_parse_without_brackets(tmp_path: Path) -> None:
+    """The archive files author `### YYYY-MM-DD HH.MM - TITLE` (no brackets), but the parser
+    accepted only the bracketed form, so no archived moment was ever imported."""
+    src = _fake_source(tmp_path / "src")
+    agent = src / "agent-meta"
+    (agent / "archive").mkdir()
+    (agent / "archive" / "2026-archived-moments.md").write_text(
+        "## 📅 Archived Moments (2026-08-14 pass)\n"
+        "### 2026-08-13 17.15 - YOU TALK LIKE IN A CIRCLE\nfull text\n",
+        encoding="utf-8",
+    )
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    import_agent(repo, src, "meta")
+
+    with repo._conn() as conn:  # noqa: SLF001
+        rows = conn.execute(
+            "SELECT title, archived_date FROM memory_record WHERE record_type = 'emotional'"
+        ).fetchall()
+    archived = [r for r in rows if r[1]]
+    assert len(archived) == 1
+    assert archived[0][0] == "2026-08-13 17.15 - YOU TALK LIKE IN A CIRCLE"
+    assert archived[0][1] == "2026-08-13"
