@@ -7,7 +7,7 @@ flow: "Awaken (DB payload consumption)"
 
 **Trigger**: A DB/Munnin client awakens an agent — MCP `awaken(domain)` tool call, or its HTTP twin `GET /api/awaken?agent_id={domain}`.
 **Type**: `sequenceDiagram` — the flow is a multi-participant request/response over time (client → adapter → service → repository → store), which the sequence grammar captures best.
-**Participants**: Client (a DB-world agent), MCP/HTTP adapter ([api_mcp/server.py](../../src/munnin/api_mcp/server.py) `awaken` tool · [api_http/api.py](../../src/munnin/api_http/api.py) `/api/awaken`), [MemoryService](../../src/munnin/business_services/memory_service.py) `awaken()`, [MemoryRepository](../../src/munnin/data_repositories/memory_repository.py) → SQLite (Valaskjalf `memory.db`).
+**Participants**: Client (a DB-world agent), MCP/HTTP adapter ([api_mcp/server.py](../../src/munnin/api_mcp/server.py) `awaken` tool · [api_http/api.py](../../src/munnin/api_http/api.py) `/api/awaken`), [MemoryService](../../src/munnin/business_services/memory_service.py) `awaken()`, [MemoryRepository](../../src/munnin/data_repositories/memory_repository.py) → SQLite or PostgreSQL (Valaskjalf).
 
 ---
 
@@ -18,7 +18,7 @@ sequenceDiagram
     participant C as Client (DB agent)
     participant A as Adapter (MCP tool / HTTP /api/awaken)
     participant S as MemoryService.awaken()
-    participant R as MemoryRepository (SQLite · Valaskjalf)
+    participant R as MemoryRepository (SQLite or PostgreSQL · Valaskjalf)
 
     C->>+A: awaken(domain)
     A->>+S: service.awaken(domain)
@@ -53,7 +53,7 @@ sequenceDiagram
 
 - **Preconditions**: the DB was populated by the [importer](../../src/munnin/data_migrations/importer.py) (markdown → records) or by live `insert`s; the `control-files` submodule is *not* needed for `awaken` (it's only needed for served Prompts/Resources).
 - **Branches**: `latest_episode` is `None` when the agent has zero episodes (the only branch — no `alt` needed). Deleted + archived rows are excluded at the repository (hot-read), so no filtering branch surfaces in the service.
-- **External dependency**: SQLite (`data/valaskjalf-memory.db`). The trace stops at the repository boundary.
+- **External dependency**: the store backend — SQLite (`data/valaskjalf-memory.db`) or PostgreSQL (`MUNNIN_DB_URL`). The trace stops at the repository boundary.
 - **⚠ Process-instruction gap (the reason this doc exists — `[CONFIRM]` intentional-vs-close):**
   - The payload from `MemoryService.awaken()` carries **data only** — the 4 memory layers. It contains **no awakening *process***: the Phase 1 → Phase 2 protocol, the "don't delegate awakening reads to a sub-agent" rule, and the consolidated report format all live in [awaken-agent.md](../../control-files/procedures/awaken-agent.md) + `core-instruction-control-files.md`.
   - Confirmed by code: the [importer](../../src/munnin/data_migrations/importer.py) imports fleet-shared reasoning/knowledge/user-profile + per-agent identity/reasoning/emotional/knowledge/episodes — it **never** imports `core-instruction-control-files.md` or `awaken-agent.md`. Neither is a DB record, and neither is served ([awaken-agent is intentionally excluded from the served Prompts](../../src/munnin/content/loader.py)).

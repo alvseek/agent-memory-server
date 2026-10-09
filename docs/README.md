@@ -33,7 +33,7 @@ It runs in one of two shapes, chosen by `MUNNIN_AUTH`; everything else in this d
 
 ### Architecture
 
-Two thin adapters over one transport-agnostic core, co-hosted on a single uvicorn app. Both faces share **one** token verifier and **one** tenant resolver, so there is no seam where they could drift apart. The store sits behind a `MemoryRepository` Protocol (SQLite today, swappable). Structured in **A-Boxed L1 boxes** — one package per box:
+Two thin adapters over one transport-agnostic core, co-hosted on a single uvicorn app. Both faces share **one** token verifier and **one** tenant resolver, so there is no seam where they could drift apart. The store sits behind a `MemoryRepository` Protocol (SQLite by default, PostgreSQL for the deployment). Structured in **A-Boxed L1 boxes** — one package per box:
 
 ```
                 ┌────────────── one uvicorn app ───────────────────────────────┐
@@ -66,7 +66,7 @@ Both adapters call the same `MemoryService`; identical surface comes from the sh
 - **MCP**: FastMCP ≥ 3.4.6 (streamable-HTTP; protocol revision 2025-11-25)
 - **HTTP**: FastAPI ≥ 0.141 + uvicorn, single worker
 - **Auth**: FastMCP's `RemoteAuthProvider` + `JWTVerifier` — Munnin is a *resource server*, verifying RS256 tokens against the issuer's public JWKS; it never holds a client secret
-- **Store**: SQLite — WAL mode, FTS5 full-text, no external database
+- **Store**: dual-backend behind the `MemoryRepository` Protocol — SQLite (WAL + FTS5, the default) or PostgreSQL 17 (a generated `tsvector` column + GIN index). Selected by `MUNNIN_DB_BACKEND` / `MUNNIN_DB_URL`.
 - **Tooling**: `uv` (build backend, deps, runtime venv), `ruff`, `pytest`
 - **Served content**: the `control-files/` git submodule (the framework's procedures and templates)
 
@@ -132,7 +132,9 @@ All `MUNNIN_*`, all optional. Defaults describe a bare process on a laptop; the 
 | `MUNNIN_PUBLIC_BASE_URL` | Where this server is addressed. Tokens are bound to `<this>/mcp`; local mode requires it to be loopback | `http://127.0.0.1:8200` |
 | `MUNNIN_LOCAL_BIND_ALL` | `1` waives local mode's bind check — only when the port is published on the host's loopback | unset |
 | `MUNNIN_USER_ID` | Local mode's tenant, and the tenant the importer stamps. Not read in token mode | `alvi` |
-| `MUNNIN_DB_PATH` | Valaskjalf/memory SQLite file (runtime data, gitignored) | `data/valaskjalf-memory.db` |
+| `MUNNIN_DB_PATH` | Valaskjalf/memory SQLite file (runtime data, gitignored; used when the backend is `sqlite`) | `data/valaskjalf-memory.db` |
+| `MUNNIN_DB_BACKEND` | Which store backend: `sqlite` (default) or `postgres` | `sqlite` |
+| `MUNNIN_DB_URL` | PostgreSQL DSN; required when the backend is `postgres` | (unset) |
 | `MUNNIN_CONTENT_ROOT` | Served framework content root | `control-files` |
 | `MUNNIN_LOGTO_ENDPOINT` | Token mode: the Logto tenant endpoint. OIDC paths are derived from it | unset |
 | `MUNNIN_LOGTO_AUDIENCE` | Token mode: override the audience Logto tokens are checked against — comma-separated, for a rename window. Normally empty; it binds itself to `<public URL>/mcp` | unset |
@@ -290,7 +292,7 @@ Two GitHub Actions workflows:
 ### Infrastructure
 
 - **Image**: multi-stage on `python:3.12-slim`; uv pinned to the lockfile's revision; the venv and `src/` copied at the same paths, `control-files` copied in as read-only content; non-root `munnin` (uid 10001) with `/app/data` pre-owned so a fresh volume inherits it; `HEALTHCHECK` against `/health` in plain Python (slim has no curl); `ENTRYPOINT` is the venv interpreter directly so signals reach uvicorn.
-- **Store**: one SQLite file, WAL mode, **single writer** — one uvicorn worker per database file. The volume mounts the data *directory*, never the `.db`, because WAL keeps `-wal`/`-shm` sidecars beside it; local driver only, since advisory locking over a network filesystem is a corruption path.
+- **Store (SQLite backend)**: one SQLite file, WAL mode, **single writer** — one uvicorn worker per database file. The volume mounts the data *directory*, never the `.db`, because WAL keeps `-wal`/`-shm` sidecars beside it; local driver only, since advisory locking over a network filesystem is a corruption path.
 - **Scale**: the single-writer rule caps a database at one process, so scaling is a bigger box or the Postgres swap the `MemoryRepository` seam allows — not more workers.
 
 ### Rollback
