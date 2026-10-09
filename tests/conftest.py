@@ -26,12 +26,14 @@ whether a token is checked, and there is no helper here that turns verification 
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.server.auth import MultiAuth
@@ -44,6 +46,8 @@ from munnin.content.loader import ContentLoader
 from munnin.data_entities.identity import Account, UserIdentity
 from munnin.data_entities.memory_record import Agent, MemoryRecord
 from munnin.data_repositories.identity_repository import SqliteIdentityRepository
+from munnin.data_repositories.postgres_identity_repository import PostgresIdentityRepository
+from munnin.data_repositories.postgres_memory_repository import PostgresMemoryRepository
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 TEST_ISSUER = "https://munnin-tests.authkit.invalid"
@@ -202,6 +206,45 @@ def seed_agent(
     SqliteMemoryRepository(db, user_id=user_id).upsert_agent(
         Agent(user_id="", agent_id=agent_id, **fields)
     )
+
+
+def _pg_test_url() -> str | None:
+    return os.getenv("MUNNIN_PG_TEST_URL")
+
+
+@pytest.fixture(
+    params=[
+        pytest.param("sqlite", id="sqlite"),
+        pytest.param("postgres", id="postgres", marks=pytest.mark.postgres),
+    ]
+)
+def memory_repo(request: pytest.FixtureRequest, tmp_path: Path):
+    """The ``MemoryRepository`` contract, run against whichever backend is asked for.
+
+    The ``sqlite`` param is the default suite — fast, no service. The ``postgres`` param is
+    marked ``postgres`` and skips unless ``MUNNIN_PG_TEST_URL`` is set, so the *same*
+    assertions prove both engines (high-wizard decision 5). The tenant, agent and (for
+    Postgres) a fresh schema are seeded here because they are preconditions common to every
+    contract test, not the subject of any."""
+    user_id = "alvi"
+    if request.param == "sqlite":
+        db = tmp_path / "m.db"
+        SqliteIdentityRepository(db).ensure_account(Account(user_id=user_id))
+        repo = SqliteMemoryRepository(db, user_id=user_id)
+    else:
+        url = _pg_test_url()
+        if not url:
+            pytest.skip("MUNNIN_PG_TEST_URL not set")
+        import psycopg
+
+        with psycopg.connect(url) as conn:
+            with conn.cursor() as cur:
+                cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+            conn.commit()
+        PostgresIdentityRepository(url).ensure_account(Account(user_id=user_id))
+        repo = PostgresMemoryRepository(url, user_id=user_id)
+    repo.upsert_agent(Agent(user_id=user_id, agent_id="meta", name="Meta", role="r"))
+    return repo
 
 
 class AutoAgentRepository(SqliteMemoryRepository):

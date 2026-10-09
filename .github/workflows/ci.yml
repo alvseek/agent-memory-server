@@ -21,3 +21,36 @@ jobs:
         run: uv run ruff check
       - name: Test
         run: uv run pytest -q
+
+  # The Postgres-marked subset against a real PostgreSQL, so the deployed backend's paths
+  # (schema, repository, identity, backend selection) are proven on every push, not only on
+  # a developer's machine. The default `test` job above stays SQLite-only and fast.
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: munnin
+          POSTGRES_PASSWORD: munnin
+          POSTGRES_DB: munnin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U munnin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MUNNIN_PG_TEST_URL: postgresql://munnin:munnin@127.0.0.1:5432/munnin_test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: uv sync
+      - name: Postgres tests
+        run: uv run pytest -m postgres -q
