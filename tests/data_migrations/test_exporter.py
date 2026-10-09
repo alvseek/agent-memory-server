@@ -9,7 +9,7 @@ from munnin.data_entities.identity import Account
 from munnin.data_entities.memory_record import MemoryRecord, RecordType
 from munnin.data_migrations.exporter import compare, export_db_only
 from munnin.data_migrations.importer import import_fleet
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 FOLDER = "\U0001f4c2"
@@ -60,7 +60,7 @@ def _store(root: Path) -> Path:
 def _import(store: Path, db: Path) -> SqliteMemoryRepository:
     if db.exists():
         db.unlink()
-    IdentityRepository(db).ensure_account(Account(user_id="alvi"))
+    SqliteIdentityRepository(db).ensure_account(Account(user_id="alvi"))
     repo = SqliteMemoryRepository(db, user_id="alvi")
     import_fleet(repo, store)
     return repo

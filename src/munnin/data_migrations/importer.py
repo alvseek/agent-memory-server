@@ -24,7 +24,7 @@ from munnin.configuration.config import load_config
 from munnin.data_entities.identity import Account
 from munnin.data_entities.memory_record import Agent, MemoryRecord, RecordType, SharedRecord
 from munnin.data_migrations import markdown_parser as P
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 from munnin.data_repositories.memory_repository import MemoryRepository
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 from munnin.logger.logger import get_logger
@@ -445,7 +445,7 @@ def main() -> None:
     # built downwards — and `MUNNIN_USER_ID` now names *which tenant this import lands
     # in* rather than which tenant the server serves, since the server takes that from
     # the caller's token.
-    IdentityRepository(Path(args.db)).ensure_account(Account(user_id=config.user_id))
+    SqliteIdentityRepository(Path(args.db)).ensure_account(Account(user_id=config.user_id))
 
     repo = SqliteMemoryRepository(Path(args.db), user_id=config.user_id)
 

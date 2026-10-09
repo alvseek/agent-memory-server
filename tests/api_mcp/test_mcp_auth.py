@@ -20,7 +20,7 @@ from munnin.api_mcp.server import build_mcp
 from munnin.app import build_app
 from munnin.business_services.service_factory import ServiceFactory
 from munnin.configuration.config import Config
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 from tests.conftest import (
     TEST_ISSUER,
     FixedTenantResolver,
@@ -84,12 +84,12 @@ async def test_authenticated_call_lands_in_the_subject_s_own_tenant(tmp_path: Pa
     """
     db = tmp_path / "m.db"
     app = _app(db, "subj-a")
-    assert IdentityRepository(db).find_user_id(TEST_ISSUER, "subj-a") is None
+    assert SqliteIdentityRepository(db).find_user_id(TEST_ISSUER, "subj-a") is None
 
     async with running(app), mcp_client_for(app, token_for("subj-a")) as client:
         await client.call_tool("list_agents", {})
 
-    user_id = IdentityRepository(db).find_user_id(TEST_ISSUER, "subj-a")
+    user_id = SqliteIdentityRepository(db).find_user_id(TEST_ISSUER, "subj-a")
     assert user_id is not None
     assert user_id != "alvi"  # not the configured tenant — the caller's own
 
@@ -103,7 +103,7 @@ async def test_two_subjects_get_two_tenants(tmp_path: Path) -> None:
         async with running(app), mcp_client_for(app, token_for(subject)) as client:
             await client.call_tool("list_agents", {})
 
-    repo = IdentityRepository(db)
+    repo = SqliteIdentityRepository(db)
     assert repo.find_user_id(TEST_ISSUER, "subj-a") != repo.find_user_id(TEST_ISSUER, "subj-b")
 
 
@@ -116,7 +116,7 @@ async def test_a_returning_subject_keeps_its_tenant(tmp_path: Path) -> None:
     for _ in range(2):
         async with running(app), mcp_client_for(app, token_for("subj-a")) as client:
             await client.call_tool("list_agents", {})
-        seen.append(IdentityRepository(db).find_user_id(TEST_ISSUER, "subj-a"))
+        seen.append(SqliteIdentityRepository(db).find_user_id(TEST_ISSUER, "subj-a"))
 
     assert seen[0] is not None
     assert seen[0] == seen[1]

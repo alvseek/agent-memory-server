@@ -43,7 +43,7 @@ from munnin.business_services.service_factory import ServiceFactory
 from munnin.content.loader import ContentLoader
 from munnin.data_entities.identity import Account, UserIdentity
 from munnin.data_entities.memory_record import Agent, MemoryRecord
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 TEST_ISSUER = "https://munnin-tests.authkit.invalid"
@@ -88,7 +88,7 @@ def seed_login(db: Path, user_id: str = "alvi") -> None:
     which is correct behaviour, and precisely what the isolation proof depends on, but it
     would look here like the face had broken.
     """
-    repo = IdentityRepository(db)
+    repo = SqliteIdentityRepository(db)
     repo.ensure_account(Account(user_id=user_id))
     repo.link_identity(UserIdentity(iss=TEST_ISSUER, sub=user_id, user_id=user_id))
 

@@ -15,11 +15,11 @@ from fastmcp.server.auth.auth import AccessToken
 
 from munnin.business_services.identity_service import IdentityService
 from munnin.business_services.tenant_resolver import MissingTokenError, TokenTenantResolver
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 
 
 def _resolver(tmp_path: Path) -> TokenTenantResolver:
-    return TokenTenantResolver(IdentityService(IdentityRepository(tmp_path / "m.db")))
+    return TokenTenantResolver(IdentityService(SqliteIdentityRepository(tmp_path / "m.db")))
 
 
 def _token(**claims: str) -> AccessToken:

@@ -20,7 +20,7 @@ from pathlib import Path
 
 from munnin.data_entities.identity import Account
 from munnin.data_migrations.importer import import_fleet
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 # The index's own glyphs, built from code points so this source stays ASCII: a day header
@@ -80,7 +80,7 @@ def markdown_records(
     )
     if scratch.exists():
         scratch.unlink()
-    IdentityRepository(scratch).ensure_account(Account(user_id=user_id))
+    SqliteIdentityRepository(scratch).ensure_account(Account(user_id=user_id))
     import_fleet(SqliteMemoryRepository(scratch, user_id=user_id), Path(store))
     return _records(scratch, user_id)
 

@@ -38,7 +38,10 @@ from munnin.business_services.tenant_resolver import (
 from munnin.configuration.config import Config, load_config
 from munnin.content.loader import ContentLoader
 from munnin.data_entities.identity import Account
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
+from munnin.data_repositories.postgres_identity_repository import (
+    PostgresIdentityRepository,
+)
 
 #: Where the MCP face is mounted, and therefore the address clients actually connect to.
 #: It is a constant rather than two literals because the resource identifier this server
@@ -259,6 +262,33 @@ class _PinnedMultiAuth(MultiAuth):
         return super()._get_resource_url(path)
 
 
+class StoreBackendError(RuntimeError):
+    """Raised when the configured store backend is unknown or incomplete."""
+
+
+def _validate_backend(config: Config) -> None:
+    """Refuse an unknown or incomplete backend rather than defaulting silently.
+
+    A wrong value must fail loud: silently reading an unknown backend as SQLite would
+    point a deployment at a local file it never meant to use.
+    """
+    if config.db_backend not in {"sqlite", "postgres"}:
+        raise StoreBackendError(
+            f"MUNNIN_DB_BACKEND={config.db_backend!r} is not 'sqlite' or 'postgres'."
+        )
+    if config.db_backend == "postgres" and not config.db_url:
+        raise StoreBackendError(
+            "MUNNIN_DB_BACKEND=postgres requires MUNNIN_DB_URL (a PostgreSQL DSN)."
+        )
+
+
+def _build_identity_repository(config: Config):
+    """The identity repository for the configured backend (both satisfy the Protocol)."""
+    if config.db_backend == "postgres":
+        return PostgresIdentityRepository(config.db_url)
+    return SqliteIdentityRepository(config.db_path)
+
+
 def build_auth(config: Config) -> MultiAuth | None:
     """The single verifier both faces share — or ``None``, in local mode.
 
@@ -354,7 +384,8 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     # DI graph: store -> per-tenant service factory -> adapters; content served live from
     # the submodule. The factory replaces the single boot-time service: the tenant is now
     # a property of each request rather than of the process.
-    factory = ServiceFactory(config.db_path)
+    _validate_backend(config)
+    factory = ServiceFactory(config.db_path, backend=config.db_backend, db_url=config.db_url)
     content = ContentLoader(config.content_root)
 
     # Both faces resolve their tenant the same way — the MCP face from FastMCP's request
@@ -362,7 +393,7 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     # transport exposes it. In token mode that is the verified token's (iss, sub) pair
     # through the identity service; in local mode it is the one constant tenant, whose
     # account row is created here so the first write does not fail its foreign key.
-    identity_repo = IdentityRepository(config.db_path)
+    identity_repo = _build_identity_repository(config)
     identity = IdentityService(identity_repo)
     resolver: TenantResolver
     if local:

@@ -36,6 +36,13 @@ class Config:
     user_id: str = "alvi"
     # Valaskjalf/memory — gitignored runtime data (one writer: Munnin).
     db_path: Path = Path("data/valaskjalf-memory.db")
+    # Which store backend the server uses: "sqlite" (default, for local and tests) or
+    # "postgres" (the deployed store). An unknown value is refused at startup, never
+    # silently treated as SQLite — a wrong backend must fail loud, not point elsewhere.
+    db_backend: str = "sqlite"
+    # PostgreSQL DSN, required when db_backend is "postgres" and ignored otherwise. Loopback
+    # in the deployment, so it is the first and only secret the server holds.
+    db_url: str = ""
     # Served framework content (the control-files submodule).
     content_root: Path = Path("control-files")
     # Logto tenant endpoint, e.g. "https://xxxxxx.logto.app" (Console -> Settings ->
@@ -86,6 +93,8 @@ def load_config() -> Config:
         port=int(os.getenv("MUNNIN_PORT", "8200")),
         user_id=os.getenv("MUNNIN_USER_ID", "alvi"),
         db_path=Path(os.getenv("MUNNIN_DB_PATH", "data/valaskjalf-memory.db")),
+        db_backend=os.getenv("MUNNIN_DB_BACKEND", "sqlite").strip().lower(),
+        db_url=os.getenv("MUNNIN_DB_URL", ""),
         content_root=Path(os.getenv("MUNNIN_CONTENT_ROOT", "control-files")),
         logto_endpoint=os.getenv("MUNNIN_LOGTO_ENDPOINT", ""),
         authkit_domain=os.getenv("MUNNIN_AUTHKIT_DOMAIN", ""),

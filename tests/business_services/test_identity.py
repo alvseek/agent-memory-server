@@ -15,18 +15,18 @@ import pytest
 
 from munnin.business_services.identity_service import IdentityService
 from munnin.data_entities.identity import Account, UserIdentity
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 
 ISS = "https://alvi.authkit.app"
 OTHER_ISS = "https://alvi.supabase.co/auth/v1"
 
 
-def _svc(tmp_path: Path) -> tuple[IdentityRepository, IdentityService]:
-    repo = IdentityRepository(tmp_path / "m.db")
+def _svc(tmp_path: Path) -> tuple[SqliteIdentityRepository, IdentityService]:
+    repo = SqliteIdentityRepository(tmp_path / "m.db")
     return repo, IdentityService(repo)
 
 
-def _count(repo: IdentityRepository, table: str) -> int:
+def _count(repo: SqliteIdentityRepository, table: str) -> int:
     with repo._conn() as conn:  # noqa: SLF001 — counting rows, not exercising a path
         return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
@@ -116,12 +116,12 @@ def test_email_is_stored_as_a_label_but_never_used_to_resolve(tmp_path: Path) ->
 
 def test_the_pragma_is_on_for_this_repository_too(tmp_path: Path) -> None:
     """It opens its own connections, so it cannot inherit the other repository's pragma."""
-    repo = IdentityRepository(tmp_path / "m.db")
+    repo = SqliteIdentityRepository(tmp_path / "m.db")
     with repo._conn() as conn:  # noqa: SLF001
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
 
 def test_a_mapping_cannot_name_a_tenant_that_does_not_exist(tmp_path: Path) -> None:
-    repo = IdentityRepository(tmp_path / "m.db")
+    repo = SqliteIdentityRepository(tmp_path / "m.db")
     with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY constraint failed"):
         repo.link_identity(UserIdentity(iss=ISS, sub="sub_1", user_id="ghost"))

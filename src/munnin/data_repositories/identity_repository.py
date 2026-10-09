@@ -1,14 +1,15 @@
-"""Tenant and identity storage — the one repository that has no tenant of its own.
+"""Tenant and identity storage — the seam and its SQLite implementation.
 
-Every other repository is constructed *for* a tenant and stamps it into each statement.
-This one cannot be: it runs before the tenant is known, and answering "who is this?" is
-precisely its job. That is why the lookup cannot live on ``SqliteMemoryRepository``,
-whose whole design is that ``user_id`` is fixed at construction.
+``IdentityRepository`` is the Protocol every identity backend satisfies;
+``SqliteIdentityRepository`` is the shipped one and ``PostgresIdentityRepository`` the
+deployed twin. Unlike the memory seam, this repository has no tenant of its own: it runs
+before the tenant is known, and answering "who is this?" is precisely its job. That is why
+the lookup cannot live on a per-tenant memory repository.
 
-It opens its own connections and therefore sets ``PRAGMA foreign_keys`` itself. SQLite
-defaults it OFF per connection, so inheriting the other repository's habit is not enough
-— a declared-but-unenabled constraint on ``user_identity`` would let a mapping point at a
-tenant that does not exist, which is a login into nothing.
+The SQLite implementation opens its own connections and therefore sets ``PRAGMA
+foreign_keys`` itself. SQLite defaults it OFF per connection, so a declared-but-unenabled
+constraint on ``user_identity`` would let a mapping point at a tenant that does not exist,
+which is a login into nothing.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol
 
 from munnin.data_entities.identity import Account, UserIdentity
 from munnin.data_entities.schema_migrations import apply_migrations
@@ -27,8 +29,28 @@ def _now() -> str:
     return datetime.now(tz=UTC).isoformat(timespec="seconds")
 
 
-class IdentityRepository:
-    """Reads and writes ``account`` and ``user_identity``. Holds no tenant."""
+class IdentityRepository(Protocol):
+    """Resolve a login to a tenant, and keep the tenant and its identity rows."""
+
+    def find_user_id(self, iss: str, sub: str) -> str | None:
+        """The tenant this issuer-and-subject pair resolves to, or ``None``."""
+        ...
+
+    def get_account(self, user_id: str) -> Account | None:
+        """The tenant row, or ``None``."""
+        ...
+
+    def ensure_account(self, account: Account) -> Account:
+        """Create the tenant if absent; leave an existing one untouched."""
+        ...
+
+    def link_identity(self, identity: UserIdentity) -> UserIdentity:
+        """Map an issuer-and-subject pair to a tenant. Idempotent on that pair."""
+        ...
+
+
+class SqliteIdentityRepository:
+    """The SQLite implementation. Holds no tenant."""
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = Path(db_path)

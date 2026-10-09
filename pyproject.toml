@@ -12,6 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.141.1",
     "fastmcp>=3.4.6",
+    "psycopg[binary,pool]>=3.3.6",
     "uvicorn>=0.52.1",
 ]
 
@@ -39,6 +40,9 @@ select = ["E", "F", "I"]  # pycodestyle, pyflakes, isort
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "postgres: requires a running PostgreSQL (set MUNNIN_PG_TEST_URL)",
+]
 # The control-files submodule owns and runs its own tool tests (its own pyproject);
 # Munnin no longer collects them here.
 testpaths = ["tests"]

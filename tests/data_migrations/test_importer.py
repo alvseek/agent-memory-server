@@ -20,7 +20,7 @@ from munnin.data_migrations.importer import (
     import_shared,
     main,
 )
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 from tests.conftest import AutoAgentRepository
 
 
@@ -373,7 +373,7 @@ def test_main_creates_the_tenant_before_importing(
     )
     main()
 
-    identities = IdentityRepository(db)
+    identities = SqliteIdentityRepository(db)
     account = identities.get_account("alvi")
     assert account is not None
     assert account.created_date  # stamped, not left null
@@ -392,7 +392,7 @@ def test_running_the_import_twice_leaves_one_tenant(
     main()
     main()
 
-    repo = IdentityRepository(db)
+    repo = SqliteIdentityRepository(db)
     with repo._conn() as conn:  # noqa: SLF001 — counting rows, not exercising a path
         assert conn.execute("SELECT COUNT(*) FROM account").fetchone()[0] == 1
 

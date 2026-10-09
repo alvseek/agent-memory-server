@@ -26,7 +26,7 @@ from munnin.app import LocalModeNotLoopbackError, build_app
 from munnin.business_services.identity_service import IdentityService
 from munnin.business_services.service_factory import ServiceFactory
 from munnin.configuration.config import Config
-from munnin.data_repositories.identity_repository import IdentityRepository
+from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 from tests.conftest import auth_for, mcp_client_for, running
 
 
@@ -58,7 +58,7 @@ def test_router_refuses_neither_mode(tmp_path: Path) -> None:
         build_router(
             ServiceFactory(db),
             auth=None,
-            identity=IdentityService(IdentityRepository(db)),
+            identity=IdentityService(SqliteIdentityRepository(db)),
         )
 
 
@@ -69,7 +69,7 @@ def test_router_refuses_both_modes(tmp_path: Path) -> None:
         build_router(
             ServiceFactory(db),
             auth=auth_for("alvi"),
-            identity=IdentityService(IdentityRepository(db)),
+            identity=IdentityService(SqliteIdentityRepository(db)),
             local_user_id="alvi",
         )
 
