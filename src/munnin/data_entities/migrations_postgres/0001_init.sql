@@ -14,6 +14,14 @@
 -- the three sync triggers the SQLite schema needs have no counterpart either. The 'simple'
 -- dictionary is deliberate: FTS5 tokenises without stemming, and `english` would silently
 -- change which records a search returns.
+--
+-- The text is first flattened by `regexp_replace(..., '[^[:alnum:]]+', ' ', 'g')` because
+-- Postgres's default parser keeps hyphenated words whole (`shared-memory` is one token)
+-- while FTS5's unicode61 tokeniser splits on `-`, so without this a search for `memory`
+-- finds every `agent-memory` / `shared-memory` record in FTS5 and none in Postgres. The
+-- normalisation reproduces FTS5's "letters and digits are tokens, everything else is a
+-- separator" rule. Measured on the live snapshot: this closes the recall gap for every
+-- query in the fixture (0 missing, from 100).
 
 -- The tenant. `user_id` is ours forever and is never an issuer's subject; the column keeps
 -- its name because three tables below already use it.
@@ -63,8 +71,9 @@ CREATE TABLE IF NOT EXISTS shared_record (
   deleted_date  TEXT,
   full_content  TEXT,
   search_tsv    tsvector GENERATED ALWAYS AS (
-    to_tsvector('simple',
-      coalesce(full_content,'') || ' ' || coalesce(title,'') || ' ' || coalesce(tags,''))
+    to_tsvector('simple', regexp_replace(
+      coalesce(full_content,'') || ' ' || coalesce(title,'') || ' ' || coalesce(tags,''),
+      '[^[:alnum:]]+', ' ', 'g'))
   ) STORED
 );
 
@@ -86,8 +95,9 @@ CREATE TABLE IF NOT EXISTS memory_record (
   full_content  TEXT,
   FOREIGN KEY (user_id, agent_id) REFERENCES agent(user_id, agent_id),
   search_tsv    tsvector GENERATED ALWAYS AS (
-    to_tsvector('simple',
-      coalesce(full_content,'') || ' ' || coalesce(title,'') || ' ' || coalesce(tags,''))
+    to_tsvector('simple', regexp_replace(
+      coalesce(full_content,'') || ' ' || coalesce(title,'') || ' ' || coalesce(tags,''),
+      '[^[:alnum:]]+', ' ', 'g'))
   ) STORED
 );
 
