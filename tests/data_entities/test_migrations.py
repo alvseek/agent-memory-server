@@ -60,15 +60,21 @@ def test_reapplying_is_a_no_op() -> None:
 
 def test_an_existing_base_schema_gets_the_ras_migration() -> None:
     """The retrofitted case: an old database carries the base schema and no history. 0001
-    is idempotent so it records as a no-op; 0002 is the one that changes anything, and the
-    store ends able to hold `ras`."""
+    is idempotent so it records as a no-op; the later migrations are the ones that change
+    anything, and the store ends able to hold `ras` and the coding lane."""
     conn = _conn()
     conn.executescript(_base_sql())  # as an existing store looks before the runner existed
     assert "ras" not in _shared_ddl(conn)
     ran = apply_migrations(conn)
-    assert ran == ["0001_init", "0002_shared_record_ras", "0003_record_content_summary"]
+    assert ran == [
+        "0001_init",
+        "0002_shared_record_ras",
+        "0003_record_content_summary",
+        "0004_shared_record_coding_reasoning",
+    ]
     assert "'ras'" in _shared_ddl(conn)
-    assert conn.execute("SELECT COUNT(*) FROM migration_history").fetchone()[0] == 3
+    assert "'coding_reasoning'" in _shared_ddl(conn)
+    assert conn.execute("SELECT COUNT(*) FROM migration_history").fetchone()[0] == 4
 
 
 def test_the_ras_migration_preserves_rows_and_rebuilds_the_fts_index() -> None:
@@ -86,6 +92,28 @@ def test_the_ras_migration_preserves_rows_and_rebuilds_the_fts_index() -> None:
     assert conn.execute("SELECT COUNT(*) FROM shared_record").fetchone()[0] == 1
     hits = conn.execute("SELECT rowid FROM shared_fts WHERE shared_fts MATCH 'thought'").fetchall()
     assert [h[0] for h in hits] == [7]
+
+
+def test_the_coding_reasoning_migration_preserves_content_summary() -> None:
+    """0004 rebuilds `shared_record`, and `content_summary` was added by 0003, after 0002's
+    rebuild. A copy of 0002's column list would drop the value on every existing row, which
+    a schema-only check cannot see. The migration file is run directly here, on a store
+    already at the 0003 shape, so the copy path is what is exercised."""
+    conn = _conn()
+    for name in ("0001_init", "0002_shared_record_ras", "0003_record_content_summary"):
+        conn.executescript(next(m for m in known() if m.name == name).sql)
+    conn.execute(
+        "INSERT INTO shared_record "
+        "(id, uuid, user_id, record_type, created_date, modified_date, full_content, "
+        "content_summary) VALUES "
+        "(7, 's1', 'alvi', 'reasoning', 'd', 'd', 'deep thought', 'a summary')"
+    )
+    conn.commit()
+    conn.executescript(
+        next(m for m in known() if m.name == "0004_shared_record_coding_reasoning").sql
+    )
+    row = conn.execute("SELECT content_summary FROM shared_record WHERE id = 7").fetchone()
+    assert row["content_summary"] == "a summary"
 
 
 def test_status_reports_pending_then_applied() -> None:

@@ -185,6 +185,11 @@ def build_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @api.get("/api/coding-reasoning")
+    def coding_reasoning(svc: MemoryService = Depends(_tenant_service)) -> list[dict[str, Any]]:
+        """The coding-reasoning lane, loaded whole. Deliberately not part of ``/api/awaken``."""
+        return svc.coding_reasoning()
+
     # --- reads ---
 
     @api.get("/api/record/{uuid}")
@@ -246,8 +251,9 @@ def build_router(
     def insert(body: InsertBody, svc: MemoryService = Depends(_tenant_service)) -> dict[str, Any]:
         """Append a new item (record assembled server-side). ``scope="agent"`` (default)
         needs an ``agent_id`` that already exists; ``scope="shared"`` takes none. Gated
-        record types (episode|reasoning|emotional|knowledge) need the ``template_version``
-        of the template the content was built against — missing or stale is a 400."""
+        record types (episode|reasoning|emotional|knowledge|coding_reasoning) need the
+        ``template_version`` of the template the content was built against — missing or
+        stale is a 400."""
         try:
             if content is not None and content.available():
                 content.check_template_version(body.record_type, body.template_version)

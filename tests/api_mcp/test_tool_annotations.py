@@ -18,7 +18,7 @@ from tests.conftest import mcp_for
 CF = Path(__file__).resolve().parents[2] / "control-files"
 
 READ_ONLY = {
-    "ping", "help", "awaken", "get", "query", "search", "list_agents",
+    "ping", "help", "awaken", "coding_reasoning", "get", "query", "search", "list_agents",
     "list_procedures", "read_procedure", "list_resources", "read_resource",
     "permanent_layer",
 }

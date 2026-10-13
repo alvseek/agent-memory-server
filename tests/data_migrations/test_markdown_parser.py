@@ -85,6 +85,15 @@ def test_parse_shared_reasoning_reuses_embedded_uuid() -> None:
     assert items[0].key == items[0].uuid  # key = existing uuid
 
 
+def test_parse_coding_reasoning_shares_the_pattern_shape() -> None:
+    """The lane is the same level-3 shape as the universal set; only the caller's record
+    type differs, so the parser reuses the one implementation."""
+    items = P.parse_coding_reasoning(_SHARED_REASONING)
+    assert len(items) == 2
+    assert items[0].uuid == "fc94d140-905e-4f3d-8175-fafd8b84a109"
+    assert items[0].key == items[0].uuid
+
+
 def test_parse_active_episodes_dedup_and_date() -> None:
     eps = P.parse_active_episodes(_INDEX)
     files = [e["file"] for e in eps]

@@ -47,6 +47,29 @@ def test_insert_shared_scope_writes_fleet_memory(tmp_path: Path) -> None:
     assert out["content"] == "pattern"
 
 
+def test_insert_shared_scope_accepts_the_coding_reasoning_lane(tmp_path: Path) -> None:
+    """The coding lane is a shared type of its own, so a shared insert names it and the
+    row lands ownerless like any other fleet memory."""
+    _repo, svc = _svc(tmp_path)
+    out = svc.insert(scope="shared", record_type="coding_reasoning", content="a coding pattern")
+    assert "agent_id" not in out
+    assert out["record_type"] == "coding_reasoning"
+    assert [r["content"] for r in svc.query(record_type="coding_reasoning")] == [
+        "a coding pattern"
+    ]
+
+
+def test_the_coding_lane_is_readable_but_absent_from_a_chat_awakening(tmp_path: Path) -> None:
+    """The lane is fleet memory, so it is readable on demand; but `awaken` selects its
+    universal layer by `record_type`, so a chat agent's payload never carries it."""
+    _repo, svc = _svc(tmp_path)
+    svc.insert(scope="shared", record_type="coding_reasoning", content="a coding pattern")
+    svc.insert(scope="shared", record_type="reasoning", content="a universal pattern")
+    assert [r["content"] for r in svc.coding_reasoning()] == ["a coding pattern"]
+    shared = [r["content"] for r in svc.awaken("meta")["shared"]["reasoning"]]
+    assert shared == ["a universal pattern"]
+
+
 def test_insert_agent_scope_without_an_agent_id_is_refused(tmp_path: Path) -> None:
     """Neither contradiction may be resolved by guessing: either guess would put the
     row in a table the caller did not mean, and an insert cannot be undone by retrying."""

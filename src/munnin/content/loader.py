@@ -123,6 +123,7 @@ _PERMANENT_LAYER_VERSION = re.compile(
 TEMPLATE_BY_RECORD_TYPE = {
     "episode": "episodic-entry-template",
     "reasoning": "reasoning-pattern-template",
+    "coding_reasoning": "reasoning-pattern-template",
     "emotional": "emotional-moment-template",
     "knowledge": "knowledge-file-template",
 }

@@ -1,6 +1,7 @@
 """Template-version write gate — stamp parsing + per-type enforcement.
 
-The four resource templates carry a ``template_version`` stamp; the loader reads it
+The resource templates carry a ``template_version`` stamp (the coding-reasoning lane
+reuses the reasoning one); the loader reads it
 live from the documents (no second registry), and ``check_template_version`` refuses
 gated-type writes built against anything else. ``identity`` / ``user_profile`` have no
 template and pass through.
@@ -26,21 +27,23 @@ def loader() -> ContentLoader:
     return ContentLoader(CF)
 
 
-def test_all_four_live_templates_carry_a_version_shaped_stamp(
+def test_all_live_templates_carry_a_version_shaped_stamp(
     loader: ContentLoader,
 ) -> None:
     versions = {
         rtype: loader.template_version(resource)
         for rtype, resource in TEMPLATE_BY_RECORD_TYPE.items()
     }
-    assert set(versions) == {"episode", "reasoning", "emotional", "knowledge"}
+    assert set(versions) == {
+        "episode", "reasoning", "coding_reasoning", "emotional", "knowledge",
+    }
     for rtype, version in versions.items():
         assert _VERSION_SHAPE.match(version), f"{rtype}: {version!r}"
 
 
-def test_mapping_covers_exactly_the_four_gated_types() -> None:
+def test_mapping_covers_exactly_the_gated_types() -> None:
     assert set(TEMPLATE_BY_RECORD_TYPE) == {
-        "episode", "reasoning", "emotional", "knowledge",
+        "episode", "reasoning", "coding_reasoning", "emotional", "knowledge",
     }
 
 

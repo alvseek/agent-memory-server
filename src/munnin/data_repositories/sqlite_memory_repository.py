@@ -179,7 +179,7 @@ class SqliteMemoryRepository:
         use; an insert is deciding *where the row goes*, and nothing in the arguments
         can imply that. ``record_type`` is enforced by the table's own CHECK — passing
         an episode is refused rather than silently accepted into a table that is only
-        ever reasoning and knowledge.
+        ever reasoning, coding reasoning, knowledge, RAS and the profile.
 
         The schema stays the single enforcer of that rule — it is not restated here —
         but its rejection is translated into ``ValueError`` so both faces can report it

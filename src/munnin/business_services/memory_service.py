@@ -219,6 +219,18 @@ class MemoryService:
         r = self._repo.get(uuid)
         return _record(r) if r else None
 
+    def coding_reasoning(self) -> list[dict[str, Any]]:
+        """The coding-reasoning lane, loaded whole.
+
+        Fleet memory like ``shared.reasoning``, but only ever on a deliberate ask: ``awaken``
+        selects its universal layer by ``record_type is reasoning``, so this lane never
+        reaches a chat agent. This reuses ``query_shared``'s type filter rather than adding a
+        repository op, because the lane is one record type over a read that already exists."""
+        return [
+            _whole(r)
+            for r in self._repo.query_shared(record_type=RecordType.coding_reasoning)
+        ]
+
     def query(
         self,
         *,

@@ -78,6 +78,21 @@ def test_shared_knowledge_present(tmp_path: Path) -> None:
     assert all(item["content"] for item in payload["shared"]["knowledge"])
 
 
+def test_the_coding_lane_imports_and_stays_out_of_a_chat_awakening(tmp_path: Path) -> None:
+    """The lane is imported as its own type: queryable, and absent from the payload a chat
+    agent's `awaken` returns."""
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    counts = import_shared(repo, _REAL)
+    lane = repo.query_shared(record_type=RecordType.coding_reasoning)
+    src = (_REAL / "shared-memory" / "coding-reasoning-memory.md").read_text(encoding="utf-8")
+    assert len(lane) == len(P.parse_coding_reasoning(src)) >= 1
+    assert counts["shared/coding_reasoning"] == len(lane)
+    payload = MemoryService(repo, user_id="alvi").awaken("meta")
+    lane_uuids = {r.uuid for r in lane}
+    assert lane_uuids
+    assert not (lane_uuids & {r["uuid"] for r in payload["shared"]["reasoning"]})
+
+
 # --- SP-4: full-fleet round-trip fidelity gate ---
 
 

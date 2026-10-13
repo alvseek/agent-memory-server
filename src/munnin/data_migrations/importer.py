@@ -167,23 +167,35 @@ def parse_fleet_agents(source_root: Path | str) -> list[Agent]:
 
 
 def import_shared(repo: MemoryRepository, source_root: Path | str) -> dict[str, int]:
-    """Import the fleet-shared always-load layer (core-reasoning, core-knowledge, the
-    universal RAS triggers, and the user profile) into ``shared_record``. Call **once** per
-    DB — ``import_fleet`` does. Returns a count map.
+    """Import the fleet-shared always-load layer (core-reasoning, the coding-reasoning lane,
+    core-knowledge, the universal RAS triggers, and the user profile) into ``shared_record``.
+    Call **once** per DB — ``import_fleet`` does. Returns a count map.
 
     Needs no agent to exist: this memory belongs to the fleet, which is the whole reason
     it stopped living under a sentinel owner.
 
     Reasoning, knowledge and the universal RAS triggers are framework invariants and their
-    absence is a broken store, so they are read unguarded. The profile is not: it is a fact
-    about a person who may simply not have been asked yet, so a missing file skips quietly
-    and leaves that record to the first-run bootstrap at awakening."""
+    absence is a broken store, so they are read unguarded. The coding lane and the profile
+    are not: a store that has not adopted the coding lane yet is a valid store, and a profile
+    is a fact about a person who may simply not have been asked, so each skips quietly."""
     root = Path(source_root)
     counts: Counter[str] = Counter()
     sr = _read(root / "shared-memory" / "core-reasoning-memory.md")
     for it in P.parse_shared_reasoning(sr):
         repo.insert_shared(_to_shared_record(it, RecordType.reasoning))
         counts[f"{_SHARED_UUID_SCOPE}/reasoning"] += 1
+    # The coding lane: fleet memory too, but a type of its own so `awaken` never hands it to
+    # a chat agent. Read guarded, like the profile, because a store without the lane is not
+    # a broken store.
+    cr_path = root / "shared-memory" / "coding-reasoning-memory.md"
+    if cr_path.exists():
+        for it in P.parse_coding_reasoning(_read(cr_path)):
+            repo.insert_shared(_to_shared_record(it, RecordType.coding_reasoning))
+            counts[f"{_SHARED_UUID_SCOPE}/coding_reasoning"] += 1
+    else:
+        _log.info(
+            "import shared: no coding-reasoning-memory.md — the coding lane stays empty"
+        )
     sk = _read(root / "shared-memory" / "core-knowledge-memory.md")
     for it in P.parse_shared_knowledge(sk):
         repo.insert_shared(_to_shared_record(it, RecordType.knowledge))

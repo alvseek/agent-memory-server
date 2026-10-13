@@ -126,7 +126,8 @@ class PostgresMemoryRepository:
         return _row_to_record(row)
 
     def insert_shared(self, record: SharedRecord) -> SharedRecord:
-        """Append a new fleet-shared item (reasoning, knowledge, ras, user_profile)."""
+        """Append a new fleet-shared item (reasoning, coding_reasoning, knowledge, ras,
+        user_profile)."""
         created = record.created_date or _now()
         modified = record.modified_date or created
         with self._conn() as conn, conn.cursor() as cur:

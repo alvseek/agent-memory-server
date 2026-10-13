@@ -49,7 +49,13 @@ class RecordType(str, Enum):
 
     ``ras`` is fleet memory as well: the universal Reticular Activation triggers, each an
     automatic trigger-to-action protocol (memory recovery, copy-paste). It is loaded whole
-    at awaken alongside reasoning and knowledge, and like them it belongs to no agent."""
+    at awaken alongside reasoning and knowledge, and like them it belongs to no agent.
+
+    ``coding_reasoning`` is fleet memory too: the reasoning patterns that only fire for a
+    coding agent. It is a type of its own rather than part of ``reasoning`` on purpose:
+    ``awaken`` loads ``shared.reasoning`` for every agent, chat agents included, so a
+    distinct type is what keeps coding patterns out of a chat awakening. The coding
+    awakening reads this lane through its own call."""
 
     episode = "episode"
     knowledge = "knowledge"
@@ -58,6 +64,7 @@ class RecordType(str, Enum):
     emotional = "emotional"
     user_profile = "user_profile"
     ras = "ras"
+    coding_reasoning = "coding_reasoning"
 
 
 #: The record types ``shared_record``'s CHECK admits, in the order the schema lists them.
@@ -66,6 +73,7 @@ class RecordType(str, Enum):
 #: two together, which is the only thing that makes naming them here safe.
 SHARED_RECORD_TYPES: tuple[RecordType, ...] = (
     RecordType.reasoning,
+    RecordType.coding_reasoning,
     RecordType.knowledge,
     RecordType.ras,
     RecordType.user_profile,

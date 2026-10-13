@@ -9,6 +9,7 @@ fails the other, which is exactly the failure mode worth keeping apart.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 import pytest
@@ -98,10 +99,12 @@ def test_the_same_pair_cannot_map_twice() -> None:
         conn.execute("INSERT INTO user_identity VALUES ('https://a.example','sub_a','alvi','d')")
 
 
-@pytest.mark.parametrize("rtype", ["reasoning", "knowledge", "ras", "user_profile"])
-def test_shared_accepts_its_four_record_types(rtype: str) -> None:
-    """Fleet memory is two kinds of shared thinking, the universal RAS triggers, and one
-    fact about the user."""
+@pytest.mark.parametrize(
+    "rtype", ["reasoning", "coding_reasoning", "knowledge", "ras", "user_profile"]
+)
+def test_shared_accepts_its_five_record_types(rtype: str) -> None:
+    """Fleet memory is the universal reasoning patterns, the coding-only ones, the
+    knowledge fundamentals, the universal RAS triggers, and one fact about the user."""
     _db().execute(_INSERT_SHARED, (f"s-{rtype}", "alvi", rtype))
 
 
@@ -132,8 +135,13 @@ def test_the_declared_shared_types_match_the_schema_check() -> None:
     from munnin.data_entities.memory_record import SHARED_RECORD_TYPES
 
     ddl = _db().execute("SELECT sql FROM sqlite_master WHERE name = 'shared_record'").fetchone()[0]
-    check = ddl.split("record_type   TEXT    NOT NULL CHECK (record_type IN (")[1]
-    declared_in_schema = [v.strip().strip("'") for v in check.split("))")[0].split(",")]
+    # Whitespace-tolerant: a table rebuild re-aligns the columns, and that spacing is not
+    # part of the contract this test pins.
+    match = re.search(
+        r"record_type\s+TEXT\s+NOT NULL CHECK \(record_type IN \(([^)]+)\)\)", ddl
+    )
+    assert match is not None, "shared_record's record_type CHECK was not found"
+    declared_in_schema = [v.strip().strip("'") for v in match.group(1).split(",")]
     assert [t.value for t in SHARED_RECORD_TYPES] == declared_in_schema
 
 

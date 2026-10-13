@@ -152,7 +152,7 @@ def parse_agent_core(text: str) -> dict[str, list[ParsedItem]]:
             key = _CORE_IDENTITY_SECTIONS[name]
             result["identity"].append(ParsedItem(title=name.title(), body=body, key=key))
         elif name == "DOMAIN REASONING MEMORY":
-            result["reasoning"].extend(_patterns(body, "reasoning"))
+            result["reasoning"].extend(_patterns(body))
         elif name == "DOMAIN EMOTIONAL MEMORY":
             for mtitle, mbody in split_sections(body, 3):
                 date = _first_date(mtitle)
@@ -200,7 +200,7 @@ def parse_archived_moments(text: str) -> list[ParsedItem]:
     return items
 
 
-def _patterns(text: str, record_type: str) -> list[ParsedItem]:
+def _patterns(text: str) -> list[ParsedItem]:
     """Level-3 items that may carry an embedded **UUID** to reuse."""
     items: list[ParsedItem] = []
     for title, body in split_sections(text, 3):
@@ -255,7 +255,16 @@ def parse_identity_fields(bodies: list[str]) -> dict[str, str | None]:
 
 
 def parse_shared_reasoning(text: str) -> list[ParsedItem]:
-    return _patterns(text, "reasoning")
+    return _patterns(text)
+
+
+def parse_coding_reasoning(text: str) -> list[ParsedItem]:
+    """The coding-reasoning lane: the same level-3 pattern shape as the universal reasoning
+    set, in its own corpus. Its records are typed ``coding_reasoning``, so ``awaken`` never
+    returns them to a chat agent; the coding awakening reads the lane through its own call.
+    The title is the key unless the block carries an embedded ``**UUID**``, exactly as the
+    universal set does."""
+    return _patterns(text)
 
 
 def parse_shared_knowledge(text: str) -> list[ParsedItem]:
@@ -271,7 +280,7 @@ def parse_shared_ras(text: str) -> list[ParsedItem]:
     A trigger is a titled protocol with a stable identity, which is the same shape as a
     reasoning pattern; only the record type differs, so the shared pattern parser serves
     both."""
-    return _patterns(text, "ras")
+    return _patterns(text)
 
 
 # The line marker the profile is recognized by. It is also what `user-profile-claude.sh`
