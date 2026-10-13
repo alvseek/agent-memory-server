@@ -40,7 +40,7 @@ from munnin.data_entities.postgres_migrations import ensure_schema
 _COL = (
     "id", "uuid", "user_id", "agent_id", "record_type", "project", "title",
     "tags", "created_date", "modified_date", "archived_date", "deleted_date",
-    "full_content",
+    "full_content", "content_summary",
 )
 _COLUMNS = ", ".join(_COL)
 _SHARED_COL = tuple(c for c in _COL if c != "agent_id")
@@ -94,21 +94,23 @@ class PostgresMemoryRepository:
                     INSERT INTO memory_record
                         (uuid, user_id, agent_id, record_type, project, title,
                          tags, created_date, modified_date, archived_date,
-                         deleted_date, full_content)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         deleted_date, full_content, content_summary)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (uuid) DO UPDATE SET
                         agent_id=excluded.agent_id, record_type=excluded.record_type,
                         project=excluded.project, title=excluded.title, tags=excluded.tags,
                         modified_date=excluded.modified_date,
                         archived_date=excluded.archived_date,
                         deleted_date=excluded.deleted_date,
-                        full_content=excluded.full_content
+                        full_content=excluded.full_content,
+                        content_summary=excluded.content_summary
                     """,
                     (
                         record.uuid, self._user_id, record.agent_id,
                         record.record_type.value, record.project, record.title,
                         json.dumps(record.tags or []), created, modified,
                         record.archived_date, record.deleted_date, record.full_content,
+                        record.content_summary,
                     ),
                 )
             except psycopg.errors.ForeignKeyViolation as exc:
@@ -134,21 +136,22 @@ class PostgresMemoryRepository:
                     INSERT INTO shared_record
                         (uuid, user_id, record_type, project, title,
                          tags, created_date, modified_date, archived_date,
-                         deleted_date, full_content)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         deleted_date, full_content, content_summary)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (uuid) DO UPDATE SET
                         record_type=excluded.record_type,
                         project=excluded.project, title=excluded.title, tags=excluded.tags,
                         modified_date=excluded.modified_date,
                         archived_date=excluded.archived_date,
                         deleted_date=excluded.deleted_date,
-                        full_content=excluded.full_content
+                        full_content=excluded.full_content,
+                        content_summary=excluded.content_summary
                     """,
                     (
                         record.uuid, self._user_id, record.record_type.value,
                         record.project, record.title, json.dumps(record.tags or []),
                         created, modified, record.archived_date,
-                        record.deleted_date, record.full_content,
+                        record.deleted_date, record.full_content, record.content_summary,
                     ),
                 )
             except psycopg.errors.CheckViolation as exc:
@@ -483,6 +486,7 @@ def _row_to_shared(row: dict) -> SharedRecord:
         archived_date=row["archived_date"],
         deleted_date=row["deleted_date"],
         full_content=row["full_content"],
+        content_summary=row["content_summary"],
     )
 
 
@@ -512,4 +516,5 @@ def _row_to_record(row: dict) -> MemoryRecord:
         archived_date=row["archived_date"],
         deleted_date=row["deleted_date"],
         full_content=row["full_content"],
+        content_summary=row["content_summary"],
     )

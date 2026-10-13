@@ -106,6 +106,11 @@ class SharedRecord:
     id: int | None = None
     project: str | None = None  # reserved for Hermod's project scope; unused by Munnin
     title: str | None = None
+    # The authored one-line summary of ``full_content``, shown beside the title wherever a
+    # list of records is rendered. Populated for project-keyed rows (a project-context entry's
+    # summary is what the context index shows); NULL for Munnin's own records until one has a
+    # summary worth storing.
+    content_summary: str | None = None
     tags: list[str] = field(default_factory=list)
     created_date: str | None = None
     modified_date: str | None = None

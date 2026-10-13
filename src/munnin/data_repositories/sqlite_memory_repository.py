@@ -34,7 +34,7 @@ from munnin.data_entities.schema_migrations import apply_migrations
 _COL = (
     "id", "uuid", "user_id", "agent_id", "record_type", "project", "title",
     "tags", "created_date", "modified_date", "archived_date", "deleted_date",
-    "full_content",
+    "full_content", "content_summary",
 )
 _COLUMNS = ", ".join(_COL)
 # shared_record is memory_record minus its owner — the same difference the dataclasses have.
@@ -133,12 +133,13 @@ class SqliteMemoryRepository:
                     ({_INSERT_COLUMNS})
                 VALUES (:uuid, :user_id, :agent_id, :record_type, :project, :title,
                         :tags, :created_date, :modified_date, :archived_date,
-                        :deleted_date, :full_content)
+                        :deleted_date, :full_content, :content_summary)
                 ON CONFLICT(uuid) DO UPDATE SET
                     agent_id=excluded.agent_id, record_type=excluded.record_type,
                     project=excluded.project, title=excluded.title, tags=excluded.tags,
                     modified_date=excluded.modified_date, archived_date=excluded.archived_date,
-                    deleted_date=excluded.deleted_date, full_content=excluded.full_content
+                    deleted_date=excluded.deleted_date, full_content=excluded.full_content,
+                    content_summary=excluded.content_summary
                 """,
                     {
                         "uuid": record.uuid,
@@ -153,6 +154,7 @@ class SqliteMemoryRepository:
                         "archived_date": record.archived_date,
                         "deleted_date": record.deleted_date,
                         "full_content": record.full_content,
+                        "content_summary": record.content_summary,
                     },
                 )
             except sqlite3.IntegrityError as exc:
@@ -193,12 +195,13 @@ class SqliteMemoryRepository:
                     ({_SHARED_INSERT_COLUMNS})
                 VALUES (:uuid, :user_id, :record_type, :project, :title,
                         :tags, :created_date, :modified_date, :archived_date,
-                        :deleted_date, :full_content)
+                        :deleted_date, :full_content, :content_summary)
                 ON CONFLICT(uuid) DO UPDATE SET
                     record_type=excluded.record_type,
                     project=excluded.project, title=excluded.title, tags=excluded.tags,
                     modified_date=excluded.modified_date, archived_date=excluded.archived_date,
-                    deleted_date=excluded.deleted_date, full_content=excluded.full_content
+                    deleted_date=excluded.deleted_date, full_content=excluded.full_content,
+                    content_summary=excluded.content_summary
                 """,
                     {
                         "uuid": record.uuid,
@@ -212,6 +215,7 @@ class SqliteMemoryRepository:
                         "archived_date": record.archived_date,
                         "deleted_date": record.deleted_date,
                         "full_content": record.full_content,
+                        "content_summary": record.content_summary,
                     },
                 )
             except sqlite3.IntegrityError as exc:
@@ -665,6 +669,7 @@ def _row_to_shared(row: sqlite3.Row) -> SharedRecord:
         archived_date=row["archived_date"],
         deleted_date=row["deleted_date"],
         full_content=row["full_content"],
+        content_summary=row["content_summary"],
     )
 
 
@@ -694,4 +699,5 @@ def _row_to_record(row: sqlite3.Row) -> MemoryRecord:
         archived_date=row["archived_date"],
         deleted_date=row["deleted_date"],
         full_content=row["full_content"],
+        content_summary=row["content_summary"],
     )

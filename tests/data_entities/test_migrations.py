@@ -66,9 +66,9 @@ def test_an_existing_base_schema_gets_the_ras_migration() -> None:
     conn.executescript(_base_sql())  # as an existing store looks before the runner existed
     assert "ras" not in _shared_ddl(conn)
     ran = apply_migrations(conn)
-    assert ran == ["0001_init", "0002_shared_record_ras"]
+    assert ran == ["0001_init", "0002_shared_record_ras", "0003_record_content_summary"]
     assert "'ras'" in _shared_ddl(conn)
-    assert conn.execute("SELECT COUNT(*) FROM migration_history").fetchone()[0] == 2
+    assert conn.execute("SELECT COUNT(*) FROM migration_history").fetchone()[0] == 3
 
 
 def test_the_ras_migration_preserves_rows_and_rebuilds_the_fts_index() -> None:

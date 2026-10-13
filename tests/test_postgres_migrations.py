@@ -30,7 +30,7 @@ def test_ensure_schema_creates_tables_indexes_and_fts_column() -> None:
     with psycopg.connect(URL) as conn:
         _fresh_schema(conn)
         ran = pgm.ensure_schema(conn)
-        assert ran == ["0001_init"]
+        assert ran == ["0001_init", "0002_record_content_summary"]
         with conn.cursor() as cur:
             cur.execute(
                 "select tablename from pg_tables where schemaname='public' order by 1"
@@ -44,6 +44,14 @@ def test_ensure_schema_creates_tables_indexes_and_fts_column() -> None:
                 "memory_record",
                 "migration_history",
             } <= tables
+            # The summary column has to be on BOTH record tables: the pair differs by the
+            # owner and nothing else, so a column on one and not the other is a bug.
+            cur.execute(
+                "select table_name from information_schema.columns "
+                "where column_name='content_summary' "
+                "and table_name in ('memory_record','shared_record') order by 1"
+            )
+            assert [r[0] for r in cur.fetchall()] == ["memory_record", "shared_record"]
             cur.execute(
                 "select data_type from information_schema.columns "
                 "where table_name='memory_record' and column_name='search_tsv'"
@@ -60,9 +68,12 @@ def test_ensure_schema_creates_tables_indexes_and_fts_column() -> None:
 def test_ensure_schema_is_idempotent() -> None:
     with psycopg.connect(URL) as conn:
         _fresh_schema(conn)
-        assert pgm.ensure_schema(conn) == ["0001_init"]
+        assert pgm.ensure_schema(conn) == ["0001_init", "0002_record_content_summary"]
         assert pgm.ensure_schema(conn) == []
-        assert {m.version: s for m, s in pgm.status(conn)} == {"0001": "applied"}
+        assert {m.version: s for m, s in pgm.status(conn)} == {
+            "0001": "applied",
+            "0002": "applied",
+        }
 
 
 def test_generated_tsvector_populates_and_searches() -> None:
