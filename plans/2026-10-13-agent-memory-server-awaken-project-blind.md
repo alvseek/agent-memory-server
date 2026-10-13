@@ -52,6 +52,16 @@ Make `awaken` project-blind: the tool takes a domain and returns the memory set,
 6. **Deploy and verify live** — dispatch the Munnin release from `munnin-deploy`, then read `§ load-agent-memory` back over `read_procedure` and call `awaken` once, checking `latest_episode` is the newest overall. → verify: both reads above (crosses: production HTTP)
 7. **QA handoff** — build `qa/checklists/awaken-project-blind.md` with `/generate-qa-checklist`; the instrument exists (`qa/qa-map.md`, `qa/runbooks/munnin.md`, `qa/scripts/start-server.sh`).
 
+## Execution Log
+*2026-10-13, one session, in order.*
+
+- **Steps 1-3** — 10 edits applied through a script with a per-edit match assertion and a guard that refuses if `_select_latest` is referenced anywhere else (`all edits applied`, every file `compiles`). Focused tests 25 passed / 12 skipped; **full suite 531 passed, 24 skipped**.
+- **Step 4** — `storage-backends/db.md`: two lines changed (the call + the HTTP signature, and the `latest_episode` bullet). `control-files` compile test: 25 passed.
+- **Step 5** — `control-files`: commit `0acc6b8`, push **rejected** (upstream had moved), rebased onto `29e4212` (a Codex uninstaller landing in the same submodule) and pushed as `5bb5185`. Product: `605db45` (code, tests, gitlink), then `e0e3a8a` (gitlink bumped to `5bb5185`, plus both plan files).
+- **Failure found and fixed in this step** — the first push pointed the gitlink at `0acc6b8`, which the rebase had replaced and which was never on the remote, so the image build died at `actions/checkout` with *"remote error: upload-pack: not our ref 0acc6b8…"*. Fixed by the rebase and the bump; the `e0e3a8a` build succeeded (run `38395132492`).
+- **CI on `e0e3a8a` failed, and not from this change** — `tests/test_postgres_migrations.py:33` still expects `["0001_init", "0002_record_content_summary"]` while the repo now carries `0003_shared_record_coding_reasoning`. That expectation belongs to the coding-reasoning lane's piece; left untouched and recorded here.
+- **Step 6** — deploy dispatched `version=e0e3a8a command=deploy`, run `38395324661`, **success**. Verified live: the served `awaken-agent` no longer contains `awaken(domain, project)` nor `&project=`; the live tool schema reads `awaken(domain: string)`; a call returns the same eight keys with `latest_episode` = `b855f155…` (project `agent-memory-project`, the newest overall); and passing `project="hermod-deploy"` is ignored, returning that same episode.
+
 ## Quality Review
 - **Scope**: [filled by Step 7]
 - **Quality Standard**: not found — no `quality-standard.md` in this repo (globbed 2026-10-13); dimension review is freeform
@@ -60,7 +70,7 @@ Make `awaken` project-blind: the tool takes a domain and returns the memory set,
 
 ## QA Handoff
 - **Scope**: `memory_service.awaken`, both adapter faces, `control-files` served text
-- **QA instrument**: Set up — `qa/qa-map.md` + runbooks + scripts are present. Stack state to be read with `/qa-status` at the top of execution.
-- **Integration coverage**: steps 1-3 cross the DB (unit-tested through the repository fixture); step 6 crosses production HTTP (verified live). If the local stack is down, steps 1-3 ship with unit coverage only — to be confirmed before execution.
-- **Checklist**: [pending Step 7]
-- **Runtime verification**: **NOT DONE.** Next action: `/run-qa-test --checklist qa/checklists/awaken-project-blind.md` once the stack is up.
+- **QA instrument**: Present (`qa/qa-map.md`, `qa/runbooks/munnin.md`, `qa/scripts/*`); the local stack was never started for this piece
+- **Integration coverage**: steps 1-3 cross the DB and are covered by the unit suite through the repository fixture (531 passed); step 6 crosses production HTTP and was verified live against the deployed server
+- **Checklist**: [pending Step 8]
+- **Runtime verification**: **NOT DONE** as a bench run. Next action: `/run-qa-test --checklist qa/checklists/awaken-project-blind.md` once the stack is up.
