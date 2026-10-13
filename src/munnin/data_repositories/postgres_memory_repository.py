@@ -266,8 +266,18 @@ class PostgresMemoryRepository:
         project: str | None,
         include_archived: bool,
     ) -> tuple[str, list[object]]:
-        where = ["user_id = %s", "deleted_date IS NULL"]
-        params: list[object] = [self._user_id]
+        # Tenancy + lifecycle invariants injected on every read, plus the corpus boundary:
+        # a `knowledge` row carrying a `project` is Hermod's project context rather than
+        # Munnin's memory, because that column is reserved for exactly that. One predicate
+        # here rather than a choice per caller, so no browse can surface another server's
+        # rows as general knowledge. Every other type keeps its project untouched, since an
+        # episode's project is how `awaken` selects that project's latest episode.
+        where = [
+            "user_id = %s",
+            "deleted_date IS NULL",
+            "(record_type <> %s OR project IS NULL)",
+        ]
+        params: list[object] = [self._user_id, RecordType.knowledge.value]
         if not include_archived:
             where.append("archived_date IS NULL")
         if agent_id is not None:
@@ -358,8 +368,11 @@ class PostgresMemoryRepository:
             "search_tsv @@ plainto_tsquery('simple', %s)",
             "user_id = %s",
             "deleted_date IS NULL",
+            # The corpus boundary, same predicate as `_filtered_sql`: a project-keyed
+            # `knowledge` row is Hermod's, so it must not surface through search either.
+            "(record_type <> %s OR project IS NULL)",
         ]
-        params: list[object] = [text, self._user_id]
+        params: list[object] = [text, self._user_id, RecordType.knowledge.value]
         if not include_archived:
             where.append("archived_date IS NULL")
         params.append(text)  # for ts_rank

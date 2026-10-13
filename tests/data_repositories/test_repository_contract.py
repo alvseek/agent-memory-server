@@ -37,9 +37,13 @@ def _mem(agent: str = "meta", content: str = "hello memory", **kw: Any) -> Memor
     )
 
 
-def _shared(rtype: RecordType, content: str) -> SharedRecord:
+def _shared(rtype: RecordType, content: str, **kw: Any) -> SharedRecord:
     return SharedRecord(
-        uuid=str(uuidlib.uuid4()), user_id=USER, record_type=rtype, full_content=content
+        uuid=str(uuidlib.uuid4()),
+        user_id=USER,
+        record_type=rtype,
+        full_content=content,
+        **kw,
     )
 
 
@@ -129,3 +133,44 @@ def test_query_without_agent_spans_both_tables(memory_repo: Any) -> None:
     memory_repo.insert_shared(shared)
     uuids = {r.uuid for r in memory_repo.query()}
     assert {mem.uuid, shared.uuid} <= uuids
+
+
+# --- the corpus boundary: a project-keyed `knowledge` row is Hermod's, not Munnin's ---
+
+
+def test_a_project_keyed_episode_is_still_readable(memory_repo: Any) -> None:
+    """Episodes keep their `project`, because that column is how ``awaken`` selects a
+    project's latest episode. A filter that reached them would hide real memory: measured
+    on the live store, 728 of 770 episodes carry a project."""
+    ep = _mem(record_type=RecordType.episode, project="hermod-server")
+    memory_repo.insert(ep)
+    assert [r.uuid for r in memory_repo.query()] == [ep.uuid]
+    assert [
+        r.uuid for r in memory_repo.query(agent_id="meta", record_type=RecordType.episode)
+    ] == [ep.uuid]
+    assert [r.uuid for r in memory_repo.search("hello")] == [ep.uuid]
+
+
+def test_a_project_keyed_knowledge_row_is_not_munnin_memory(memory_repo: Any) -> None:
+    """A ``knowledge`` row carrying a ``project`` is Hermod's project context, so no read
+    Munnin serves may return it, not even one that asks for that project by name. The
+    unfiltered sibling is asserted alongside it, so a filter that excluded *everything*
+    fails here too rather than passing quietly."""
+    ours = _shared(RecordType.knowledge, "shipping cadence")
+    theirs = _shared(RecordType.knowledge, "hermod store notes", project="hermod-server")
+    agent_knowledge = _mem(
+        record_type=RecordType.knowledge, content="hermod store notes too",
+        project="hermod-server",
+    )
+    memory_repo.insert_shared(ours)
+    memory_repo.insert_shared(theirs)
+    memory_repo.insert(agent_knowledge)
+
+    assert [
+        r.uuid for r in memory_repo.query_shared(record_type=RecordType.knowledge)
+    ] == [ours.uuid]
+    assert [r.uuid for r in memory_repo.query(record_type=RecordType.knowledge)] == [ours.uuid]
+    assert memory_repo.query(project="hermod-server") == []
+    assert [r.uuid for r in memory_repo.search_shared("shipping")] == [ours.uuid]
+    assert memory_repo.search_shared("hermod") == []
+    assert memory_repo.search("hermod") == []

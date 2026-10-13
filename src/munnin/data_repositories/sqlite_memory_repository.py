@@ -373,9 +373,18 @@ class SqliteMemoryRepository:
         are written once and cannot drift apart between the two tables. ``table`` comes
         from the ``_TABLES`` whitelist; ``agent_id`` is only ever passed for
         ``memory_record``, the only table that has the column."""
-        # Tenancy + lifecycle invariants injected on every read.
-        where = ["user_id = ?", "deleted_date IS NULL"]
-        params: list[object] = [self._user_id]
+        # Tenancy + lifecycle invariants injected on every read, plus the corpus boundary:
+        # a `knowledge` row carrying a `project` is Hermod's project context rather than
+        # Munnin's memory, because that column is reserved for exactly that. One predicate
+        # here rather than a choice per caller, so no browse can surface another server's
+        # rows as general knowledge. Every other type keeps its project untouched, since an
+        # episode's project is how `awaken` selects that project's latest episode.
+        where = [
+            "user_id = ?",
+            "deleted_date IS NULL",
+            "(record_type <> ? OR project IS NULL)",
+        ]
+        params: list[object] = [self._user_id, RecordType.knowledge.value]
         if not include_archived:
             where.append("archived_date IS NULL")
         if agent_id is not None:
@@ -504,8 +513,15 @@ class SqliteMemoryRepository:
         match = _to_fts_query(text)
         if not match:
             return []
-        where = [f"{index} MATCH ?", f"{alias}.user_id = ?", f"{alias}.deleted_date IS NULL"]
-        params: list[object] = [match, self._user_id]
+        where = [
+            f"{index} MATCH ?",
+            f"{alias}.user_id = ?",
+            f"{alias}.deleted_date IS NULL",
+            # The corpus boundary, same predicate as `_filtered_sql`: a project-keyed
+            # `knowledge` row is Hermod's, so it must not surface through search either.
+            f"({alias}.record_type <> ? OR {alias}.project IS NULL)",
+        ]
+        params: list[object] = [match, self._user_id, RecordType.knowledge.value]
         if not include_archived:
             where.append(f"{alias}.archived_date IS NULL")
         sql = (
