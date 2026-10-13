@@ -36,12 +36,14 @@ Make `awaken` project-blind: the tool takes a domain and returns the memory set,
 | 7 | Plan location | `plans/` in `agent-memory-server` | The cwd is `hermod-deploy`; the work lands in the memory server, and the wrap-up files it there |
 
 ## Success Criteria
-- [ ] `awaken` declares no project on the service, the MCP tool or the HTTP route; `_select_latest` is gone
-- [ ] A test asserts `latest_episode` is the newest episode overall regardless of its `project`
-- [ ] The whole suite is green (`pytest`), including the faces test and the repository contract test
-- [ ] The served `§ load-agent-memory` no longer instructs passing a project
-- [ ] Deployed, and verified live: the served text read back and one `awaken` call returning the newest episode overall
-- [ ] `qa/checklists/awaken-project-blind.md` built
+- [x] `awaken` declares no project on the service, the MCP tool or the HTTP route; `_select_latest` is gone — verified in the diff and live (`awaken(domain: string)` is what the served schema now shows)
+- [x] A test asserts `latest_episode` is the newest episode overall regardless of its `project` — `test_awaken_latest_episode_is_the_newest_overall`, green
+- [x] The whole suite is green — 531 passed, 24 skipped
+- [x] The served `§ load-agent-memory` no longer instructs passing a project — read back live after the deploy, both `awaken(domain, project)` and `&project=` absent
+- [x] Deployed, and verified live — deploy run `38395324661` succeeded; one `awaken` call returned `latest_episode` = `b855f155…`
+- [x] `qa/checklists/awaken-project-blind.md` built
+
+**Not met, and recorded rather than hidden**: main's CI is red for an unrelated stale expectation (`tests/test_postgres_migrations.py` still lists two migrations where the repo has three), and this plan's runtime verification is a written checklist that has not been run.
 
 ## Execution Steps
 1. **Service** — `src/munnin/business_services/memory_service.py`: `def awaken(self, domain: str)`; delete `_select_latest` (57-70); `latest = episodes[0] if episodes else None`; rewrite the docstring paragraph at 138-143 to say the newest episode overall is returned and the caller selects. → verify: `pytest tests/business_services/test_awaken.py` (crosses: DB — the suite's repository fixture)
@@ -63,14 +65,25 @@ Make `awaken` project-blind: the tool takes a domain and returns the memory set,
 - **Step 6** — deploy dispatched `version=e0e3a8a command=deploy`, run `38395324661`, **success**. Verified live: the served `awaken-agent` no longer contains `awaken(domain, project)` nor `&project=`; the live tool schema reads `awaken(domain: string)`; a call returns the same eight keys with `latest_episode` = `b855f155…` (project `agent-memory-project`, the newest overall); and passing `project="hermod-deploy"` is ignored, returning that same episode.
 
 ## Quality Review
-- **Scope**: [filled by Step 7]
-- **Quality Standard**: not found — no `quality-standard.md` in this repo (globbed 2026-10-13); dimension review is freeform
-- **Findings**: [pending]
-- **Fixed**: [pending]
+*Step 7, `/analyze-code-quality` in embedded mode. **Static** review: "is the code clean?"*
+
+- **Scope**: `src/munnin/business_services/memory_service.py`, `src/munnin/api_mcp/server.py`, `src/munnin/api_http/api.py`, `src/munnin/data_repositories/sqlite_memory_repository.py`, `tests/business_services/test_awaken.py`, `tests/data_repositories/test_repository_contract.py`, `control-files/procedures/memory/storage-backends/db.md`. Reconciled against the range `984e09d..HEAD`: the diff adds only the submodule gitlink and the two plan documents, both recorded in the Execution Log, and nothing logged is missing.
+- **Quality Standard**: not found — no `quality-standard.md` in this repo (globbed 2026-10-13); dimension review freeform, Dimension 8 skipped.
+- **Checks that ran**: `ruff check` clean on all six Python files; no leftover reference to `_select_latest` or to an `awaken(..., project...)` call anywhere in `src` or `tests`; `ruff format --check` flags 4 of the 6 files, but every flagged line is pre-existing and outside this change (42 of 85 files repo-wide are unformatted), so formatting is not a gate here and nothing was changed for it.
+- **Findings**: two, both Low.
+
+| # | Severity | File:Line | Issue | Fix Options |
+|---|----------|-----------|-------|-------------|
+| 1 | Low | `control-files/procedures/output/awaken-agent.db.md:115`, `output/refresh-memory.db.md:118` | The local compiled previews still show `awaken(domain, project)`. Gitignored, not shipped, and the live server does not read them (verified after the deploy). | A) Refresh them by running `compile-procedures.py`. B) Leave them; they are generated and ignored. |
+| 2 | Low | `control-files/docs/flows/awaken-db.md` | Entry-point references are stale: it cites `server.py:27` and `api.py:47` where the tool is at `server.py:120` and the route at `api.py:175`. The same doc also says `awaken-agent` is not served, which reads false beside the `read_procedure` that serves it, though I did not verify which sense of "served Prompts" it means. | A) Correct the two references and that sentence. B) Leave it; pre-existing and outside this change. |
+
+- **Fixed**: both Low findings, in one pass. (1) The compiled previews were refreshed by running `procedures/setup-scripts/compile-procedures.py`; no `awaken(domain, project)` remains in `procedures/output/` or `procedures/output-inline/`, and `awaken(domain)` is present at `output/awaken-agent.db.md:115`. (2) `docs/flows/awaken-db.md`: the Entry references corrected to `server.py:120` and `api.py:175`, the Validate reference corrected to `memory_service.py:110` (the same defect, one line below, fixed with it and disclosed), and the "not served" sentence replaced with what is true: the process is served as a procedure and the instruction component is inlined into it.
+- **Recorded decisions, not findings**: an extra `project` argument is silently ignored (technical-core round, option A, known when taken, and the served text was corrected in the same pass); `latest_episode` staying as the newest overall (technical-core round, option A).
 
 ## QA Handoff
 - **Scope**: `memory_service.awaken`, both adapter faces, `control-files` served text
-- **QA instrument**: Present (`qa/qa-map.md`, `qa/runbooks/munnin.md`, `qa/scripts/*`); the local stack was never started for this piece
+- **QA instrument**: Set up — `qa/qa-map.md` present and the bench built (all four R/I/A/O phases documented and promoted 2026-08-21)
 - **Integration coverage**: steps 1-3 cross the DB and are covered by the unit suite through the repository fixture (531 passed); step 6 crosses production HTTP and was verified live against the deployed server
-- **Checklist**: [pending Step 8]
-- **Runtime verification**: **NOT DONE** as a bench run. Next action: `/run-qa-test --checklist qa/checklists/awaken-project-blind.md` once the stack is up.
+- **Checklist**: [qa/checklists/awaken-project-blind.md](../../qa/checklists/awaken-project-blind.md) — 19 checks: 5 backed by named automated tests, 14 manual, none UI-bound (a server API has no UI binding). It is written and **not yet run**.
+- **Runtime verification**: **NOT DONE** as a bench run. Next action: `/run-qa-test --checklist qa/checklists/awaken-project-blind.md` with the stack up, started by `qa/scripts/start-server.sh` after `reset-db.sh` + `seed-meta.sh`.
+- **Known gap found while building this**: `qa/checklists/qa-checklists-map.md` is stale — last scanned 2026-08-21, it lists one checklist where ten now exist. That map belongs to `/build-qa-test`, and a one-row patch would imply the rest is current, so it was left for a rescan rather than edited here.
