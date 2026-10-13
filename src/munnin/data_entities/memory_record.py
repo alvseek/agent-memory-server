@@ -104,7 +104,12 @@ class SharedRecord:
     record_type: RecordType
     full_content: str
     id: int | None = None
-    project: str | None = None  # reserved for Hermod's project scope; unused by Munnin
+    #: Hermod's project scope rides here, and Munnin's own records carry it too: its importer
+    #: writes whatever a file's frontmatter declares, which is how 728 of 770 episodes came to
+    #: have one. The knowledge reads are what act on it — a `knowledge` row with a `project` is
+    #: Hermod's project context, so Munnin's knowledge reads exclude those and its episode reads
+    #: keep them (ADR-027).
+    project: str | None = None
     title: str | None = None
     # The authored one-line summary of ``full_content``, shown beside the title wherever a
     # list of records is rendered. Populated for project-keyed rows (a project-context entry's
