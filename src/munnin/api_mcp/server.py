@@ -118,15 +118,14 @@ def build_mcp(
         return {"instructions": INSTRUCTIONS, "procedures": _procedure_rows(content)}
 
     @mcp.tool(title="Awaken an agent", annotations=_READ)
-    def awaken(domain: str, project: str | None = None) -> dict[str, Any]:
+    def awaken(domain: str) -> dict[str, Any]:
         """Assemble and return an agent's full memory payload from the DB.
 
         Loads the shared always-load layer + the agent's identity whole, plus the
-        episodic/knowledge index and the latest episode body. ``project`` scopes which
-        episode's body comes back as ``latest_episode``: the newest for that project,
-        falling back to the newest overall. The whole index is always returned, each
-        entry carrying its ``project``."""
-        return _svc().awaken(domain, project)
+        episodic/knowledge index and the latest episode body. Project-blind: no project is
+        accepted or resolved, ``latest_episode`` is the newest episode overall, and the
+        whole index is returned with ``project`` on every entry so a caller selects."""
+        return _svc().awaken(domain)
 
     @mcp.tool(title="Read the coding-reasoning lane", annotations=_READ)
     def coding_reasoning() -> list[dict[str, Any]]:

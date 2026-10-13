@@ -54,22 +54,6 @@ def _index(r: SharedRecord) -> dict[str, Any]:
     }
 
 
-def _select_latest(
-    episodes: list[SharedRecord], project: str | None
-) -> SharedRecord | None:
-    """The newest episode for ``project`` (``episodes`` arrives newest-first), else the
-    newest overall. The fallback is deliberate and matches the awakening protocol: a
-    project with no episode of its own still gets the newest context, and the caller can
-    tell it is not project-specific because the returned record's own ``project`` differs."""
-    if not episodes:
-        return None
-    if project:
-        for r in episodes:
-            if r.project == project:
-                return r
-    return episodes[0]
-
-
 def _record(r: SharedRecord) -> dict[str, Any]:
     """Full public record projection — the whole item including body. Omits the
     internal ``id`` (never leaves the store) and ``user_id`` (tenancy-internal).
@@ -126,7 +110,7 @@ class MemoryService:
     def version(self) -> str:
         return __version__
 
-    def awaken(self, domain: str, project: str | None = None) -> dict[str, Any]:
+    def awaken(self, domain: str) -> dict[str, Any]:
         """Assemble an agent's memory payload from the DB (4-layer model, C-2).
 
         Always-load whole: layer i (fleet-shared reasoning, knowledge, the universal RAS
@@ -135,12 +119,12 @@ class MemoryService:
         (domain episode/knowledge) + the latest episode body. All reads are hot-read
         filtered (deleted + archived excluded) by the repository.
 
-        ``project`` scopes only which episode's body comes back as ``latest_episode``: the
-        newest episode whose own ``project`` matches, falling back to the newest overall
-        exactly as the awakening protocol describes (marked, there, as not project-specific).
-        The whole ``episodic_index`` is still returned, with ``project`` on each entry, so a
-        caller can select a different episode and fetch it by id. Identity, reasoning,
-        emotional and knowledge are project-independent and unaffected.
+        Project-blind by design: no project is accepted or resolved here. ``latest_episode``
+        is the newest episode overall, and the whole ``episodic_index`` is still returned
+        with ``project`` on every entry, so a caller selects the episode for its own project
+        and fetches it by id. The returned record's own ``project`` is how a caller tells a
+        match from a fallback. Identity, reasoning, emotional and knowledge carry no project
+        and are unaffected.
 
         ``shared.user_profile`` is a single record or ``None`` — who the user is does not
         vary by agent, so it is fleet memory rather than anyone's identity. ``None`` is a
@@ -170,7 +154,7 @@ class MemoryService:
             key=lambda r: (r.created_date or "", r.id or 0),
             reverse=True,
         )
-        latest = _select_latest(episodes, project)
+        latest = episodes[0] if episodes else None
 
         return {
             "agent_id": domain,

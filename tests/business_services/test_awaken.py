@@ -151,31 +151,26 @@ def test_ras_is_carried_whole_and_kept_out_of_reasoning(tmp_path: Path) -> None:
     assert [r["uuid"] for r in shared["reasoning"]] == ["sr1"]
 
 
-# --- project-scoped latest episode (the decoupled selection) ---
+# --- the latest episode is the newest overall (project-blind selection) ---
 
 
-def test_awaken_scopes_latest_episode_to_project(tmp_path: Path) -> None:
-    """`project` picks the newest episode of that project for the embedded body. A project
-    with no episode of its own falls back to the newest overall, which the caller can spot
-    because the returned record's own `project` differs."""
+def test_awaken_latest_episode_is_the_newest_overall(tmp_path: Path) -> None:
+    """No project is accepted or resolved: the embedded body is the newest episode overall,
+    whichever project it belongs to, and its own `project` is how a caller tells whether it
+    is the one it wants. The whole index comes back so the caller can select from it."""
     repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
     repo.insert(_rec("id1", "meta", RecordType.identity))
     repo.insert(
         _rec("ep_a", "meta", RecordType.episode, project="alpha", created_date="2026-08-01")
     )
     repo.insert(_rec("ep_b", "meta", RecordType.episode, project="beta", created_date="2026-08-09"))
-    svc = MemoryService(repo, user_id="alvi")
 
-    matched = svc.awaken("meta", project="alpha")
-    assert matched["latest_episode"]["uuid"] == "ep_a"
-    assert matched["latest_episode"]["project"] == "alpha"
+    payload = MemoryService(repo, user_id="alvi").awaken("meta")
 
-    fallback = svc.awaken("meta", project="gamma")
-    assert fallback["latest_episode"]["uuid"] == "ep_b"
-    assert fallback["latest_episode"]["project"] == "beta"  # not the requested project
-
-    unscoped = svc.awaken("meta")
-    assert unscoped["latest_episode"]["uuid"] == "ep_b"  # unchanged default
+    assert payload["latest_episode"]["uuid"] == "ep_b"
+    assert payload["latest_episode"]["project"] == "beta"
+    # the caller scoped to alpha can still pick its own episode out of the index
+    assert [r["project"] for r in payload["episodic_index"]] == ["beta", "alpha"]
 
 
 def test_awaken_index_entries_carry_project(tmp_path: Path) -> None:

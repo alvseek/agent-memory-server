@@ -378,7 +378,7 @@ class SqliteMemoryRepository:
         # Munnin's memory, because that column is reserved for exactly that. One predicate
         # here rather than a choice per caller, so no browse can surface another server's
         # rows as general knowledge. Every other type keeps its project untouched, since an
-        # episode's project is how `awaken` selects that project's latest episode.
+        # episode's project is how a caller selects that project's episode from the index.
         where = [
             "user_id = ?",
             "deleted_date IS NULL",

@@ -139,9 +139,10 @@ def test_query_without_agent_spans_both_tables(memory_repo: Any) -> None:
 
 
 def test_a_project_keyed_episode_is_still_readable(memory_repo: Any) -> None:
-    """Episodes keep their `project`, because that column is how ``awaken`` selects a
-    project's latest episode. A filter that reached them would hide real memory: measured
-    on the live store, 728 of 770 episodes carry a project."""
+    """Episodes keep their `project`, because that column is how a caller picks the episode
+    for its own project out of the awakening payload's index. A filter that reached them
+    would hide real memory: measured on the live store, 728 of 770 episodes carry a
+    project."""
     ep = _mem(record_type=RecordType.episode, project="hermod-server")
     memory_repo.insert(ep)
     assert [r.uuid for r in memory_repo.query()] == [ep.uuid]
