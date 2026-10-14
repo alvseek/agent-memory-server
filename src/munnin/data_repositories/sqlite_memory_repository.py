@@ -63,6 +63,10 @@ _SHARED_INSERT_COLUMNS = ", ".join(_SHARED_COL[1:])
 # Alias-prefixed lists for joins (the FTS search joins, on `m` and `s`).
 _M_COLUMNS = ", ".join(f"m.{c}" for c in _COL)
 _S_COLUMNS = ", ".join(f"s.{c}" for c in _SHARED_COL)
+# The columns `set_fields` may write, and the only names its `clearing` accepts. The
+# identity (uuid, record_type, agent_id), the lifecycle dates and the body are absent on
+# purpose: each is owned by the operation that means it.
+_METADATA_COLUMNS = ("title", "tags", "project", "content_summary")
 
 
 def _now() -> str:
@@ -75,6 +79,51 @@ def _to_fts_query(text: str) -> str:
     neutralises FTS5 operator syntax so any input (``C++``, ``store≠repo``, stray
     quotes) matches literally instead of erroring or injecting operators."""
     return " ".join('"' + term.replace('"', '""') + '"' for term in text.split())
+
+
+def _metadata_assignment(
+    *,
+    title: str | None,
+    tags: Sequence[str] | None,
+    project: str | None,
+    content_summary: str | None,
+    clearing: Sequence[str],
+) -> tuple[list[str], list[object]]:
+    """The SET clause for one metadata write, and its params, in column order.
+
+    Only the fields given are written, so ``None`` means "leave the stored value alone";
+    ``clearing`` is the only route to NULL, because an empty string is still a value and
+    for ``project`` that decides which corpus the row belongs to. Column names come from
+    ``_METADATA_COLUMNS`` and never from the caller, which is what keeps the interpolation
+    safe — the same discipline ``_TABLES`` applies to table names."""
+    unknown = [name for name in clearing if name not in _METADATA_COLUMNS]
+    if unknown:
+        raise ValueError(
+            f"cannot clear {unknown}: clearing accepts only {list(_METADATA_COLUMNS)}"
+        )
+    values: dict[str, object] = {}
+    if title is not None:
+        values["title"] = title
+    if tags is not None:
+        values["tags"] = json.dumps(list(tags))
+    if project is not None:
+        values["project"] = project
+    if content_summary is not None:
+        values["content_summary"] = content_summary
+    both = [name for name in clearing if name in values]
+    if both:
+        raise ValueError(
+            f"{both} given a value and named in clearing: pass one or the other"
+        )
+    assignments = [f"{name}=?" for name in _METADATA_COLUMNS if name in values]
+    params: list[object] = [values[name] for name in _METADATA_COLUMNS if name in values]
+    cleared = set(clearing)
+    assignments.extend(
+        f"{name}=NULL" for name in _METADATA_COLUMNS if name not in values and name in cleared
+    )
+    if not assignments:
+        raise ValueError("nothing to change: pass a field to set or a name to clear")
+    return assignments, params
 
 
 class SqliteMemoryRepository:
@@ -251,22 +300,19 @@ class SqliteMemoryRepository:
         old_string: str,
         new_string: str,
         replace_all: bool = False,
-        content_summary: str | None = None,
     ) -> SharedRecord:
         """Edit-tool-parity content edit. Unique-replace by default (raises if the
         substring is absent or ambiguous); ``replace_all=True`` replaces every
         occurrence. Bumps ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger.
 
-        ``content_summary`` replaces the record's one-line summary in the same UPDATE when
-        given, so a body edit and the summary that describes it land together or not at
-        all. ``None`` leaves the stored summary untouched.
+        The body only: metadata, the record's ``content_summary`` included, is
+        ``set_fields``' business, so each field has one writer.
 
         Raises ``LookupError`` if the record is missing/deleted, ``ValueError`` if
         ``old_string`` is not found or (without ``replace_all``) ambiguous."""
         return self._rewrite(
             uuid,
             lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid),
-            content_summary=content_summary,
         )
 
     def append(self, uuid: str, text: str) -> SharedRecord:
@@ -304,17 +350,12 @@ class SqliteMemoryRepository:
         self,
         uuid: str,
         transform: Callable[[str], str],
-        *,
-        content_summary: str | None = None,
     ) -> SharedRecord:
         """Read-modify-write one record's ``full_content`` under a single connection.
         ``transform`` maps the current body to the new body and may raise ``ValueError``
         to abort with nothing written (the UPDATE runs only after it returns). Bumps
         ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger. Raises
-        ``LookupError`` if the record is missing/deleted.
-
-        A non-``None`` ``content_summary`` is written by the same UPDATE, which is what
-        makes a body edit and its summary one write rather than two."""
+        ``LookupError`` if the record is missing/deleted."""
         with self._conn() as conn:
             table = self._locate(conn, uuid)
             if table is None:
@@ -326,12 +367,50 @@ class SqliteMemoryRepository:
             new_content = transform(row["full_content"] or "")
             columns = ["full_content=?", "modified_date=?"]
             params: list[object] = [new_content, _now()]
-            if content_summary is not None:
-                columns.append("content_summary=?")
-                params.append(content_summary)
             params.extend([uuid, self._user_id])
             conn.execute(
                 f"UPDATE {table} SET {', '.join(columns)} WHERE uuid=? AND user_id=?",
+                params,
+            )
+            updated = conn.execute(
+                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
+                (uuid, self._user_id),
+            ).fetchone()
+        return _row_from(table, updated)
+
+    def set_fields(
+        self,
+        uuid: str,
+        *,
+        title: str | None = None,
+        tags: Sequence[str] | None = None,
+        project: str | None = None,
+        content_summary: str | None = None,
+        clearing: Sequence[str] = (),
+    ) -> SharedRecord:
+        """Write metadata columns without reading or rewriting the body: one UPDATE of
+        the named columns plus ``modified_date``, on whichever table holds the uuid.
+
+        Raises ``LookupError`` if the record is missing/deleted, ``ValueError`` from
+        ``_metadata_assignment`` when the request would change nothing or names something
+        it may not. The FTS index re-syncs through the existing AFTER UPDATE trigger, which
+        covers ``full_content``, ``title`` and ``tags``."""
+        assignments, params = _metadata_assignment(
+            title=title,
+            tags=tags,
+            project=project,
+            content_summary=content_summary,
+            clearing=clearing,
+        )
+        with self._conn() as conn:
+            table = self._locate(conn, uuid)
+            if table is None:
+                raise LookupError(f"record not found: {uuid}")
+            assignments.append("modified_date=?")
+            params.append(_now())
+            params.extend([uuid, self._user_id])
+            conn.execute(
+                f"UPDATE {table} SET {', '.join(assignments)} WHERE uuid=? AND user_id=?",
                 params,
             )
             updated = conn.execute(

@@ -86,6 +86,7 @@ async def test_alice_can_read_her_own_record(tmp_path: Path) -> None:
     [
         ("GET", "/api/record/{uuid}", None),
         ("POST", "/api/edit", {"old_string": "zebra", "new_string": "hijacked"}),
+        ("POST", "/api/edit-metadata", {"title": "hijacked"}),
         ("POST", "/api/append", {"text": "tampered"}),
         ("POST", "/api/prepend", {"text": "tampered"}),
         ("POST", "/api/archive", {}),

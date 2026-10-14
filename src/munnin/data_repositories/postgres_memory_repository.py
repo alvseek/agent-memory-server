@@ -54,10 +54,60 @@ _SHARED_RECORD_TYPES = (
 )
 _AGENT_COL = ("user_id", "agent_id", "name", "role", "uuid", "created_date")
 _AGENT_COLUMNS = ", ".join(_AGENT_COL)
+# The columns `set_fields` may write, and the only names its `clearing` accepts. The
+# identity (uuid, record_type, agent_id), the lifecycle dates and the body are absent on
+# purpose: each is owned by the operation that means it.
+_METADATA_COLUMNS = ("title", "tags", "project", "content_summary")
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _metadata_assignment(
+    *,
+    title: str | None,
+    tags: Sequence[str] | None,
+    project: str | None,
+    content_summary: str | None,
+    clearing: Sequence[str],
+) -> tuple[list[str], list[object]]:
+    """The SET clause for one metadata write, and its params, in column order. The
+    PostgreSQL twin of the SQLite helper, differing only in its placeholder.
+
+    Only the fields given are written, so ``None`` means "leave the stored value alone";
+    ``clearing`` is the only route to NULL, because an empty string is still a value and
+    for ``project`` that decides which corpus the row belongs to. Column names come from
+    ``_METADATA_COLUMNS`` and never from the caller, which is what keeps the interpolation
+    safe — the same discipline ``_TABLES`` applies to table names."""
+    unknown = [name for name in clearing if name not in _METADATA_COLUMNS]
+    if unknown:
+        raise ValueError(
+            f"cannot clear {unknown}: clearing accepts only {list(_METADATA_COLUMNS)}"
+        )
+    values: dict[str, object] = {}
+    if title is not None:
+        values["title"] = title
+    if tags is not None:
+        values["tags"] = json.dumps(list(tags))
+    if project is not None:
+        values["project"] = project
+    if content_summary is not None:
+        values["content_summary"] = content_summary
+    both = [name for name in clearing if name in values]
+    if both:
+        raise ValueError(
+            f"{both} given a value and named in clearing: pass one or the other"
+        )
+    assignments = [f"{name}=%s" for name in _METADATA_COLUMNS if name in values]
+    params: list[object] = [values[name] for name in _METADATA_COLUMNS if name in values]
+    cleared = set(clearing)
+    assignments.extend(
+        f"{name}=NULL" for name in _METADATA_COLUMNS if name not in values and name in cleared
+    )
+    if not assignments:
+        raise ValueError("nothing to change: pass a field to set or a name to clear")
+    return assignments, params
 
 
 class PostgresMemoryRepository:
@@ -181,12 +231,10 @@ class PostgresMemoryRepository:
         old_string: str,
         new_string: str,
         replace_all: bool = False,
-        content_summary: str | None = None,
     ) -> SharedRecord:
         return self._rewrite(
             uuid,
             lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid),
-            content_summary=content_summary,
         )
 
     def append(self, uuid: str, text: str) -> SharedRecord:
@@ -214,8 +262,6 @@ class PostgresMemoryRepository:
         self,
         uuid: str,
         transform: Callable[[str], str],
-        *,
-        content_summary: str | None = None,
     ) -> SharedRecord:
         with self._conn() as conn, conn.cursor() as cur:
             table = self._locate(cur, uuid)
@@ -228,12 +274,52 @@ class PostgresMemoryRepository:
             new_content = transform(cur.fetchone()["full_content"] or "")
             columns = ["full_content=%s", "modified_date=%s"]
             params: list[object] = [new_content, _now()]
-            if content_summary is not None:
-                columns.append("content_summary=%s")
-                params.append(content_summary)
             params.extend([uuid, self._user_id])
             cur.execute(
                 f"UPDATE {table} SET {', '.join(columns)} WHERE uuid=%s AND user_id=%s",
+                params,
+            )
+            cur.execute(
+                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=%s AND user_id=%s",
+                (uuid, self._user_id),
+            )
+            updated = cur.fetchone()
+        return _row_from(table, updated)
+
+    def set_fields(
+        self,
+        uuid: str,
+        *,
+        title: str | None = None,
+        tags: Sequence[str] | None = None,
+        project: str | None = None,
+        content_summary: str | None = None,
+        clearing: Sequence[str] = (),
+    ) -> SharedRecord:
+        """Write metadata columns without reading or rewriting the body: one UPDATE of
+        the named columns plus ``modified_date``, on whichever table holds the uuid.
+
+        Raises ``LookupError`` if the record is missing/deleted, ``ValueError`` from
+        ``_metadata_assignment`` when the request would change nothing or names something
+        it may not. The full-text index needs no extra work: ``search_tsv`` is a STORED
+        generated column over ``full_content``, ``title`` and ``tags``, so a metadata
+        write recomputes it."""
+        assignments, params = _metadata_assignment(
+            title=title,
+            tags=tags,
+            project=project,
+            content_summary=content_summary,
+            clearing=clearing,
+        )
+        with self._conn() as conn, conn.cursor() as cur:
+            table = self._locate(cur, uuid)
+            if table is None:
+                raise LookupError(f"record not found: {uuid}")
+            assignments.append("modified_date=%s")
+            params.append(_now())
+            params.extend([uuid, self._user_id])
+            cur.execute(
+                f"UPDATE {table} SET {', '.join(assignments)} WHERE uuid=%s AND user_id=%s",
                 params,
             )
             cur.execute(

@@ -76,7 +76,15 @@ class EditBody(BaseModel):
     old_string: str
     new_string: str
     replace_all: bool = False
+
+
+class EditMetadataBody(BaseModel):
+    uuid: str
+    title: str | None = None
+    tags: list[str] | None = None
+    project: str | None = None
     content_summary: str | None = None
+    clearing: list[str] | None = None
 
 
 class AppendBody(BaseModel):
@@ -275,15 +283,34 @@ def build_router(
 
     @api.post("/api/edit")
     def edit(body: EditBody, svc: MemoryService = Depends(_tenant_service)) -> dict[str, Any]:
-        """Targeted string replace inside a record's body (Edit-tool parity). A
-        ``content_summary`` replaces the record's one-line summary in the same write."""
+        """Targeted string replace inside a record's body (Edit-tool parity). The body
+        only; a summary change goes to ``/api/edit-metadata``."""
         try:
             return svc.edit(
                 body.uuid,
                 body.old_string,
                 body.new_string,
                 body.replace_all,
-                body.content_summary,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/api/edit-metadata")
+    def edit_metadata(
+        body: EditMetadataBody, svc: MemoryService = Depends(_tenant_service)
+    ) -> dict[str, Any]:
+        """Change a record's metadata without touching its body. A field left out keeps
+        its stored value, ``clearing`` removes one, and ``tags=[]`` empties the list."""
+        try:
+            return svc.edit_metadata(
+                body.uuid,
+                title=body.title,
+                tags=body.tags,
+                project=body.project,
+                content_summary=body.content_summary,
+                clearing=body.clearing,
             )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

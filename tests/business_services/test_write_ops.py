@@ -64,9 +64,11 @@ def test_insert_with_a_blank_summary_is_refused(tmp_path: Path) -> None:
         )
 
 
-def test_edit_replaces_the_summary_in_the_same_write(tmp_path: Path) -> None:
-    """A rolling record's summary describes its newest content, so an append has to be
-    able to move it together with the body. Omitted, the stored summary is left alone."""
+def test_a_rolling_record_moves_its_summary_in_a_second_call(tmp_path: Path) -> None:
+    """A rolling record's summary describes its newest content, so the write that changes
+    the body is followed by one that moves the summary. Two calls, on purpose: the summary
+    is metadata, and ``edit_metadata`` is its only writer, so a body edit cannot move it in
+    passing."""
     _repo, svc = _svc(tmp_path)
     svc.insert(
         content_summary="first take",
@@ -75,11 +77,12 @@ def test_edit_replaces_the_summary_in_the_same_write(tmp_path: Path) -> None:
         content="body",
         uuid="e1",
     )
-    out = svc.edit("e1", "body", "newest body", content_summary="second take")
+    out = svc.edit("e1", "body", "newest body")
     assert out["content"] == "newest body"
-    assert out["content_summary"] == "second take"
-    again = svc.edit("e1", "newest", "newest")
-    assert again["content_summary"] == "second take"
+    assert out["content_summary"] == "first take"  # the body write leaves it standing
+    moved = svc.edit_metadata("e1", content_summary="second take")
+    assert moved["content"] == "newest body"
+    assert moved["content_summary"] == "second take"
 
 
 def test_insert_is_idempotent_upsert(tmp_path: Path) -> None:
@@ -253,3 +256,48 @@ def test_soft_delete_excluded_everywhere(tmp_path: Path) -> None:
     assert svc.get("k1") is None
     assert svc.query(agent_id="meta", include_archived=True) == []
     assert svc.search("gone") == []
+
+
+def test_edit_metadata_changes_a_field_without_the_body(tmp_path: Path) -> None:
+    """The whole point of the op: a field changes and the body is never handed back."""
+    _repo, svc = _svc(tmp_path)
+    svc.insert(
+        content_summary="first summary",
+        agent_id="meta", record_type="knowledge", content="the body", uuid="k1",
+        title="before", tags=["a"], project="hermod-server")
+    out = svc.edit_metadata("k1", content_summary="second summary")
+    assert out["content_summary"] == "second summary"
+    assert out["content"] == "the body"
+    assert out["title"] == "before"  # untouched, not cleared
+    assert out["tags"] == ["a"]
+    assert out["project"] == "hermod-server"
+
+
+def test_edit_metadata_clears_and_empties(tmp_path: Path) -> None:
+    """`clearing` is the only route to NULL, and `tags=[]` is a value rather than a blank:
+    an empty string must not be able to remove a project, because both engines read a
+    project row by `IS NULL`."""
+    _repo, svc = _svc(tmp_path)
+    svc.insert(
+        content_summary="s", agent_id="meta", record_type="knowledge", content="b",
+        uuid="k1", project="hermod-server", tags=["a"])
+    out = svc.edit_metadata("k1", clearing=["project"], tags=[])
+    assert out["project"] is None
+    assert out["tags"] == []
+    assert out["content_summary"] == "s"
+
+
+def test_edit_metadata_refuses_blank_values_and_empty_changes(tmp_path: Path) -> None:
+    _repo, svc = _svc(tmp_path)
+    svc.insert(
+        content_summary="s", agent_id="meta", record_type="knowledge", content="b",
+        uuid="k1", title="t")
+    for field in ("title", "project", "content_summary"):
+        with pytest.raises(ValueError, match=f"blank {field}"):
+            svc.edit_metadata("k1", **{field: "   "})
+    with pytest.raises(ValueError, match="nothing to change"):
+        svc.edit_metadata("k1")
+    with pytest.raises(ValueError, match="cannot clear"):
+        svc.edit_metadata("k1", clearing=["record_type"])
+    with pytest.raises(LookupError):
+        svc.edit_metadata("absent", title="t")

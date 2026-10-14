@@ -21,8 +21,8 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 - The installed markdown command set is byte-identical to before — `update-episodic.md` installed under `~/.claude/commands/` shows no `<domain>` note after a reinstall.
 - Every procedure that reaches the wire (14) carries the preamble exactly once, ahead of its first `### §` op; `wait-options` (no seam) carries none.
 - The preamble never *creates* a served procedure: the served set is still 14 and `push`/`pull`/`refresh`-memory are still absent.
-- `tools/list` has 19 entries, each with a title and `readOnlyHint`; every non-read-only tool states `destructiveHint` explicitly; nothing claims `openWorldHint=true`.
-- The destructive set is exactly `{edit, multi_edit, archive, soft_delete}` — an additive write (`insert`, `create_agent`, `append`, `prepend`) is never shown to a person as destructive.
+- `tools/list` has 22 entries, each with a title and `readOnlyHint`; every non-read-only tool states `destructiveHint` explicitly; nothing claims `openWorldHint=true`.
+- The destructive set is exactly `{edit, edit_metadata, multi_edit, archive, soft_delete}` — an additive write (`insert`, `create_agent`, `append`, `prepend`) is never shown to a person as destructive.
 - In token mode `help` needs a bearer like every other tool; in local mode it answers without one. `help` exists with no served content and then lists no procedures.
 - The hosted box is unchanged by this commit (pin only): anonymous `POST /mcp` still **401**, and its `initialize` result still carries **no** `instructions` until the next deploy.
 
@@ -60,9 +60,9 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 - [ ] `initialize` result over raw HTTP (`curl` with the JSON-RPC `initialize` body) carries `"instructions"` whose length is 466 and whose first word is `Munnin`.
 
 ### Titles and hints reach the client
-- [ ] Claude Code's `/mcp` tool listing shows titles for all 19 tools; no entry falls back to the bare name.
-- [ ] `soft_delete`, `archive`, `edit`, `multi_edit` each prompt for confirmation before running; `insert`, `create_agent`, `append`, `prepend` do not (steps 4–5). Record which client and version — this is the client's behaviour, and clients differ.
-- [ ] `tools/list` over raw HTTP: `jq '.result.tools | map(select(.annotations.readOnlyHint == null or .title == null)) | length'` → `0`; `map(select(.annotations.destructiveHint == true) | .name)` → exactly the four.
+- [ ] Claude Code's `/mcp` tool listing shows titles for all 22 tools; no entry falls back to the bare name.
+- [ ] `soft_delete`, `archive`, `edit`, `edit_metadata`, `multi_edit` each prompt for confirmation before running; `insert`, `create_agent`, `append`, `prepend` do not (steps 4–5). Record which client and version — this is the client's behaviour, and clients differ.
+- [ ] `tools/list` over raw HTTP: `jq '.result.tools | map(select(.annotations.readOnlyHint == null or .title == null)) | length'` → `0`; `map(select(.annotations.destructiveHint == true) | .name)` → exactly the five.
 
 ### help
 - [ ] Local mode: `help` with no `Authorization` header → 200 with `instructions` + 14 `procedures`.

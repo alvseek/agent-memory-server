@@ -41,13 +41,12 @@ class MemoryRepository(Protocol):
         old_string: str,
         new_string: str,
         replace_all: bool = False,
-        content_summary: str | None = None,
     ) -> SharedRecord:
         """Targeted string replace inside a record's ``full_content`` (server-side
         read-replace-write). Per-word/line granularity - token-identical to the Edit tool.
         Unique-replace by default (raises if absent/ambiguous); ``replace_all=True``
-        replaces every occurrence. A non-``None`` ``content_summary`` is written by the
-        same update, so a body edit and its summary never land apart."""
+        replaces every occurrence. The body only — metadata, the record's summary
+        included, belongs to ``set_fields``."""
         ...
 
     def append(self, uuid: str, text: str) -> SharedRecord:
@@ -70,6 +69,30 @@ class MemoryRepository(Protocol):
         previous, and if ANY edit fails nothing is written. Bumps ``modified_date``.
         Raises ``LookupError`` if missing/deleted, ``ValueError`` if the list is empty or
         any edit's ``old_string`` is absent/ambiguous."""
+        ...
+
+    def set_fields(
+        self,
+        uuid: str,
+        *,
+        title: str | None = None,
+        tags: Sequence[str] | None = None,
+        project: str | None = None,
+        content_summary: str | None = None,
+        clearing: Sequence[str] = (),
+    ) -> SharedRecord:
+        """Change a record's metadata, without touching its ``full_content``.
+
+        Only the fields given are written — a parameter left ``None`` keeps the stored
+        value — so this is a targeted update, not a replace. ``clearing`` names metadata
+        columns to set to SQL NULL, which is the only way to remove a value: an omitted
+        field means "leave it", and for ``project`` an empty string is still a project
+        row, because the corpus filter reads ``project IS NULL``. Bumps ``modified_date``
+        and returns the stored record.
+
+        Raises ``LookupError`` when the record is missing or deleted, and ``ValueError``
+        when ``clearing`` names a column that is not metadata, when a field is both given
+        a value and named in ``clearing``, or when nothing at all would change."""
         ...
 
     def archive(self, uuid: str) -> None:

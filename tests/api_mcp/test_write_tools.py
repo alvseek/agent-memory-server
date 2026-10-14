@@ -147,3 +147,27 @@ async def test_insert_ungated_type_needs_no_version(tmp_path: Path) -> None:
              "content": "**Name**: Claude Meta", "uuid": "i1"},
         )
         assert ins.data["uuid"] == "i1"
+
+
+async def test_edit_metadata_omits_clears_and_empties(tmp_path: Path) -> None:
+    """A field left out keeps its value, `clearing` removes one, `tags=[]` empties the
+    list, and the body comes back unchanged because it is never part of the write."""
+    async with Client(_mcp(tmp_path)) as client:
+        await client.call_tool("insert", {
+            "content_summary": "first summary",
+            "agent_id": "meta", "record_type": "knowledge", "content": "the body",
+            "uuid": "k1", "title": "before", "tags": ["a"], "project": "hermod-server"})
+        out = await client.call_tool(
+            "edit_metadata", {"uuid": "k1", "content_summary": "second summary"})
+        assert out.data["content_summary"] == "second summary"
+        assert out.data["content"] == "the body"
+        assert out.data["title"] == "before"  # omitted, so untouched
+        assert out.data["tags"] == ["a"]
+        cleared = await client.call_tool(
+            "edit_metadata", {"uuid": "k1", "clearing": ["project"], "tags": []})
+        assert cleared.data["project"] is None
+        assert cleared.data["tags"] == []
+        with pytest.raises(ToolError, match="nothing to change"):
+            await client.call_tool("edit_metadata", {"uuid": "k1"})
+        with pytest.raises(ToolError, match="blank title"):
+            await client.call_tool("edit_metadata", {"uuid": "k1", "title": "  "})

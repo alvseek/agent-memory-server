@@ -184,12 +184,12 @@ In a session, `ping` → `pong` is the connectivity check; `list_procedures` sho
 
 ### MCP surface (agent face)
 
-At `initialize` the server returns four sentences of **instructions** — what Munnin is, what to call first whether you are new or returning, and that procedures come from `read_procedure`, never slash commands; clients that show instructions inject them into the system prompt. Every tool carries a **title** and the MCP hints a client reads before letting it run: `readOnlyHint` on all, `destructiveHint` explicit on every write (additive: `insert`, `create_agent`, `append`, `prepend`; destructive: `edit`, `multi_edit`, `archive`, `soft_delete`), `openWorldHint=false` throughout.
+At `initialize` the server returns four sentences of **instructions** — what Munnin is, what to call first whether you are new or returning, and that procedures come from `read_procedure`, never slash commands; clients that show instructions inject them into the system prompt. Every tool carries a **title** and the MCP hints a client reads before letting it run: `readOnlyHint` on all, `destructiveHint` explicit on every write (additive: `insert`, `create_agent`, `append`, `prepend`; destructive: `edit`, `edit_metadata`, `multi_edit`, `archive`, `soft_delete`), `openWorldHint=false` throughout.
 
-**19 tools**, in four groups:
+**22 tools**, in four groups:
 
 - *Orientation* — `help`: the same instructions text plus the served procedure list, for clients that never show instructions. Always present, even with no served content.
-- *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically.
+- *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `edit_metadata`, `append`, `prepend`, `multi_edit`, `archive`, `soft_delete`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically. `edit_metadata` is the one writer of a record's fields — `title`, `tags`, `project`, `content_summary` — which is why `content_summary` no longer rides on a body edit: a field with one owner cannot be updated two ways. A field left out keeps its stored value, and `clearing` names the ones to remove, because a blank string still reads as a project value.
 - *Agent lifecycle* — `create_agent`, `list_agents`. An agent exists when it has a row; every memory record names one under a foreign key, so `create_agent` is the strict twin of the first write.
 - *Served content* — `list_procedures`, `read_procedure(name, argument?)`, `list_resources`, `read_resource(name)`. The same procedures, templates and scripts are also served as MCP **prompts** and **resources**, but a prompt is user-invoked and a resource client-attached; a tool is the one primitive the agent may call itself, which is what lets a served procedure that says *execute `/wrap-up`* resolve to `read_procedure("wrap-up")`.
 
@@ -211,6 +211,7 @@ Every endpoint is a REST twin of an MCP primitive over the same core; only the n
 | GET · POST | `/api/agents` | `list_agents` · `create_agent` | The tenant's agents / create one |
 | POST | `/api/insert` | `insert` | New item, record assembled server-side |
 | POST | `/api/edit` · `/api/append` · `/api/prepend` · `/api/multi-edit` | the same names | Body edits with Edit-tool parity |
+| POST | `/api/edit-metadata` | `edit_metadata` | Metadata only — a field left out keeps its value, `clearing` removes one |
 | POST | `/api/archive` · `/api/soft-delete` | `archive` · `soft_delete` | Out of the hot index but searchable · tombstoned |
 | GET | `/api/prompts` · `/api/prompts/{name}` | `list_procedures` · `read_procedure` | Names as JSON · one procedure as raw `text/markdown` |
 | GET | `/api/resources` · `/api/resources/{name}` | `list_resources` · `read_resource` | Names as JSON · one resource as raw text |

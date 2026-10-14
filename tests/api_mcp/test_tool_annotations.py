@@ -23,7 +23,7 @@ READ_ONLY = {
     "permanent_layer",
 }
 ADDITIVE = {"insert", "create_agent", "append", "prepend"}
-DESTRUCTIVE = {"edit", "multi_edit", "archive", "soft_delete"}
+DESTRUCTIVE = {"edit", "edit_metadata", "multi_edit", "archive", "soft_delete"}
 IDEMPOTENT_DESTRUCTIVE = {"archive", "soft_delete"}
 
 

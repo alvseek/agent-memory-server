@@ -37,7 +37,7 @@ OPEN_ROUTES = {("GET", "/health"), ("GET", "/"), ("GET", "/privacy"), ("GET", "/
 # A coarse tripwire beside the per-route rule below. The rule is what protects a new
 # route; this notices when the surface changes size at all, so growth is a decision
 # somebody made rather than something that happened.
-EXPECTED_OPERATIONS = 22
+EXPECTED_OPERATIONS = 23
 
 
 def _app(tmp_path: Path):

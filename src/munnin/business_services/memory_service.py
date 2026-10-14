@@ -330,7 +330,8 @@ class MemoryService:
         a listing is rendered. It is what a reader decides on before fetching a body, so it is
         authored rather than derived, and a blank one is refused instead of stored as an
         absent answer. Every other type is loaded whole at awakening, so a summary there would
-        be data nothing reads. ``edit`` replaces it when a body changes.
+        be data nothing reads. ``edit_metadata`` replaces it when the content it describes
+        changes.
 
         ``scope`` decides which table the row goes to, and it has to be explicit: an
         insert is the one write that chooses *where* — every other write addresses a
@@ -382,16 +383,66 @@ class MemoryService:
         old_string: str,
         new_string: str,
         replace_all: bool = False,
-        content_summary: str | None = None,
     ) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity). Raises
         ``LookupError`` if missing/deleted, ``ValueError`` if ``old_string`` is absent or
         (without ``replace_all``) ambiguous.
 
-        ``content_summary`` replaces the record's one-line summary in the same write, which
-        is how a rolling record keeps its summary describing its newest content."""
+        The body only. Every metadata field is ``edit_metadata``'s business, so a body
+        edit and the summary that describes it are two calls: the summary is a claim about
+        the body, and the op that owns it is named for that."""
         return _record(
-            self._repo.edit(uuid, old_string, new_string, replace_all, content_summary)
+            self._repo.edit(uuid, old_string, new_string, replace_all)
+        )
+
+    def edit_metadata(
+        self,
+        uuid: str,
+        *,
+        title: str | None = None,
+        tags: list[str] | None = None,
+        project: str | None = None,
+        content_summary: str | None = None,
+        clearing: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Change a record's metadata, leaving its body alone.
+
+        The one writer for the four fields a record owns besides its body — ``title``,
+        ``tags``, ``project`` and ``content_summary`` — and the only writer of
+        ``content_summary``, because a field with one owner cannot be updated two ways.
+
+        A field that is not passed keeps its stored value, so this is not a replace and
+        never reads the body first. ``clearing`` names fields to remove, written as SQL
+        NULL, and it is the only way to unset one: omitting a field means "leave it", and
+        for ``project`` a blank string would still read as a project row, because both
+        engines filter the corpora on ``project IS NULL``.
+
+        A blank ``title``, ``project`` or ``content_summary`` is refused, the same way a
+        blank summary is refused at insert: clearing has a name of its own, so an empty
+        value can only arrive by accident. ``tags=[]`` is a value rather than a blank, and
+        empties the list.
+
+        Raises ``LookupError`` for a missing or deleted record, and ``ValueError`` when
+        nothing would change or ``clearing`` names something that is not one of the four.
+        """
+        for name, value in (
+            ("title", title),
+            ("project", project),
+            ("content_summary", content_summary),
+        ):
+            if value is not None and not value.strip():
+                raise ValueError(
+                    f"blank {name} is not a value: name it in `clearing` to remove it"
+                )
+        return _record(
+            self._repo.set_fields(
+                uuid,
+                title=title,
+                tags=tags,
+                project=project,
+                content_summary=content_summary,
+                clearing=tuple(clearing or ()),
+            )
         )
 
     def append(self, uuid: str, text: str) -> dict[str, Any]:

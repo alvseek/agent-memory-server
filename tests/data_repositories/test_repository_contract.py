@@ -175,3 +175,58 @@ def test_a_project_keyed_knowledge_row_is_not_munnin_memory(memory_repo: Any) ->
     assert [r.uuid for r in memory_repo.search_shared("shipping")] == [ours.uuid]
     assert memory_repo.search_shared("hermod") == []
     assert memory_repo.search("hermod") == []
+
+
+# --- the metadata write: a field changes without the body being read or rewritten ---
+
+
+def test_set_fields_touches_only_the_fields_it_is_given(memory_repo: Any) -> None:
+    rec = _mem(title="T", tags=["a"], content="body stays", content_summary="s")
+    memory_repo.insert(rec)
+    memory_repo.set_fields(rec.uuid, tags=["b", "c"])
+    got = memory_repo.get(rec.uuid)
+    assert got.tags == ["b", "c"]
+    assert got.title == "T"  # omitted means untouched, not cleared
+    assert got.content_summary == "s"
+    assert got.full_content == "body stays"  # the body is never part of the statement
+
+
+def test_set_fields_reaches_a_shared_record(memory_repo: Any) -> None:
+    shared = _shared(RecordType.knowledge, "k", title="before")
+    memory_repo.insert_shared(shared)
+    memory_repo.set_fields(shared.uuid, title="after")
+    assert memory_repo.get(shared.uuid).title == "after"
+
+
+def test_set_fields_clears_to_null_empties_tags_and_refuses_an_empty_change(
+    memory_repo: Any,
+) -> None:
+    """The three refusals are the contract, and the NULL is the load-bearing one: clearing
+    `project` to `''` would leave the row in the other corpus, because both engines read a
+    project row by `IS NULL`."""
+    rec = _mem(project="hermod-server", content_summary="s", tags=["a"])
+    memory_repo.insert(rec)
+    memory_repo.set_fields(rec.uuid, clearing=["project"], tags=[])
+    got = memory_repo.get(rec.uuid)
+    assert got.project is None
+    assert got.tags == []
+    assert got.content_summary == "s"
+    with pytest.raises(ValueError):
+        memory_repo.set_fields(rec.uuid)
+    with pytest.raises(ValueError):
+        memory_repo.set_fields(rec.uuid, title="x", clearing=["title"])
+    with pytest.raises(ValueError):
+        memory_repo.set_fields(rec.uuid, clearing=["record_type"])
+    with pytest.raises(LookupError):
+        memory_repo.set_fields(str(uuidlib.uuid4()), title="x")
+
+
+def test_set_fields_reindexes_a_changed_title(memory_repo: Any) -> None:
+    """Both engines index `title` — SQLite through its AFTER UPDATE trigger, PostgreSQL
+    through the STORED `search_tsv` — so a metadata-only write is findable with no extra
+    step. A trigger narrowed to `full_content` would fail here and nowhere else."""
+    rec = _mem(title="unremarkable", content="body text")
+    memory_repo.insert(rec)
+    assert memory_repo.search("needle") == []
+    memory_repo.set_fields(rec.uuid, title="needle")
+    assert [r.uuid for r in memory_repo.search("needle")] == [rec.uuid]

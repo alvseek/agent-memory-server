@@ -176,3 +176,34 @@ async def test_insert_stale_template_version_400(tmp_path: Path) -> None:
                                               "template_version": "2000-01-01-00-00"})
         assert r.status_code == 400
         assert "stale template" in r.json()["detail"]
+
+
+async def test_edit_metadata_over_the_http_face(tmp_path: Path) -> None:
+    """The second face carries the same op: omitted keeps, `clearing` removes, `tags=[]`
+    empties, and the refusals keep their status codes (400 for a bad request, 404 for a
+    record this tenant cannot reach)."""
+    async with _client(tmp_path) as c:
+        await c.post(
+            "/api/insert",
+            json={
+                "content_summary": "first summary",
+                "agent_id": "meta", "record_type": "knowledge", "content": "the body",
+                "uuid": "k1", "title": "before", "tags": ["a"], "project": "hermod-server",
+                "template_version": _ver("knowledge-file-template")},
+        )
+        r = await c.post(
+            "/api/edit-metadata", json={"uuid": "k1", "content_summary": "second summary"}
+        )
+        assert r.status_code == 200
+        assert r.json()["content_summary"] == "second summary"
+        assert r.json()["content"] == "the body"
+        assert r.json()["title"] == "before"  # omitted, so untouched
+        cleared = await c.post(
+            "/api/edit-metadata", json={"uuid": "k1", "clearing": ["project"], "tags": []}
+        )
+        assert cleared.json()["project"] is None
+        assert cleared.json()["tags"] == []
+        empty_change = await c.post("/api/edit-metadata", json={"uuid": "k1"})
+        assert empty_change.status_code == 400
+        absent = await c.post("/api/edit-metadata", json={"uuid": "absent", "title": "t"})
+        assert absent.status_code == 404

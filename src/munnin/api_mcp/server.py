@@ -247,12 +247,11 @@ def build_mcp(
         old_string: str,
         new_string: str,
         replace_all: bool = False,
-        content_summary: str | None = None,
     ) -> dict[str, Any]:
-        """Targeted string replace inside a record's body (Edit-tool parity). Pass
-        ``content_summary`` to replace the record's one-line summary in the same write,
-        which is how a rolling record keeps its summary describing its newest content."""
-        return _svc().edit(uuid, old_string, new_string, replace_all, content_summary)
+        """Targeted string replace inside a record's body (Edit-tool parity). The body
+        only: metadata, `content_summary` included, is `edit_metadata`'s business, so a
+        body edit and the summary describing it are two calls on two named tools."""
+        return _svc().edit(uuid, old_string, new_string, replace_all)
 
     @mcp.tool(title="Append to a record", annotations=_ADDITIVE)
     def append(uuid: str, text: str) -> dict[str, Any]:
@@ -274,6 +273,35 @@ def build_mcp(
         ``replace_all``). Edits apply in order, each to the result of the previous; if
         any fails, nothing is written."""
         return _svc().multi_edit(uuid, edits)
+
+    @mcp.tool(title="Edit a record's metadata", annotations=_DESTRUCTIVE)
+    def edit_metadata(
+        uuid: str,
+        title: str | None = None,
+        tags: list[str] | None = None,
+        project: str | None = None,
+        content_summary: str | None = None,
+        clearing: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Change a record's metadata, leaving its body alone.
+
+        `title`, `tags`, `project` and `content_summary` are the fields a record owns
+        beside its body, and this is the only tool that writes `content_summary` — a field
+        with one owner cannot be updated two ways. A field you leave out keeps its stored
+        value, so this is not a replace: omit `title` and the title stands. Name fields in
+        `clearing` to remove them, which is the only way, because a blank string is refused
+        rather than stored (for `project`, an empty value still reads as a project row).
+        `tags=[]` is a real value and empties the list. Refuses a call that would change
+        nothing.
+        """
+        return _svc().edit_metadata(
+            uuid,
+            title=title,
+            tags=tags,
+            project=project,
+            content_summary=content_summary,
+            clearing=clearing,
+        )
 
     @mcp.tool(title="Archive a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
     def archive(uuid: str) -> dict[str, str]:

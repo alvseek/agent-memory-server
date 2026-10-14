@@ -267,9 +267,9 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # `help` is not a data tool but it is always present: it is the fallback for a client
     # that never shows `instructions`, so it exists whether or not content is served.
     data_tools = [
-        "append", "archive", "awaken", "coding_reasoning", "create_agent", "edit", "get",
-        "help", "insert", "list_agents", "multi_edit", "ping", "prepend", "query", "search",
-        "soft_delete",
+        "append", "archive", "awaken", "coding_reasoning", "create_agent", "edit",
+        "edit_metadata", "get", "help", "insert", "list_agents", "multi_edit", "ping",
+        "prepend", "query", "search", "soft_delete",
     ]
     async with Client(_mcp(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())
@@ -278,7 +278,7 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # a second way — through the one primitive an agent may invoke itself
     async with Client(_mcp_content(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())
-    assert len(names) == 21
+    assert len(names) == 22
     assert names == sorted(
         data_tools
         + [
