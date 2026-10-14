@@ -26,11 +26,19 @@ def _fresh_schema(conn: psycopg.Connection) -> None:
     conn.commit()
 
 
+def _expected() -> list[str]:
+    """The migration files that should run, read from the directory rather than typed.
+
+    A typed pair of them went stale the day a third migration landed, and this job only runs
+    with PostgreSQL behind it, so the red sat on ``main`` and masked every later failure."""
+    return [m.name for m in pgm.known()]
+
+
 def test_ensure_schema_creates_tables_indexes_and_fts_column() -> None:
     with psycopg.connect(URL) as conn:
         _fresh_schema(conn)
         ran = pgm.ensure_schema(conn)
-        assert ran == ["0001_init", "0002_record_content_summary"]
+        assert ran == _expected()
         with conn.cursor() as cur:
             cur.execute(
                 "select tablename from pg_tables where schemaname='public' order by 1"
@@ -68,11 +76,10 @@ def test_ensure_schema_creates_tables_indexes_and_fts_column() -> None:
 def test_ensure_schema_is_idempotent() -> None:
     with psycopg.connect(URL) as conn:
         _fresh_schema(conn)
-        assert pgm.ensure_schema(conn) == ["0001_init", "0002_record_content_summary"]
+        assert pgm.ensure_schema(conn) == _expected()
         assert pgm.ensure_schema(conn) == []
         assert {m.version: s for m, s in pgm.status(conn)} == {
-            "0001": "applied",
-            "0002": "applied",
+            m.version: "applied" for m in pgm.known()
         }
 
 
