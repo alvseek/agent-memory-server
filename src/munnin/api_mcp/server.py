@@ -75,12 +75,17 @@ def build_mcp(
     resolver: TenantResolver,
     content: ContentLoader | None = None,
     auth: AuthProvider | None = None,
+    endpoint: str | None = None,
 ) -> FastMCP:
     """The MCP face.
 
     ``auth`` guards every tool at the transport layer: FastMCP refuses an unverified
     request before any tool body runs, which is why the resolver below can trust the
     token it finds rather than re-checking it.
+
+    ``endpoint`` is the address this face is served at, computed by the caller from the
+    instance's public base URL (``app.mcp_resource_url``) — passed in rather than derived
+    here because ``app`` imports this module, so the dependency only runs one way.
     """
     mcp: FastMCP = FastMCP("munnin", instructions=INSTRUCTIONS, auth=auth)
 
@@ -113,9 +118,19 @@ def build_mcp(
     @mcp.tool(name="help", title="What Munnin is and where to start", annotations=_READ)
     def help_() -> dict[str, Any]:
         """What this server is and what to call first — the same text a client receives at
-        initialize as ``instructions`` — plus the served procedures. Read-only; call it
-        when you are unsure what Munnin is or which procedure to read next."""
-        return {"instructions": INSTRUCTIONS, "procedures": _procedure_rows(content)}
+        initialize as ``instructions`` — plus the served procedures, plus the two values a
+        client declares how it reaches this server with. Read-only; call it when you are
+        unsure what Munnin is or which procedure to read next."""
+        # ``access`` is constant because this face only exists as served procedures: a
+        # client calling it has already reached the core this way, so there is no second
+        # answer to give. ``register-core-access`` reads both values and writes them into
+        # the client's instruction file.
+        return {
+            "instructions": INSTRUCTIONS,
+            "procedures": _procedure_rows(content),
+            "access": "mcp",
+            "endpoint": endpoint,
+        }
 
     @mcp.tool(title="Awaken an agent", annotations=_READ)
     def awaken(domain: str) -> dict[str, Any]:
@@ -190,6 +205,7 @@ def build_mcp(
     def insert(
         record_type: str,
         content: str,
+        content_summary: str | None = None,
         agent_id: str | None = None,
         scope: str = "agent",
         title: str | None = None,
@@ -208,13 +224,15 @@ def build_mcp(
         vary by agent. ``template_version`` declares which version of the record type's
         template the content was built against (read it with read_resource first); the
         gated types (episode|reasoning|emotional|knowledge|coding_reasoning) are refused
-        without a matching one."""
+        without a matching one. ``content_summary`` is the one-line summary of the body
+        shown beside the title in a browse listing; omitted, the index carries null."""
         _check_template(record_type, template_version)
         return _svc().insert(
             agent_id=agent_id,
             scope=scope,
             record_type=record_type,
             content=content,
+            content_summary=content_summary,
             title=title,
             tags=tags,
             project=project,

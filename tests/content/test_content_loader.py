@@ -20,7 +20,12 @@ def loader() -> ContentLoader:
 
 def test_lists_served_prompts(loader: ContentLoader) -> None:
     names = loader.list_prompts()
-    assert len(names) == 14
+    # Shape, not a typed count. The served set legitimately grows when a procedure lands,
+    # and a literal here goes stale without failing — which is exactly how the
+    # coding-reasoning lane turned CI red. A stem is a command's whole address, so the
+    # names must also be unique.
+    assert names == sorted(names)
+    assert len(set(names)) == len(names)
     assert "update-episodic" in names
     assert "wrap-up" in names
     assert "create-agent" in names
@@ -73,10 +78,10 @@ def test_prompt_descriptions_are_distinct_and_read_from_the_procedures(
     loader: ContentLoader,
 ) -> None:
     described = {name: loader.describe_prompt(name) for name in loader.list_prompts()}
-    assert len(described) == 14
+    assert len(described) == len(loader.list_prompts())
     # a command menu is only readable if its rows differ — one templated sentence with
     # the name swapped in gives twelve entries that all say the same thing
-    assert len(set(described.values())) == 14
+    assert len(set(described.values())) == len(described)
     assert described["awaken-agent"] == "Load agent memory and activate a domain-specific agent."
     assert described["update-episodic"] == "Capture session context as rolling per-theme episodes."
 
@@ -120,7 +125,7 @@ def test_prompt_with_no_prose_falls_back_to_naming_itself(tmp_path: Path) -> Non
 
 def test_every_prompt_has_a_title_from_its_own_heading(loader: ContentLoader) -> None:
     titles = {name: loader.title_prompt(name) for name in loader.list_prompts()}
-    assert len(set(titles.values())) == 14
+    assert len(set(titles.values())) == len(titles)
     assert titles["awaken-agent"] == "Awaken Agent"
     assert titles["wrap-up"] == "Wrap Up Session"
     # a title is a display name, never the slug it replaces

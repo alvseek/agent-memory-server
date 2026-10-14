@@ -87,6 +87,7 @@ _PROMPT_ARGUMENTS: dict[str, tuple[str, str]] = {
     "list-agents": ("keyword", "filter agents by domain or role"),
     "awaken-agent": ("domain", "the agent domain to awaken; asks if omitted"),
     "anchor-memory": ("harness", "`claude` or `opencode`; asks if omitted"),
+    "register-core-access": ("harness", "`claude` or `opencode`; asks if omitted"),
 }
 _ARGUMENTS_PLACEHOLDER = "$ARGUMENTS"
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"

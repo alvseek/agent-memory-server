@@ -401,7 +401,13 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
         resolver = LocalTenantResolver(config.user_id)
     else:
         resolver = TokenTenantResolver(identity)
-    mcp = build_mcp(factory, resolver, content, auth=auth)
+    mcp = build_mcp(
+        factory,
+        resolver,
+        content,
+        auth=auth,
+        endpoint=mcp_resource_url(config.public_base_url),
+    )
     mcp_app = mcp.http_app(path="/")  # StarletteWithLifespan (streamable-HTTP)
 
     # The parent app takes the MCP app's lifespan, or its session manager never starts.

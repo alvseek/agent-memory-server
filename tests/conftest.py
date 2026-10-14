@@ -168,7 +168,11 @@ def mcp_client_for(app: Any, token: str | None) -> Client:
 
 
 def mcp_for(
-    db: Path, *, user_id: str = "alvi", content: ContentLoader | None = None
+    db: Path,
+    *,
+    user_id: str = "alvi",
+    content: ContentLoader | None = None,
+    endpoint: str | None = None,
 ) -> FastMCP:
     """Build the MCP face the way ``build_app`` does — over a per-tenant factory.
 
@@ -176,7 +180,9 @@ def mcp_for(
     possible when the tenant moved from the process to the request. Going through the
     factory here keeps every face test on the same wiring the server actually runs."""
     seed_account(db, user_id)
-    return build_mcp(ServiceFactory(db), FixedTenantResolver(user_id), content)
+    return build_mcp(
+        ServiceFactory(db), FixedTenantResolver(user_id), content, endpoint=endpoint
+    )
 
 
 def seed_account(db: Path, user_id: str = "alvi") -> None:

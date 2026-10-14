@@ -9,6 +9,7 @@ from httpx import ASGITransport
 
 from munnin.app import build_app
 from munnin.configuration.config import Config
+from munnin.content.loader import ContentLoader
 from tests.conftest import auth_for, bearer, seed_login
 
 CF = Path(__file__).resolve().parents[2] / "control-files"
@@ -28,7 +29,7 @@ def _client(tmp_path: Path) -> httpx.AsyncClient:
 async def test_prompts_list_get_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         prompts = (await c.get("/api/prompts")).json()["prompts"]
-        assert len(prompts) == 14
+        assert prompts == ContentLoader(CF).list_prompts()
         assert "wait-options" in prompts  # discovered from the command set, listed nowhere
         assert "wrap-up" in prompts
         assert "create-agent" in prompts

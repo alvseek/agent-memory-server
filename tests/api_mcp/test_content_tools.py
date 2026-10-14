@@ -57,21 +57,42 @@ async def test_help_is_the_instructions_plus_the_menu(tmp_path: Path) -> None:
         rows = (await client.call_tool("list_procedures", {})).data
     assert out["instructions"] == INSTRUCTIONS
     assert out["procedures"] == rows  # one row-builder behind both
-    assert len(out["procedures"]) == 14
+    # Derived from the loader, never counted: a typed number here is verified by nothing
+    assert [r["name"] for r in out["procedures"]] == ContentLoader(CF).list_prompts()
 
 
 async def test_help_answers_without_served_content(tmp_path: Path) -> None:
     # a server built with no framework content still says what it is; the menu is empty
     async with Client(mcp_for(tmp_path / "m.db")) as client:
         out = (await client.call_tool("help", {})).data
-    assert out == {"instructions": INSTRUCTIONS, "procedures": []}
+    assert out["instructions"] == INSTRUCTIONS
+    assert out["procedures"] == []
+    # The declaration pair is this server's own answer about itself, so it survives with no
+    # framework content at all: a client can still declare how it reaches the core.
+    assert out["access"] == "mcp"
+    assert out["endpoint"] is None  # built without an endpoint here
+
+
+async def test_help_reports_the_endpoint_it_is_served_at(tmp_path: Path) -> None:
+    """``register-core-access`` reads both values off this call, so the endpoint has to be
+    the address the face is actually mounted at — derived from the instance's public base
+    URL rather than typed by whoever wrote the procedure."""
+    mcp = mcp_for(
+        tmp_path / "m.db",
+        content=ContentLoader(CF),
+        endpoint="https://munnin.lok.quest/mcp",
+    )
+    async with Client(mcp) as client:
+        out = (await client.call_tool("help", {})).data
+    assert out["access"] == "mcp"
+    assert out["endpoint"] == "https://munnin.lok.quest/mcp"
 
 
 async def test_list_procedures_carries_name_title_and_purpose(tmp_path: Path) -> None:
     async with Client(_mcp(tmp_path)) as client:
         rows = (await client.call_tool("list_procedures", {})).data
     by_name = {r["name"]: r for r in rows}
-    assert len(rows) == 14
+    assert sorted(by_name) == ContentLoader(CF).list_prompts()
     assert by_name["awaken-agent"] == {
         "name": "awaken-agent",
         "title": "Awaken Agent",
@@ -79,8 +100,8 @@ async def test_list_procedures_carries_name_title_and_purpose(tmp_path: Path) ->
     }
     assert "wait-options" in by_name  # served with no list naming it
     assert "push-memory" not in by_name  # excluded by policy
-    # a menu is only readable if its rows differ
-    assert len({r["description"] for r in rows}) == 14
+    # a menu is only readable if its rows differ — the property, not the population
+    assert len({r["description"] for r in rows}) == len(rows)
 
 
 async def test_read_procedure_composes_for_the_db_backend(tmp_path: Path) -> None:
