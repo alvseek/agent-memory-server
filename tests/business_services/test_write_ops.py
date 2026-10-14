@@ -55,13 +55,31 @@ def test_insert_carries_the_content_summary_to_the_record_and_the_index(
 def test_insert_with_a_blank_summary_is_refused(tmp_path: Path) -> None:
     """The summary is authored, so a blank one is not an answer - it is a missing field."""
     _repo, svc = _svc(tmp_path)
-    with pytest.raises(ValueError, match="content_summary is required"):
+    with pytest.raises(ValueError, match="blank content_summary is not a value"):
         svc.insert(
             content_summary="   ",
             agent_id="meta",
             record_type="episode",
             content="body",
         )
+
+
+def test_insert_without_a_summary_for_an_index_type_is_refused(tmp_path: Path) -> None:
+    """The other half, and a different question: episode and knowledge are read through a
+    browse index, so for those the summary is required rather than merely non-blank."""
+    _repo, svc = _svc(tmp_path)
+    with pytest.raises(ValueError, match="content_summary is required"):
+        svc.insert(agent_id="meta", record_type="knowledge", content="body")
+
+
+def test_insert_allows_no_summary_where_nothing_reads_it(tmp_path: Path) -> None:
+    """Identity is loaded whole at awakening, so a summary there would be data nothing
+    reads - and a blank one is refused on every type, which is the rule this pins."""
+    _repo, svc = _svc(tmp_path)
+    out = svc.insert(agent_id="meta", record_type="identity", content="body")
+    assert out["content_summary"] is None
+    with pytest.raises(ValueError, match="blank content_summary is not a value"):
+        svc.insert(agent_id="meta", record_type="identity", content="body", content_summary="")
 
 
 def test_a_rolling_record_moves_its_summary_in_a_second_call(tmp_path: Path) -> None:

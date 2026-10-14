@@ -348,7 +348,12 @@ class MemoryService:
         if scope not in ("agent", "shared"):
             raise ValueError(f"invalid scope {scope!r}: expected 'agent' or 'shared'")
         rtype = RecordType(record_type)
-        if rtype in _SUMMARY_REQUIRED and (not content_summary or not content_summary.strip()):
+        if content_summary is not None and not content_summary.strip():
+            raise ValueError(
+                "blank content_summary is not a value: leave it off, or clear a stored one "
+                "with edit_metadata's clearing."
+            )
+        if rtype in _SUMMARY_REQUIRED and not content_summary:
             raise ValueError(
                 f"content_summary is required for a {rtype.value}: one line saying what the "
                 "record holds, which a listing shows beside its title."
