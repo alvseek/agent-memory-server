@@ -55,7 +55,9 @@ async def _write_as_alice(app) -> str:
         assert created.status_code == 200, created.text
         written = await alice.post(
             "/api/insert",
-            json={"agent_id": "meta", "record_type": "knowledge", "content": SECRET,
+            json={
+                "content_summary": "a one-line summary of this record",
+                "agent_id": "meta", "record_type": "knowledge", "content": SECRET,
                   "template_version": ContentLoader(CF).template_version(
                       "knowledge-file-template")},
         )
@@ -132,7 +134,9 @@ async def test_bobs_write_does_not_reach_alices_agent(tmp_path: Path) -> None:
     async with _client(app, BOB) as bob:
         resp = await bob.post(
             "/api/insert",
-            json={"agent_id": "meta", "record_type": "knowledge", "content": "bob was here"},
+            json={
+                "content_summary": "a one-line summary of this record",
+                "agent_id": "meta", "record_type": "knowledge", "content": "bob was here"},
         )
     assert resp.status_code == 400
 

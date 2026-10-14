@@ -251,15 +251,22 @@ class SqliteMemoryRepository:
         old_string: str,
         new_string: str,
         replace_all: bool = False,
+        content_summary: str | None = None,
     ) -> SharedRecord:
         """Edit-tool-parity content edit. Unique-replace by default (raises if the
         substring is absent or ambiguous); ``replace_all=True`` replaces every
         occurrence. Bumps ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger.
 
+        ``content_summary`` replaces the record's one-line summary in the same UPDATE when
+        given, so a body edit and the summary that describes it land together or not at
+        all. ``None`` leaves the stored summary untouched.
+
         Raises ``LookupError`` if the record is missing/deleted, ``ValueError`` if
         ``old_string`` is not found or (without ``replace_all``) ambiguous."""
         return self._rewrite(
-            uuid, lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid)
+            uuid,
+            lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid),
+            content_summary=content_summary,
         )
 
     def append(self, uuid: str, text: str) -> SharedRecord:
@@ -293,12 +300,21 @@ class SqliteMemoryRepository:
 
         return self._rewrite(uuid, _transform)
 
-    def _rewrite(self, uuid: str, transform: Callable[[str], str]) -> SharedRecord:
+    def _rewrite(
+        self,
+        uuid: str,
+        transform: Callable[[str], str],
+        *,
+        content_summary: str | None = None,
+    ) -> SharedRecord:
         """Read-modify-write one record's ``full_content`` under a single connection.
         ``transform`` maps the current body to the new body and may raise ``ValueError``
         to abort with nothing written (the UPDATE runs only after it returns). Bumps
         ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger. Raises
-        ``LookupError`` if the record is missing/deleted."""
+        ``LookupError`` if the record is missing/deleted.
+
+        A non-``None`` ``content_summary`` is written by the same UPDATE, which is what
+        makes a body edit and its summary one write rather than two."""
         with self._conn() as conn:
             table = self._locate(conn, uuid)
             if table is None:
@@ -308,10 +324,15 @@ class SqliteMemoryRepository:
                 (uuid, self._user_id),
             ).fetchone()
             new_content = transform(row["full_content"] or "")
+            columns = ["full_content=?", "modified_date=?"]
+            params: list[object] = [new_content, _now()]
+            if content_summary is not None:
+                columns.append("content_summary=?")
+                params.append(content_summary)
+            params.extend([uuid, self._user_id])
             conn.execute(
-                f"UPDATE {table} SET full_content=?, modified_date=? "
-                "WHERE uuid=? AND user_id=?",
-                (new_content, _now(), uuid, self._user_id),
+                f"UPDATE {table} SET {', '.join(columns)} WHERE uuid=? AND user_id=?",
+                params,
             )
             updated = conn.execute(
                 f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",

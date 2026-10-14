@@ -50,7 +50,9 @@ async def test_insert_get_round_trip(tmp_path: Path) -> None:
     async with Client(_mcp(tmp_path)) as client:
         ins = await client.call_tool(
             "insert",
-            {"agent_id": "meta", "record_type": "episode", "content": "body", "uuid": "e1"},
+            {
+                "content_summary": "a one-line summary of this record",
+                "agent_id": "meta", "record_type": "episode", "content": "body", "uuid": "e1"},
         )
         assert ins.data["uuid"] == "e1"
         got = await client.call_tool("get", {"uuid": "e1"})
@@ -59,7 +61,9 @@ async def test_insert_get_round_trip(tmp_path: Path) -> None:
 
 async def test_edit_archive_search(tmp_path: Path) -> None:
     async with Client(_mcp(tmp_path)) as client:
-        await client.call_tool("insert", {"agent_id": "meta", "record_type": "knowledge",
+        await client.call_tool("insert", {
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "knowledge",
                                           "content": "hello world token", "uuid": "k1"})
         ed = await client.call_tool("edit", {"uuid": "k1", "old_string": "world",
                                              "new_string": "there"})
@@ -72,7 +76,9 @@ async def test_edit_archive_search(tmp_path: Path) -> None:
 
 async def test_append_prepend_multi_edit_tools(tmp_path: Path) -> None:
     async with Client(_mcp(tmp_path)) as client:
-        await client.call_tool("insert", {"agent_id": "meta", "record_type": "episode",
+        await client.call_tool("insert", {
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "episode",
                                           "content": "mid", "uuid": "e1"})
         ap = await client.call_tool("append", {"uuid": "e1", "text": " end"})
         assert ap.data["content"] == "mid end"
@@ -87,7 +93,9 @@ async def test_append_prepend_multi_edit_tools(tmp_path: Path) -> None:
 
 async def test_soft_delete(tmp_path: Path) -> None:
     async with Client(_mcp(tmp_path)) as client:
-        await client.call_tool("insert", {"agent_id": "meta", "record_type": "knowledge",
+        await client.call_tool("insert", {
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "knowledge",
                                           "content": "x", "uuid": "k1"})
         await client.call_tool("soft_delete", {"uuid": "k1"})
         got = await client.call_tool("get", {"uuid": "k1"})
@@ -98,7 +106,9 @@ async def test_insert_matching_template_version_round_trip(tmp_path: Path) -> No
     async with Client(_mcp_content(tmp_path)) as client:
         ins = await client.call_tool(
             "insert",
-            {"agent_id": "meta", "record_type": "episode", "content": "body", "uuid": "e1",
+            {
+                "content_summary": "a one-line summary of this record",
+                "agent_id": "meta", "record_type": "episode", "content": "body", "uuid": "e1",
              "template_version": _ver("episodic-entry-template")},
         )
         assert ins.data["uuid"] == "e1"
@@ -109,7 +119,9 @@ async def test_insert_without_template_version_is_refused(tmp_path: Path) -> Non
         with pytest.raises(ToolError, match="template_version is required"):
             await client.call_tool(
                 "insert",
-                {"agent_id": "meta", "record_type": "episode", "content": "x"},
+                {
+                    "content_summary": "a one-line summary of this record",
+                    "agent_id": "meta", "record_type": "episode", "content": "x"},
             )
 
 
@@ -118,7 +130,9 @@ async def test_insert_stale_template_version_is_refused(tmp_path: Path) -> None:
         with pytest.raises(ToolError, match="stale template"):
             await client.call_tool(
                 "insert",
-                {"agent_id": "meta", "record_type": "episode", "content": "x",
+                {
+                    "content_summary": "a one-line summary of this record",
+                    "agent_id": "meta", "record_type": "episode", "content": "x",
                  "template_version": "2000-01-01-00-00"},
             )
 
@@ -127,7 +141,9 @@ async def test_insert_ungated_type_needs_no_version(tmp_path: Path) -> None:
     async with Client(_mcp_content(tmp_path)) as client:
         ins = await client.call_tool(
             "insert",
-            {"agent_id": "meta", "record_type": "identity", "title": "Agent Identity",
+            {
+                "content_summary": "a one-line summary of this record",
+                "agent_id": "meta", "record_type": "identity", "title": "Agent Identity",
              "content": "**Name**: Claude Meta", "uuid": "i1"},
         )
         assert ins.data["uuid"] == "i1"

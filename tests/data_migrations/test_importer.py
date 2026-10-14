@@ -120,6 +120,21 @@ def test_active_knowledge_uses_real_file_body(tmp_path: Path) -> None:
     assert "real pain body" in pain.full_content  # real file, not the index description
 
 
+def test_imported_records_carry_the_index_summary(tmp_path: Path) -> None:
+    """The index line's description reaches ``content_summary`` for both curated types, so
+    awaken's browse index can show it. An archived episode has no line and stays null."""
+    src = _fake_source(tmp_path / "src")
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    import_agent(repo, src, "meta")
+    payload = MemoryService(repo, user_id="alvi").awaken("meta")
+
+    eps = {r["title"]: r["content_summary"] for r in payload["episodic_index"]}
+    assert eps["e1"] == "newest"
+    assert eps["e2"] == "older"
+    kn = {r["title"]: r["content_summary"] for r in payload["knowledge_index"]}
+    assert kn["Pain"] == "anchoring"
+
+
 def test_archived_episode_split(tmp_path: Path) -> None:
     src = _fake_source(tmp_path / "src")
     repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")

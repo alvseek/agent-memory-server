@@ -27,6 +27,7 @@ def _factory(tmp_path: Path, *tenants: str) -> ServiceFactory:
 
 def _write(svc, uuid: str, content: str) -> None:
     svc.insert(
+        content_summary="a one-line summary of this record",
         agent_id="meta", record_type=RecordType.episode.value, content=content, uuid=uuid
     )
 

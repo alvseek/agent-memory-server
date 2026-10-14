@@ -41,11 +41,13 @@ class MemoryRepository(Protocol):
         old_string: str,
         new_string: str,
         replace_all: bool = False,
+        content_summary: str | None = None,
     ) -> SharedRecord:
         """Targeted string replace inside a record's ``full_content`` (server-side
-        read-replace-write). Per-word/line granularity — token-identical to the Edit tool.
+        read-replace-write). Per-word/line granularity - token-identical to the Edit tool.
         Unique-replace by default (raises if absent/ambiguous); ``replace_all=True``
-        replaces every occurrence."""
+        replaces every occurrence. A non-``None`` ``content_summary`` is written by the
+        same update, so a body edit and its summary never land apart."""
         ...
 
     def append(self, uuid: str, text: str) -> SharedRecord:

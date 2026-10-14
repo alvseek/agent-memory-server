@@ -53,6 +53,7 @@ async def test_insert_http_get_mcp(tmp_path: Path) -> None:
     seed_agent(db, "meta")
     async with _http(db) as http:
         http_rec = (await http.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
             "agent_id": "meta", "record_type": "episode", "content": "twin body", "uuid": "p1",
             "template_version": _ver("episodic-entry-template"),
         })).json()
@@ -66,6 +67,7 @@ async def test_insert_mcp_get_http(tmp_path: Path) -> None:
     seed_agent(db, "meta")
     async with Client(_mcp(db)) as mcp:
         mcp_rec = (await mcp.call_tool("insert", {
+            "content_summary": "a one-line summary of this record",
             "agent_id": "meta", "record_type": "knowledge", "content": "twin2", "uuid": "p2",
         })).data
     async with _http(db) as http:
@@ -78,6 +80,7 @@ async def test_append_http_then_multi_edit_mcp_parity(tmp_path: Path) -> None:
     seed_agent(db, "meta")
     async with _http(db) as http:
         await http.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
             "agent_id": "meta", "record_type": "episode", "content": "one", "uuid": "p1",
             "template_version": _ver("episodic-entry-template"),
         })
@@ -114,6 +117,7 @@ async def test_shared_insert_parity(tmp_path: Path) -> None:
     db = tmp_path / "m.db"  # deliberately no agent anywhere in this store
     async with _http(db) as http:
         http_rec = (await http.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
             "scope": "shared", "record_type": "reasoning",
             "content": "fleet pattern", "uuid": "s1",
             "template_version": _ver("reasoning-pattern-template"),
@@ -131,6 +135,7 @@ async def test_shared_insert_contradiction_parity(tmp_path: Path) -> None:
     seed_agent(db, "meta")
     async with _http(db) as http:
         r = await http.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
             "scope": "shared", "agent_id": "meta",
             "record_type": "reasoning", "content": "x",
             "template_version": _ver("reasoning-pattern-template"),
@@ -140,6 +145,7 @@ async def test_shared_insert_contradiction_parity(tmp_path: Path) -> None:
     async with Client(_mcp(db)) as mcp:
         with pytest.raises(ToolError, match="no agent_id"):
             await mcp.call_tool("insert", {
+                "content_summary": "a one-line summary of this record",
                 "scope": "shared", "agent_id": "meta",
                 "record_type": "reasoning", "content": "x",
                 "template_version": _ver("reasoning-pattern-template"),
@@ -246,6 +252,7 @@ async def test_create_agent_then_insert_over_the_faces(tmp_path: Path) -> None:
         await mcp.call_tool("create_agent", {"agent_id": "newborn", "name": "Claude Newborn"})
     async with _http(db) as http:
         r = await http.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
             "agent_id": "newborn", "record_type": "identity",
             "title": "Agent Identity", "content": "**Name**: Claude Newborn", "uuid": "i1",
         })

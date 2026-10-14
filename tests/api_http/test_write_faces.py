@@ -41,7 +41,9 @@ async def test_insert_get_round_trip(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         r = await c.post(
             "/api/insert",
-            json={"agent_id": "meta", "record_type": "episode", "content": "body", "uuid": "e1",
+            json={
+                "content_summary": "a one-line summary of this record",
+                "agent_id": "meta", "record_type": "episode", "content": "body", "uuid": "e1",
                   "template_version": _ver("episodic-entry-template")},
         )
         assert r.status_code == 200
@@ -59,7 +61,9 @@ async def test_get_missing_404(tmp_path: Path) -> None:
 
 async def test_edit_and_query(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        await c.post("/api/insert", json={"agent_id": "meta", "record_type": "knowledge",
+        await c.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "knowledge",
                                           "content": "hello world", "uuid": "k1",
                                           "template_version": _ver("knowledge-file-template")})
         e = await c.post("/api/edit", json={"uuid": "k1", "old_string": "world",
@@ -73,7 +77,9 @@ async def test_edit_and_query(tmp_path: Path) -> None:
 
 async def test_archive_then_search(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        await c.post("/api/insert", json={"agent_id": "meta", "record_type": "knowledge",
+        await c.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "knowledge",
                                           "content": "findable token", "uuid": "k1",
                                           "template_version": _ver("knowledge-file-template")})
         a = await c.post("/api/archive", json={"uuid": "k1"})
@@ -85,7 +91,9 @@ async def test_archive_then_search(tmp_path: Path) -> None:
 
 async def test_soft_delete_then_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        await c.post("/api/insert", json={"agent_id": "meta", "record_type": "knowledge",
+        await c.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "knowledge",
                                           "content": "x", "uuid": "k1",
                                           "template_version": _ver("knowledge-file-template")})
         await c.post("/api/soft-delete", json={"uuid": "k1"})
@@ -94,7 +102,9 @@ async def test_soft_delete_then_404(tmp_path: Path) -> None:
 
 async def test_append_prepend_faces(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
+        await c.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "episode",
                                           "content": "mid", "uuid": "e1",
                                           "template_version": _ver("episodic-entry-template")})
         a = await c.post("/api/append", json={"uuid": "e1", "text": " end"})
@@ -106,7 +116,9 @@ async def test_append_prepend_faces(tmp_path: Path) -> None:
 
 async def test_multi_edit_face_atomic(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
+        await c.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "episode",
                                           "content": "one two", "uuid": "e1",
                                           "template_version": _ver("episodic-entry-template")})
         ok = await c.post("/api/multi-edit", json={"uuid": "e1", "edits": [
@@ -132,7 +144,9 @@ async def test_append_missing_404(tmp_path: Path) -> None:
 
 async def test_insert_bad_record_type_400(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        r = await c.post("/api/insert", json={"agent_id": "meta", "record_type": "bogus",
+        r = await c.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "bogus",
                                               "content": "x"})
         assert r.status_code == 400
 
@@ -145,7 +159,9 @@ async def test_edit_missing_404(tmp_path: Path) -> None:
 
 async def test_insert_without_template_version_400(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        r = await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
+        r = await c.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "episode",
                                               "content": "x"})
         assert r.status_code == 400
         assert "template_version is required" in r.json()["detail"]
@@ -153,7 +169,9 @@ async def test_insert_without_template_version_400(tmp_path: Path) -> None:
 
 async def test_insert_stale_template_version_400(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        r = await c.post("/api/insert", json={"agent_id": "meta", "record_type": "episode",
+        r = await c.post("/api/insert", json={
+            "content_summary": "a one-line summary of this record",
+            "agent_id": "meta", "record_type": "episode",
                                               "content": "x",
                                               "template_version": "2000-01-01-00-00"})
         assert r.status_code == 400

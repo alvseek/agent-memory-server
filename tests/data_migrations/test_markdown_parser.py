@@ -142,6 +142,18 @@ def test_parse_knowledge_index() -> None:
     items = P.parse_knowledge_index(_INDEX)
     assert [i.title for i in items] == ["Pain = Memory", "4-Layer"]
     assert items[0].key == "memory-architecture/pain.md"
+    # the text past the link is the browse summary; the separator before it is markup
+    # and drops, while a leading badge is not markup and stays
+    assert items[1].content_summary == "the layers"
+    assert items[0].content_summary == "⭐ - pain anchoring"
+
+
+def test_parse_active_episodes_carries_the_index_summary() -> None:
+    """The one-liner after the link is the episode's browse summary, deduped with the
+    entry itself: the newer ref wins the whole reference, not just the date."""
+    refs = P.parse_active_episodes(_INDEX)
+    assert [r["file"] for r in refs] == ["episodes/build.md", "episodes/boundary.md"]
+    assert [r["summary"] for r in refs] == ["summary of build", "summary of boundary"]
 
 
 def test_stable_uuid_is_deterministic() -> None:

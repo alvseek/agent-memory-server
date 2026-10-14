@@ -61,6 +61,7 @@ class CreateAgentBody(BaseModel):
 class InsertBody(BaseModel):
     record_type: str
     content: str
+    content_summary: str | None = None
     agent_id: str | None = None
     scope: str = "agent"
     title: str | None = None
@@ -75,6 +76,7 @@ class EditBody(BaseModel):
     old_string: str
     new_string: str
     replace_all: bool = False
+    content_summary: str | None = None
 
 
 class AppendBody(BaseModel):
@@ -262,6 +264,7 @@ def build_router(
                 scope=body.scope,
                 record_type=body.record_type,
                 content=body.content,
+                content_summary=body.content_summary,
                 title=body.title,
                 tags=body.tags,
                 project=body.project,
@@ -272,9 +275,16 @@ def build_router(
 
     @api.post("/api/edit")
     def edit(body: EditBody, svc: MemoryService = Depends(_tenant_service)) -> dict[str, Any]:
-        """Targeted string replace inside a record's body (Edit-tool parity)."""
+        """Targeted string replace inside a record's body (Edit-tool parity). A
+        ``content_summary`` replaces the record's one-line summary in the same write."""
         try:
-            return svc.edit(body.uuid, body.old_string, body.new_string, body.replace_all)
+            return svc.edit(
+                body.uuid,
+                body.old_string,
+                body.new_string,
+                body.replace_all,
+                body.content_summary,
+            )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:

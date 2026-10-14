@@ -50,9 +50,19 @@ def _service(tmp_path: Path) -> MemoryService:
     repo.insert(_rec("id1", "meta", RecordType.identity))
     repo.insert(_rec("em1", "meta", RecordType.emotional))
     # layer iii (domain)
-    repo.insert(_rec("kn1", "meta", RecordType.knowledge, tags=["t"]))
+    repo.insert(
+        _rec("kn1", "meta", RecordType.knowledge, tags=["t"], content_summary="kn one-liner")
+    )
     repo.insert(_rec("ep_old", "meta", RecordType.episode, created_date="2026-08-01"))
-    repo.insert(_rec("ep_new", "meta", RecordType.episode, created_date="2026-08-09"))
+    repo.insert(
+        _rec(
+            "ep_new",
+            "meta",
+            RecordType.episode,
+            created_date="2026-08-09",
+            content_summary="what the newest session did",
+        )
+    )
     # noise: archived + deleted episodes must not surface
     repo.insert(_rec("ep_arch", "meta", RecordType.episode, archived_date="2026-02-01"))
     repo.insert(_rec("ep_del", "meta", RecordType.episode, deleted_date="2026-02-01"))
@@ -87,6 +97,16 @@ def test_awaken_episodes_newest_first_and_latest_has_body(tmp_path: Path) -> Non
     # latest episode carries the body
     assert payload["latest_episode"]["uuid"] == "ep_new"
     assert payload["latest_episode"]["content"] == "body-ep_new"
+
+
+def test_browse_indexes_carry_the_content_summary(tmp_path: Path) -> None:
+    """The one line that lets a reader decide whether a body is worth fetching. An entry
+    with no summary carries ``None``, never an empty string."""
+    payload = _service(tmp_path).awaken("meta")
+
+    assert payload["knowledge_index"][0]["content_summary"] == "kn one-liner"
+    assert payload["episodic_index"][0]["content_summary"] == "what the newest session did"
+    assert payload["episodic_index"][1]["content_summary"] is None
 
 
 def test_awaken_rejects_invalid_domain(tmp_path: Path) -> None:

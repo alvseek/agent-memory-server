@@ -88,6 +88,7 @@ def _to_record(
         full_content=item.body,
         title=item.title,
         tags=item.tags,
+        content_summary=item.content_summary,
         project=project,
         created_date=item.date,  # None → repo defaults (undated identity/knowledge)
         archived_date=archived_date,
@@ -104,6 +105,7 @@ def _to_shared_record(item: P.ParsedItem, record_type: RecordType) -> SharedReco
         full_content=item.body,
         title=item.title,
         tags=item.tags,
+        content_summary=item.content_summary,
         created_date=item.date,
     )
 
@@ -222,19 +224,21 @@ def _import_episodes(
 ) -> None:
     """Every ``episodes/*.md`` → a record. In the index = active (archived_date NULL);
     absent from the index = archived (archived_date set). Body = the real file minus any
-    frontmatter; ``project`` and ``tags`` come from that frontmatter, and the title is the
-    filename without its date prefix."""
+    frontmatter; ``project`` and ``tags`` come from that frontmatter, the title is the
+    filename without its date prefix, and ``content_summary`` is the index line's one-line
+    description, absent for an archived episode that has no line."""
     ep_dir = agent_dir / "episodes"
     if not ep_dir.is_dir():
         return
     index_path = agent_dir / "agent-memory-index.md"
     index = _read(index_path) if index_path.exists() else ""
-    active = {ep["file"]: ep["date"] for ep in P.parse_active_episodes(index)}
+    active = {ep["file"]: ep for ep in P.parse_active_episodes(index)}
     for ep_path in sorted(ep_dir.glob("*.md")):
         rel = f"episodes/{ep_path.name}"
         meta, body = P.split_frontmatter(_read(ep_path))
-        if rel in active:
-            date = active[rel] or P.date_from_filename(ep_path.name)
+        entry = active.get(rel)
+        if entry is not None:
+            date = entry["date"] or P.date_from_filename(ep_path.name)
             archived = None
         else:
             date = P.date_from_filename(ep_path.name)
@@ -245,6 +249,8 @@ def _import_episodes(
             key=rel,
             date=date,
             tags=P.meta_tags(meta),
+            # The index line's one-liner; an archived episode has no index line.
+            content_summary=(entry["summary"] or None) if entry else None,
         )
         repo.insert(
             _to_record(
@@ -261,11 +267,12 @@ def _import_episodes(
 def _import_knowledge(
     repo: MemoryRepository, agent_dir: Path, agent_id: str, counts: Counter[str]
 ) -> None:
-    """Indexed knowledge = active, imported with its **real file body** (fallback to the
-    index description if the file is missing) and any ``tags`` from its frontmatter.
-    Unindexed non-project files = archived. ``knowledge-base/`` subdirs holding a
-    ``context-index.md`` are project-scoped → Hermod, skipped. ``project`` is left unset:
-    Munnin is project-blind for knowledge, so project-scoped knowledge never reaches here."""
+    """Indexed knowledge = active, imported with its **real file body**, any ``tags`` from
+    its frontmatter, and the index line's description as ``content_summary``; that same
+    description stands in for the body when the file itself is missing. Unindexed
+    non-project files = archived. ``knowledge-base/`` subdirs holding a ``context-index.md``
+    are project-scoped → Hermod, skipped. ``project`` is left unset: Munnin is project-blind
+    for knowledge, so project-scoped knowledge never reaches here."""
     index_path = agent_dir / "agent-memory-index.md"
     index = _read(index_path) if index_path.exists() else ""
     active_items = P.parse_knowledge_index(index)
@@ -280,7 +287,11 @@ def _import_knowledge(
         else:
             meta, body = {}, it.body
         item = P.ParsedItem(
-            title=it.title, body=body, key=it.key, tags=P.meta_tags(meta) or it.tags
+            title=it.title,
+            body=body,
+            key=it.key,
+            tags=P.meta_tags(meta) or it.tags,
+            content_summary=it.content_summary,
         )
         repo.insert(_to_record(item, agent_id, RecordType.knowledge))
         counts[f"{agent_id}/knowledge"] += 1

@@ -224,8 +224,10 @@ def build_mcp(
         vary by agent. ``template_version`` declares which version of the record type's
         template the content was built against (read it with read_resource first); the
         gated types (episode|reasoning|emotional|knowledge|coding_reasoning) are refused
-        without a matching one. ``content_summary`` is the one-line summary of the body
-        shown beside the title in a browse listing; omitted, the index carries null."""
+        without a matching one. ``content_summary`` is required for the types a browse index
+        reads (``episode``, ``knowledge``): one line saying what the record holds, which a
+        listing shows beside its title and a reader decides on before fetching the body.
+        Author it; a blank one is refused. Other types take none."""
         _check_template(record_type, template_version)
         return _svc().insert(
             agent_id=agent_id,
@@ -241,10 +243,16 @@ def build_mcp(
 
     @mcp.tool(title="Edit a record's body", annotations=_DESTRUCTIVE)
     def edit(
-        uuid: str, old_string: str, new_string: str, replace_all: bool = False
+        uuid: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+        content_summary: str | None = None,
     ) -> dict[str, Any]:
-        """Targeted string replace inside a record's body (Edit-tool parity)."""
-        return _svc().edit(uuid, old_string, new_string, replace_all)
+        """Targeted string replace inside a record's body (Edit-tool parity). Pass
+        ``content_summary`` to replace the record's one-line summary in the same write,
+        which is how a rolling record keeps its summary describing its newest content."""
+        return _svc().edit(uuid, old_string, new_string, replace_all, content_summary)
 
     @mcp.tool(title="Append to a record", annotations=_ADDITIVE)
     def append(uuid: str, text: str) -> dict[str, Any]:

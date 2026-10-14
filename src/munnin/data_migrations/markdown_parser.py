@@ -97,6 +97,8 @@ class ParsedItem:
     uuid: str | None = None  # pre-existing UUID to reuse (reasoning patterns)
     date: str | None = None
     tags: list[str] = field(default_factory=list)
+    # The index line's one-line description of this item, when the index carries one.
+    content_summary: str | None = None
 
 
 def split_sections(text: str, level: int) -> list[tuple[str, str]]:
@@ -315,12 +317,29 @@ def parse_shared_profile(text: str) -> list[ParsedItem]:
 
 
 def parse_knowledge_index(index_text: str) -> list[ParsedItem]:
+    """Active knowledge entries from the index's knowledge directory.
+
+    ``body`` is the index description, which stands in for the whole body only when the
+    file itself is missing (the importer prefers the real file). The same string is
+    carried as ``content_summary`` in every case, because that one line is what a browse
+    index shows beside the title."""
     items: list[ParsedItem] = []
     for line in index_text.splitlines():
         m = _KNOWLEDGE_ENTRY.match(line.strip())
         if m:
             title, path, desc = m.group(1), m.group(2), m.group(3).strip()
-            items.append(ParsedItem(title=title, body=desc or title, key=path))
+            items.append(
+                ParsedItem(
+                    title=title,
+                    body=desc or title,
+                    key=path,
+                    # The separator the index writes before the text is markup, not
+                    # content, so the summary drops it; a leading badge is not markup and
+                    # stays. Only the summary is cleaned — ``body`` stays verbatim, since
+                    # it can stand in for a missing file.
+                    content_summary=desc.lstrip("-–— ").strip() or None,
+                )
+            )
     return items
 
 

@@ -176,10 +176,17 @@ class PostgresMemoryRepository:
         return _row_to_shared(row)
 
     def edit(
-        self, uuid: str, old_string: str, new_string: str, replace_all: bool = False
+        self,
+        uuid: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+        content_summary: str | None = None,
     ) -> SharedRecord:
         return self._rewrite(
-            uuid, lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid)
+            uuid,
+            lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid),
+            content_summary=content_summary,
         )
 
     def append(self, uuid: str, text: str) -> SharedRecord:
@@ -203,7 +210,13 @@ class PostgresMemoryRepository:
 
         return self._rewrite(uuid, _transform)
 
-    def _rewrite(self, uuid: str, transform: Callable[[str], str]) -> SharedRecord:
+    def _rewrite(
+        self,
+        uuid: str,
+        transform: Callable[[str], str],
+        *,
+        content_summary: str | None = None,
+    ) -> SharedRecord:
         with self._conn() as conn, conn.cursor() as cur:
             table = self._locate(cur, uuid)
             if table is None:
@@ -213,10 +226,15 @@ class PostgresMemoryRepository:
                 (uuid, self._user_id),
             )
             new_content = transform(cur.fetchone()["full_content"] or "")
+            columns = ["full_content=%s", "modified_date=%s"]
+            params: list[object] = [new_content, _now()]
+            if content_summary is not None:
+                columns.append("content_summary=%s")
+                params.append(content_summary)
+            params.extend([uuid, self._user_id])
             cur.execute(
-                f"UPDATE {table} SET full_content=%s, modified_date=%s "
-                "WHERE uuid=%s AND user_id=%s",
-                (new_content, _now(), uuid, self._user_id),
+                f"UPDATE {table} SET {', '.join(columns)} WHERE uuid=%s AND user_id=%s",
+                params,
             )
             cur.execute(
                 f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=%s AND user_id=%s",

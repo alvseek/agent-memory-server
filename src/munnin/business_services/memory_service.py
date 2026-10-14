@@ -21,6 +21,12 @@ from munnin.data_entities.memory_record import (
 )
 from munnin.data_repositories.memory_repository import MemoryRepository
 
+#: The record types a browse index reads a ``content_summary`` from: ``episodic_index`` and
+#: ``knowledge_index``, the two the awakening hands back as metadata-only listings. Every
+#: other type is loaded whole at awakening, and the markdown backend has no artifact to author
+#: a one-liner into for them, so requiring one there would ask for data nothing reads.
+_SUMMARY_REQUIRED = (RecordType.episode, RecordType.knowledge)
+
 
 def _whole(r: SharedRecord) -> dict[str, Any]:
     """Always-load section item — full body included."""
@@ -43,10 +49,12 @@ def _episode(r: SharedRecord | None) -> dict[str, Any] | None:
 
 def _index(r: SharedRecord) -> dict[str, Any]:
     """Browse section item — metadata only, no body (fetched on demand). Carries
-    ``project`` so a caller can pick the episode for a project without loading bodies."""
+    ``project`` so a caller can pick the episode for a project without loading bodies,
+    and ``content_summary`` so the reader can judge whether to fetch one at all."""
     return {
         "uuid": r.uuid,
         "title": r.title,
+        "content_summary": r.content_summary,
         "tags": r.tags,
         "project": r.project,
         "created_date": r.created_date,
@@ -68,6 +76,7 @@ def _record(r: SharedRecord) -> dict[str, Any]:
         "record_type": r.record_type.value,
         "project": r.project,
         "title": r.title,
+        "content_summary": r.content_summary,
         "tags": r.tags,
         "created_date": r.created_date,
         "modified_date": r.modified_date,
@@ -304,6 +313,7 @@ class MemoryService:
         *,
         record_type: str,
         content: str,
+        content_summary: str | None = None,
         agent_id: str | None = None,
         scope: str = "agent",
         title: str | None = None,
@@ -314,6 +324,13 @@ class MemoryService:
         """Append a new item. Assembles the record server-side (the repo stamps
         ``user_id`` + defaults dates); generates a ``uuid`` if absent. Idempotent upsert
         on ``uuid``.
+
+        ``content_summary`` is required for the types a browse index reads - ``episode`` and
+        ``knowledge``: one line saying what the record holds, shown beside its title wherever
+        a listing is rendered. It is what a reader decides on before fetching a body, so it is
+        authored rather than derived, and a blank one is refused instead of stored as an
+        absent answer. Every other type is loaded whole at awakening, so a summary there would
+        be data nothing reads. ``edit`` replaces it when a body changes.
 
         ``scope`` decides which table the row goes to, and it has to be explicit: an
         insert is the one write that chooses *where* — every other write addresses a
@@ -330,12 +347,18 @@ class MemoryService:
         if scope not in ("agent", "shared"):
             raise ValueError(f"invalid scope {scope!r}: expected 'agent' or 'shared'")
         rtype = RecordType(record_type)
+        if rtype in _SUMMARY_REQUIRED and (not content_summary or not content_summary.strip()):
+            raise ValueError(
+                f"content_summary is required for a {rtype.value}: one line saying what the "
+                "record holds, which a listing shows beside its title."
+            )
         common: dict[str, Any] = {
             "uuid": uuid or _uuid.uuid4().hex,
             "user_id": "",  # repo stamps server-side
             "record_type": rtype,
             "full_content": content,
             "title": title,
+            "content_summary": content_summary,
             "tags": tags or [],
             "project": project,
         }
@@ -354,12 +377,22 @@ class MemoryService:
         )
 
     def edit(
-        self, uuid: str, old_string: str, new_string: str, replace_all: bool = False
+        self,
+        uuid: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+        content_summary: str | None = None,
     ) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity). Raises
         ``LookupError`` if missing/deleted, ``ValueError`` if ``old_string`` is absent or
-        (without ``replace_all``) ambiguous."""
-        return _record(self._repo.edit(uuid, old_string, new_string, replace_all))
+        (without ``replace_all``) ambiguous.
+
+        ``content_summary`` replaces the record's one-line summary in the same write, which
+        is how a rolling record keeps its summary describing its newest content."""
+        return _record(
+            self._repo.edit(uuid, old_string, new_string, replace_all, content_summary)
+        )
 
     def append(self, uuid: str, text: str) -> dict[str, Any]:
         """Add ``text`` verbatim to the end of a record's body (caller controls

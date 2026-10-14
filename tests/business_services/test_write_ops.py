@@ -22,17 +22,74 @@ def _svc(tmp_path: Path) -> tuple[SqliteMemoryRepository, MemoryService]:
 
 def test_insert_round_trip_generates_uuid(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
-    out = svc.insert(agent_id="meta", record_type="episode", content="body", title="t")
+    out = svc.insert(
+        content_summary="a one-line summary of this record",
+        agent_id="meta", record_type="episode", content="body", title="t")
     assert out["uuid"]  # server-generated
     assert out["content"] == "body"
     assert out["record_type"] == "episode"
     assert svc.get(out["uuid"])["content"] == "body"
 
 
+def test_insert_carries_the_content_summary_to_the_record_and_the_index(
+    tmp_path: Path,
+) -> None:
+    """The summary is authored at the write, so it has to survive both reads: the full
+    record, and the browse index that shows it beside the title."""
+    _repo, svc = _svc(tmp_path)
+    out = svc.insert(
+        agent_id="meta",
+        record_type="episode",
+        content="body",
+        title="t",
+        content_summary="one line about the body",
+    )
+    assert out["content_summary"] == "one line about the body"
+    assert svc.get(out["uuid"])["content_summary"] == "one line about the body"
+    assert (
+        svc.awaken("meta")["episodic_index"][0]["content_summary"]
+        == "one line about the body"
+    )
+
+
+def test_insert_with_a_blank_summary_is_refused(tmp_path: Path) -> None:
+    """The summary is authored, so a blank one is not an answer - it is a missing field."""
+    _repo, svc = _svc(tmp_path)
+    with pytest.raises(ValueError, match="content_summary is required"):
+        svc.insert(
+            content_summary="   ",
+            agent_id="meta",
+            record_type="episode",
+            content="body",
+        )
+
+
+def test_edit_replaces_the_summary_in_the_same_write(tmp_path: Path) -> None:
+    """A rolling record's summary describes its newest content, so an append has to be
+    able to move it together with the body. Omitted, the stored summary is left alone."""
+    _repo, svc = _svc(tmp_path)
+    svc.insert(
+        content_summary="first take",
+        agent_id="meta",
+        record_type="episode",
+        content="body",
+        uuid="e1",
+    )
+    out = svc.edit("e1", "body", "newest body", content_summary="second take")
+    assert out["content"] == "newest body"
+    assert out["content_summary"] == "second take"
+    again = svc.edit("e1", "newest", "newest")
+    assert again["content_summary"] == "second take"
+
+
 def test_insert_is_idempotent_upsert(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
-    svc.insert(agent_id="meta", record_type="episode", content="A", uuid="dup")
-    svc.insert(agent_id="meta", record_type="episode", content="B", uuid="dup")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        agent_id="meta", record_type="episode", content="A", uuid="dup")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        agent_id="meta", record_type="episode", content="B", uuid="dup")
     rows = svc.query(agent_id="meta")
     assert len(rows) == 1
     assert rows[0]["content"] == "B"
@@ -42,7 +99,9 @@ def test_insert_shared_scope_writes_fleet_memory(tmp_path: Path) -> None:
     """Fleet memory is written by naming a scope, not by naming a fake agent. The
     returned projection carries **no** ``agent_id`` — that absence is the label."""
     _repo, svc = _svc(tmp_path)
-    out = svc.insert(scope="shared", record_type="reasoning", content="pattern")
+    out = svc.insert(
+        content_summary="a one-line summary of this record",
+        scope="shared", record_type="reasoning", content="pattern")
     assert "agent_id" not in out
     assert out["content"] == "pattern"
 
@@ -51,7 +110,9 @@ def test_insert_shared_scope_accepts_the_coding_reasoning_lane(tmp_path: Path) -
     """The coding lane is a shared type of its own, so a shared insert names it and the
     row lands ownerless like any other fleet memory."""
     _repo, svc = _svc(tmp_path)
-    out = svc.insert(scope="shared", record_type="coding_reasoning", content="a coding pattern")
+    out = svc.insert(
+        content_summary="a one-line summary of this record",
+        scope="shared", record_type="coding_reasoning", content="a coding pattern")
     assert "agent_id" not in out
     assert out["record_type"] == "coding_reasoning"
     assert [r["content"] for r in svc.query(record_type="coding_reasoning")] == [
@@ -63,8 +124,12 @@ def test_the_coding_lane_is_readable_but_absent_from_a_chat_awakening(tmp_path: 
     """The lane is fleet memory, so it is readable on demand; but `awaken` selects its
     universal layer by `record_type`, so a chat agent's payload never carries it."""
     _repo, svc = _svc(tmp_path)
-    svc.insert(scope="shared", record_type="coding_reasoning", content="a coding pattern")
-    svc.insert(scope="shared", record_type="reasoning", content="a universal pattern")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        scope="shared", record_type="coding_reasoning", content="a coding pattern")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        scope="shared", record_type="reasoning", content="a universal pattern")
     assert [r["content"] for r in svc.coding_reasoning()] == ["a coding pattern"]
     shared = [r["content"] for r in svc.awaken("meta")["shared"]["reasoning"]]
     assert shared == ["a universal pattern"]
@@ -75,27 +140,37 @@ def test_insert_agent_scope_without_an_agent_id_is_refused(tmp_path: Path) -> No
     row in a table the caller did not mean, and an insert cannot be undone by retrying."""
     _repo, svc = _svc(tmp_path)
     with pytest.raises(ValueError, match="requires an agent_id"):
-        svc.insert(record_type="episode", content="x")
+        svc.insert(
+            content_summary="a one-line summary of this record",
+            record_type="episode", content="x")
 
 
 def test_insert_shared_scope_with_an_agent_id_is_refused(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
     with pytest.raises(ValueError, match="no agent_id"):
-        svc.insert(scope="shared", agent_id="meta", record_type="reasoning", content="x")
+        svc.insert(
+            content_summary="a one-line summary of this record",
+            scope="shared", agent_id="meta", record_type="reasoning", content="x")
 
 
 def test_insert_rejects_an_unknown_scope(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
     with pytest.raises(ValueError, match="invalid scope"):
-        svc.insert(scope="fleet", record_type="reasoning", content="x")
+        svc.insert(
+            content_summary="a one-line summary of this record",
+            scope="fleet", record_type="reasoning", content="x")
 
 
 def test_insert_rejects_bad_agent_and_type(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
     with pytest.raises(ValueError):
-        svc.insert(agent_id="Bad_Name", record_type="episode", content="x")
+        svc.insert(
+            content_summary="a one-line summary of this record",
+            agent_id="Bad_Name", record_type="episode", content="x")
     with pytest.raises(ValueError):
-        svc.insert(agent_id="meta", record_type="bogus", content="x")
+        svc.insert(
+            content_summary="a one-line summary of this record",
+            agent_id="meta", record_type="bogus", content="x")
 
 
 def test_edit_replaces_body_and_bumps_modified(tmp_path: Path) -> None:
@@ -123,7 +198,9 @@ def test_edit_errors(tmp_path: Path) -> None:
 
 def test_append_and_prepend(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
-    svc.insert(agent_id="meta", record_type="episode", content="middle", uuid="e1")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        agent_id="meta", record_type="episode", content="middle", uuid="e1")
     assert svc.append("e1", " end")["content"] == "middle end"
     assert svc.prepend("e1", "start ")["content"] == "start middle end"
 
@@ -136,7 +213,9 @@ def test_append_missing_raises_lookup(tmp_path: Path) -> None:
 
 def test_multi_edit_atomic_and_ordered(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
-    svc.insert(agent_id="meta", record_type="episode", content="one two", uuid="e1")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        agent_id="meta", record_type="episode", content="one two", uuid="e1")
     out = svc.multi_edit("e1", [
         {"old_string": "one", "new_string": "1"},
         {"old_string": "two", "new_string": "2"},
@@ -146,14 +225,18 @@ def test_multi_edit_atomic_and_ordered(tmp_path: Path) -> None:
 
 def test_multi_edit_malformed_edit_raises_value(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
-    svc.insert(agent_id="meta", record_type="episode", content="body", uuid="e1")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        agent_id="meta", record_type="episode", content="body", uuid="e1")
     with pytest.raises(ValueError, match="old_string"):
         svc.multi_edit("e1", [{"new_string": "x"}])  # missing old_string
 
 
 def test_archive_drops_from_hot_index_but_searchable(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
-    svc.insert(agent_id="meta", record_type="knowledge", content="findable token", uuid="k1")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        agent_id="meta", record_type="knowledge", content="findable token", uuid="k1")
     ack = svc.archive("k1")
     assert ack == {"uuid": "k1", "status": "archived"}
     assert svc.query(agent_id="meta") == []
@@ -162,7 +245,9 @@ def test_archive_drops_from_hot_index_but_searchable(tmp_path: Path) -> None:
 
 def test_soft_delete_excluded_everywhere(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
-    svc.insert(agent_id="meta", record_type="knowledge", content="gone token", uuid="k1")
+    svc.insert(
+        content_summary="a one-line summary of this record",
+        agent_id="meta", record_type="knowledge", content="gone token", uuid="k1")
     ack = svc.soft_delete("k1")
     assert ack == {"uuid": "k1", "status": "deleted"}
     assert svc.get("k1") is None
