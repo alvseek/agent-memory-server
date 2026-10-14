@@ -207,3 +207,18 @@ async def test_edit_metadata_over_the_http_face(tmp_path: Path) -> None:
         assert empty_change.status_code == 400
         absent = await c.post("/api/edit-metadata", json={"uuid": "absent", "title": "t"})
         assert absent.status_code == 404
+
+
+async def test_a_write_body_refuses_a_field_it_does_not_take(tmp_path: Path) -> None:
+    """Pydantic ignores unknown keys by default, so without this a caller still sending
+    `content_summary` to `/api/edit` — the argument that op no longer takes — would get a
+    200 and no change, which is exactly the silent no-op this change exists to remove. The
+    mistake is a 422 naming the field instead. The MCP face cannot match: the transport
+    drops an undeclared argument before the server sees it."""
+    async with _client(tmp_path) as c:
+        stale = await c.post("/api/edit", json={
+            "uuid": "k1", "old_string": "a", "new_string": "b",
+            "content_summary": "no longer an argument here"})
+        assert stale.status_code == 422
+        typo = await c.post("/api/edit-metadata", json={"uuid": "k1", "titel": "typo"})
+        assert typo.status_code == 422

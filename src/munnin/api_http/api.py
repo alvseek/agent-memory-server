@@ -31,7 +31,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from fastmcp.server.auth import AuthProvider
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from munnin import __version__
 from munnin.business_services.identity_service import IdentityService
@@ -51,14 +51,28 @@ class MarkdownResponse(PlainTextResponse):
     media_type = "text/markdown"
 
 
-class CreateAgentBody(BaseModel):
+class _WriteBody(BaseModel):
+    """A request body that refuses fields it does not define.
+
+    Pydantic ignores unknown keys by default, and for a write that turns a caller's mistake
+    into a 200 with a silent no-op: a field this op no longer takes, or one belonging to a
+    sibling op, is dropped and nothing says so. Every write body inherits this, so the
+    mistake becomes a 422 that names the field. The MCP face cannot do the same — the
+    transport ignores an undeclared argument before the server ever sees it — which is why
+    removing a parameter has to move the served procedure text in the same change.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CreateAgentBody(_WriteBody):
     agent_id: str
     name: str | None = None
     role: str | None = None
     uuid: str | None = None
 
 
-class InsertBody(BaseModel):
+class InsertBody(_WriteBody):
     record_type: str
     content: str
     content_summary: str | None = None
@@ -71,14 +85,14 @@ class InsertBody(BaseModel):
     template_version: str | None = None
 
 
-class EditBody(BaseModel):
+class EditBody(_WriteBody):
     uuid: str
     old_string: str
     new_string: str
     replace_all: bool = False
 
 
-class EditMetadataBody(BaseModel):
+class EditMetadataBody(_WriteBody):
     uuid: str
     title: str | None = None
     tags: list[str] | None = None
@@ -87,23 +101,23 @@ class EditMetadataBody(BaseModel):
     clearing: list[str] | None = None
 
 
-class AppendBody(BaseModel):
+class AppendBody(_WriteBody):
     uuid: str
     text: str
 
 
-class EditOp(BaseModel):
+class EditOp(_WriteBody):
     old_string: str
     new_string: str
     replace_all: bool = False
 
 
-class MultiEditBody(BaseModel):
+class MultiEditBody(_WriteBody):
     uuid: str
     edits: list[EditOp]
 
 
-class UuidBody(BaseModel):
+class UuidBody(_WriteBody):
     uuid: str
 
 
