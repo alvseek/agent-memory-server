@@ -61,6 +61,7 @@ Every script honours `MUNNIN_DB_PATH`, `MUNNIN_IMPORT_SOURCE`, `MUNNIN_HOST` and
 | R/I/A/O scripts | Scripts | [scripts/](scripts/) | /build-qa-bench |
 | Required config + templates | Config | [config/](config/) | /build-qa-bench |
 | Test-data sources | Seeds | [seeds/](seeds/) | /build-qa-bench |
+| Records already stored, fixed in place | Repairs | [repairs/](repairs/) — 1 | archive mis-filing, 2026-10-24 |
 | What exists + maturity audit | Map | [qa-map.md](qa-map.md) | /map-qa-instrument |
 
 *No cross-module playbook: Munnin is one app, and `control-files` is a submodule of served content rather than a second running service. See [qa-playbook-map.md](qa-playbook-map.md) for what a playbook here would actually be about.*

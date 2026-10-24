@@ -156,6 +156,250 @@ def test_parse_active_episodes_carries_the_index_summary() -> None:
     assert [r["summary"] for r in refs] == ["summary of build", "summary of boundary"]
 
 
+# --- the index shapes the fleet actually writes (2026-10-24) ---
+#
+# Every block below is a VERBATIM line (or header + line) out of one agent's real
+# `agent-memory-index.md`, cut at the point where its prose runs on. The parser used to
+# accept only the first of them — a dash bullet whose link starts the line — and returned
+# ZERO active episodes for the eight agents that write any of the others. Since
+# `archived_date IS NULL` is what every read path filters on, that meant every episode of
+# those agents was stored archived and invisible. One case per shape, so a shape that stops
+# parsing fails its own named test rather than moving a total.
+
+_EPISODE_SHAPES = [
+    (
+        "meta/unity/admiral: dash bullet under a date header",
+        "📂 2026-10-08:\n"
+        "- [agent-memory-store-db-reconciliation.md]"
+        "(episodes/agent-memory-store-db-reconciliation.md)"
+        " - reconciled the store against the database, reversed the importer's archive rule",
+        "episodes/agent-memory-store-db-reconciliation.md",
+        "2026-10-08",
+        "reconciled the store",
+    ),
+    (
+        "aquazone: folder emoji + date + parenthetical, link mid-line",
+        "📂 2026-10-06 (**October invoice scaled against the recorded work times; the billing"
+        " columns appended**): [aquazone-invoice-generation]"
+        "(episodes/2026-06-04-16.19-aquazone-invoice-generation.md) (new sub-episode) — window"
+        " **1-Sep → 5-Oct**; 58 rows / 15 columns.",
+        "episodes/2026-06-04-16.19-aquazone-invoice-generation.md",
+        "2026-10-06",
+        "(new sub-episode)",
+    ),
+    (
+        "python: folder emoji + date, colon, then the link",
+        "📂 2026-07-08: [OCX-1423 — Move Price DB-Writes to 3–6 AM WIB (Least-DB-Access"
+        " Window), Shipped+Deployed+Verified](episodes/ocx-data-pipeline-scheduling.md) - Alvi"
+        " picked Linear OCX-1423",
+        "episodes/ocx-data-pipeline-scheduling.md",
+        "2026-07-08",
+        "Alvi picked Linear OCX-1423",
+    ),
+    (
+        "invintiry: pin emoji, the date IS the link text",
+        "📌 [2026-10-01 14.23](episodes/invintiry-council-closeout.md): Item Images council"
+        " **archived** at [USER-NAME]'s sign-off.",
+        "episodes/invintiry-council-closeout.md",
+        "2026-10-01",
+        "Item Images council",
+    ),
+    (
+        "frontend-react: level-3 heading, ./episodes/ path, prose below",
+        "📂 2026-05-25 15.18:\n"
+        "\n"
+        "### [2026-05-25-15.18-ocx-platform-pricechart-date-filter.md]"
+        "(./episodes/2026-05-25-15.18-ocx-platform-pricechart-date-filter.md)\n"
+        "PriceChart date-range pills redesign (`feat/ocx-prices-precomputed` branch).",
+        "episodes/2026-05-25-15.18-ocx-platform-pricechart-date-filter.md",
+        "2026-05-25",
+        "",
+    ),
+    (
+        "truth-seeker: bold date before the link, under no header",
+        "- **2026-02-26** — [Compilation Split, Foreword & Tone Refinement]"
+        "(episodes/2026-02-22-00.05-personal-journey-bahai-consultation.md) — Recovered"
+        " crashed session.",
+        "episodes/2026-02-22-00.05-personal-journey-bahai-consultation.md",
+        "2026-02-26",
+        "Recovered crashed session.",
+    ),
+    (
+        "uiux-designer: bullet + emoji, date inside the link text",
+        "- 📂 [2026-04-15 02.23 — Invintiry M6.5 Design]"
+        "(episodes/2026-04-15-02.23-invintiry-m6.5-design.md): First session. Created M6.5"
+        " design handoff",
+        "episodes/2026-04-15-02.23-invintiry-m6.5-design.md",
+        "2026-04-15",
+        "First session.",
+    ),
+    (
+        "ai-researcher: no bullet at all",
+        "📂 2026-09-24:\n"
+        "[The Aqdas Retrieval Agent](episodes/aqdas-rag-retrieval-agent.md) — built a"
+        " structure-aware RAG agent over the Kitáb-i-Aqdas (aqdas-rag)",
+        "episodes/aqdas-rag-retrieval-agent.md",
+        "2026-09-24",
+        "built a structure-aware RAG agent",
+    ),
+    (
+        "trader: the link carries a #anchor into a sub-episode",
+        "2025-11-04:\n"
+        "- [Multi-Instrument Scanning Infrastructure Setup]"
+        "(episodes/2025-11-03-02.32-trading-edge-breakthrough-discussion.md"
+        "#2025-11-04-0224---multi-instrument-scanning-infrastructure-setup) - Implemented"
+        ' "hunt for trends" strategy infrastructure.',
+        "episodes/2025-11-03-02.32-trading-edge-breakthrough-discussion.md",
+        "2025-11-04",
+        "Implemented",
+    ),
+    (
+        "frontend-nextjs: bare date-time prefix, no emoji",
+        '2026-05-20 01.13: [Invintiry FE - Login "Checking session" Animated Dots + Auth Flow'
+        " Investigation](episodes/2026-04-12-01.31-invintiry-fe-m6-sp1-unit-tracking.md) -"
+        " Investigated BFF auth proxy",
+        "episodes/2026-04-12-01.31-invintiry-fe-m6-sp1-unit-tracking.md",
+        "2026-05-20",
+        "Investigated BFF auth proxy",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("block", "expected_file", "expected_date", "expected_summary"),
+    [(b, f, d, s) for _label, b, f, d, s in _EPISODE_SHAPES],
+    ids=[label for label, *_ in _EPISODE_SHAPES],
+)
+def test_every_index_episode_shape_is_active(
+    block: str, expected_file: str, expected_date: str, expected_summary: str
+) -> None:
+    """One shape per real agent. The date is the index's, not the filename's — the entry
+    is when the session happened, and an inline-date line states it before the link."""
+    index = "# Recent Context Episodes\n## Interactions List\n" + block + "\n"
+    refs = P.parse_active_episodes(index)
+    assert len(refs) == 1, refs
+    assert refs[0]["file"] == expected_file
+    assert refs[0]["date"] == expected_date
+    if expected_summary:
+        assert refs[0]["summary"].startswith(expected_summary)
+    else:
+        assert refs[0]["summary"] == ""
+
+
+def test_an_episode_listed_in_any_shape_is_one_entry_not_two() -> None:
+    """The same file referenced twice (newest first) stays one entry — the older
+    reference is dropped whole, which is what keeps a re-import from archiving a file
+    whose only difference is which of two bullets names it."""
+    index = (
+        "# Recent Context Episodes\n"
+        "📂 2026-10-06: [a](episodes/a.md) — newest\n"
+        "📌 [2026-01-01 09.00](episodes/a.md): oldest\n"
+        "- **2026-02-02** — [a](episodes/a.md#sub) — middle\n"
+    )
+    refs = P.parse_active_episodes(index)
+    assert len(refs) == 1
+    assert refs[0]["date"] == "2026-10-06"
+    assert refs[0]["summary"] == "newest"
+
+
+def test_a_fenced_link_is_a_drawing_not_an_entry() -> None:
+    """An index documents its own layout, and a ``` block is a picture of it."""
+    index = (
+        "# Recent Context Episodes\n"
+        "```\n"
+        "- [example.md](episodes/example.md) - how an entry looks\n"
+        "```\n"
+        "📂 2026-10-08:\n"
+        "- [real.md](episodes/real.md) - the entry itself\n"
+    )
+    assert [r["file"] for r in P.parse_active_episodes(index)] == ["episodes/real.md"]
+
+
+def test_a_long_inline_entry_summary_is_capped() -> None:
+    """aquazone copies the episode's whole prose onto its entry line (8-10 KB on the real
+    file). The summary is the one line a browse index shows, so it is capped rather than
+    replayed whole."""
+    body = "detail " * 400
+    index = f"📂 2026-10-06: [t](episodes/t.md) - {body}\n"
+    summary = P.parse_active_episodes(index)[0]["summary"]
+    assert len(summary) <= P._SUMMARY_MAX + 1
+    assert summary.endswith("…")
+
+
+def test_inline_parenthetical_is_the_summary_when_nothing_follows_the_link() -> None:
+    index = "📂 2026-06-04 (**Billing columns appended**): [t](episodes/t.md)\n"
+    assert P.parse_active_episodes(index)[0]["summary"] == "**Billing columns appended**"
+
+
+_KNOWLEDGE_SHAPES = (
+    "# Recent Context Episodes\n"
+    "📂 2026-10-08:\n"
+    "- [ep.md](episodes/ep.md) - an episode, not a knowledge entry\n"
+    "\n"
+    "# Core Knowledge Base 📚\n"
+    "## 📋 **KNOWLEDGE DIRECTORY & TABLE OF CONTENTS**\n"
+    "### 🧠 **Memory Architecture Knowledge**\n"
+    "- **[Pain = Memory Fundamentals](memory-architecture/pain-memory-fundamentals.md)**"
+    " ⭐ - pain anchoring\n"
+    "### **Research / Tooling:**\n"
+    "- [2026-09-03-artifact-republish-view-gate.md]"
+    "(knowledge-base/research/2026-09-03-artifact-republish-view-gate.md)"
+    " — Why updating a published Artifact gets refused\n"
+    "- [2026-09-18-rag-evaluation-mechanics.md]"
+    "(knowledge-base/2026-09-18-rag-evaluation-mechanics.md)"
+    " — How to evaluate a RAG pipeline\n"
+    "### **Project Context Files:**\n"
+    "- **invintiry**: [context-index.md](knowledge-base/invintiry/context-index.md)"
+    " — architecture, tech-stack\n"
+    "- [Absolute link](/control-files/procedures/memory/update-knowledge.md)"
+    " — a procedure, not knowledge\n"
+)
+
+
+def test_every_index_knowledge_shape_is_active() -> None:
+    """The bold wrapper is one agent's style, not the rule: aquazone, invintiry,
+    ai-researcher, outreach-writer, telegent and gdevelop write a plain bullet, and the
+    bold-only matcher filed every file they named as an unindexed (archived) one."""
+    items = P.parse_knowledge_index(_KNOWLEDGE_SHAPES)
+    assert [i.key for i in items] == [
+        "memory-architecture/pain-memory-fundamentals.md",
+        "knowledge-base/research/2026-09-03-artifact-republish-view-gate.md",
+        "knowledge-base/2026-09-18-rag-evaluation-mechanics.md",
+    ]
+    assert items[0].content_summary == "⭐ - pain anchoring"
+    assert items[1].content_summary == "Why updating a published Artifact gets refused"
+
+
+def test_knowledge_keys_are_not_rewritten() -> None:
+    """A path is stored as the index writes it (`knowledge-base/…` kept), because the
+    record's uuid derives from it and rows already stored under that spelling must keep
+    theirs. `./` is the one spelling normalised away — it names the same file."""
+    items = P.parse_knowledge_index(
+        "# Core Knowledge Base\n- [a](./knowledge-base/research/a.md) - A\n"
+    )
+    assert items[0].key == "knowledge-base/research/a.md"
+
+
+def test_the_episode_list_is_never_read_as_knowledge() -> None:
+    """meta, unity, admiral, infra and trader write episodes as `- [file](episodes/…)`,
+    which is exactly the shape a knowledge bullet takes. Without section scoping every one
+    of their episodes would be filed as knowledge."""
+    items = P.parse_knowledge_index(_KNOWLEDGE_SHAPES)
+    assert all("episodes/" not in i.key for i in items)
+    assert all(i.key != "context-index.md" for i in items)
+
+
+def test_one_path_listed_twice_is_one_knowledge_entry() -> None:
+    """software-architect lists its design-patterns index twice; both bullets derive the
+    same uuid, so reporting two entries would promise a row the store cannot hold."""
+    items = P.parse_knowledge_index(
+        "# Core Knowledge Base\n"
+        "- **[Design Patterns](research/design-patterns/00-index.md)** - master index\n"
+        "- [Design Patterns](research/design-patterns/00-index.md) - the same file again\n"
+    )
+    assert len(items) == 1
+
+
 def test_stable_uuid_is_deterministic() -> None:
     assert P.stable_uuid("meta", "episode", "k") == P.stable_uuid("meta", "episode", "k")
     assert P.stable_uuid("meta", "episode", "k") != P.stable_uuid("meta", "reasoning", "k")

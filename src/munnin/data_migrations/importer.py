@@ -71,6 +71,17 @@ def _read(path: Path) -> str:
         return data.decode("cp1252", errors="replace")
 
 
+def _kb_relative(key: str) -> str:
+    """The same knowledge file, spelled from ``knowledge-base/``.
+
+    An index may write either form — `research/x.md` (the template's usual spelling) or
+    `knowledge-base/research/x.md` (what aquazone and software-architect write) — and both
+    name one file. Comparing the normalised form is what keeps one file from being stored
+    twice: once active from the index and once archived from the directory walk."""
+    prefix = "knowledge-base/"
+    return key[len(prefix) :] if key.startswith(prefix) else key
+
+
 def _to_record(
     item: P.ParsedItem,
     agent_id: str,
@@ -276,12 +287,20 @@ def _import_knowledge(
     index_path = agent_dir / "agent-memory-index.md"
     index = _read(index_path) if index_path.exists() else ""
     active_items = P.parse_knowledge_index(index)
-    active_paths = {it.key for it in active_items}
+    # An index may spell a target from the agent folder (`knowledge-base/research/x.md`)
+    # or from `knowledge-base/` itself (`research/x.md`); both name one file. The set is
+    # normalised so an indexed file is not ALSO imported as an archived copy under the
+    # other spelling, which would put two rows behind one file.
+    active_paths = {_kb_relative(it.key) for it in active_items}
     kb = agent_dir / "knowledge-base"
 
     # active — indexed, real body (fallback to the index description)
     for it in active_items:
         fpath = kb / it.key
+        if not fpath.is_file() and _kb_relative(it.key) != it.key:
+            # `kb / "knowledge-base/x.md"` doubles the folder; the file is one level up.
+            alt = agent_dir / it.key
+            fpath = alt if alt.is_file() else fpath
         if fpath.is_file():
             meta, body = P.split_frontmatter(_read(fpath))
         else:

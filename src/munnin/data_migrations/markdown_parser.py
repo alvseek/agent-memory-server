@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import uuid as _uuidlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 # Fixed namespace for deterministic record UUIDs (never regenerate).
@@ -21,9 +22,46 @@ _UUID_IN_BODY = re.compile(r"\*\*UUID\*\*:\s*`?([0-9a-fA-F]{8}-[0-9a-fA-F-]{27})
 # entry (date-PREFIXED filename) is NEVER mistaken for a header; `[^\w\n]*` then eats
 # emoji/space up to the leading date.
 _DATE_GROUP = re.compile(r"^(?![-*+>])[^\w\n]*(\d{4}-\d{2}-\d{2})\b")
-_EPISODE_ENTRY = re.compile(r"^-\s+\[([^\]]+)\]\((episodes/[^)]+)\)\s*-?\s*(.*)$")
-_KNOWLEDGE_ENTRY = re.compile(r"^-\s+\*\*\[([^\]]+)\]\(([^)]+)\)\*\*\s*(.*)$")
+# Every index in the fleet puts an episode's file in a markdown link, and that target is
+# the ONLY thing the shapes share — so it is what this matches. The line prefixes vary per
+# agent and per index generation, and none of them is load-bearing:
+#
+#   - [title](episodes/f.md) - desc              the bullet form (meta, unity, admiral, infra)
+#   - [title](episodes/f.md#anchor) - desc       a sub-episode inside one file (trader)
+#   - 📂 2026-10-06 (summary): [title](episodes/f.md) …   date and entry on ONE line (aquazone)
+#   - 📂 2026-07-08: [title](episodes/f.md) - desc         same, no parenthetical (python)
+#   - 2026-05-20 01.13: [title](episodes/f.md) - desc      a bare date-time prefix (frontend-nextjs)
+#   - 📌 [2026-10-01 14.23](episodes/f.md): desc           the date IS the link text (invintiry)
+#   - - 📂 [2026-04-15 …](episodes/f.md): desc        bullet + emoji before the link (uiux-designer)
+#   - - **2026-02-26** — [title](episodes/f.md) — desc  a bold date before the link (truth-seeker)
+#   - [title](episodes/f.md) — desc                        no bullet at all (ai-researcher)
+#   - ### [f.md](./episodes/f.md)                          a heading link (frontend-react)
+#
+# `./episodes/…` is the same path spelled from the agent folder, and `#anchor` names a
+# sub-episode inside the file rather than another file.
+_EPISODE_LINK = re.compile(
+    r"\[([^\]]*)\]\(\s*(?:\./)?((?:[^()\s#]*/)?episodes/[^()\s#]+\.md)(?:#[^()\s]*)?\s*\)"
+)
+# A date carried by an entry that sits under no date header: truth-seeker writes
+# `- **2026-02-26** — [..](episodes/..)`. Kept separate from `_DATE_GROUP`, which rejects
+# bullet lines on purpose so a bullet's own leading date is never read as a section header.
+_ENTRY_LEADING_DATE = re.compile(r"^[-*+]\s+(?:\*\*|__)?(\d{4}-\d{2}-\d{2})\b")
+# An inline-date entry can carry its one-liner as a parenthetical between the date and the
+# link: `📂 2026-10-06 (**October invoice scaled …**): [title](episodes/..)`.
+_PAREN_AFTER_DATE = re.compile(r"^\s*\((.+?)\)\s*:")
+# A knowledge entry is a bullet whose link points at a knowledge file. The bold wrapper
+# (`- **[title](path)**`) is one agent's style, not the rule: aquazone, invintiry,
+# ai-researcher, outreach-writer, telegent and gdevelop write a plain `- [title](path)`.
+_KNOWLEDGE_LINK = re.compile(r"\[([^\]]+)\]\(\s*([^()\s]+?\.md)\s*\)")
+_BULLET = re.compile(r"^[-*+]\s+")
 _LEADING_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+# The separator(s) an index writes between a link and its text, and a leading `**` from the
+# bold wrapper. Markup, so it drops from a summary; a badge is not markup and stays.
+_ENTRY_SEPARATORS = " \t-–—:,*"
+# A summary is one line by contract. Several inline-date indexes copy the episode's whole
+# prose onto its entry line (aquazone's run to 8-10 KB), which would then be replayed into
+# every browse listing, so the summary is capped rather than stored whole.
+_SUMMARY_MAX = 400
 
 
 def stable_uuid(agent_id: str, record_type: str, key: str) -> str:
@@ -316,53 +354,168 @@ def parse_shared_profile(text: str) -> list[ParsedItem]:
 # --- agent-memory-index.md (layer iii: knowledge index + active episodes) ---
 
 
+def _unfenced_lines(text: str) -> Iterator[str]:
+    """Lines outside fenced code blocks, in order.
+
+    Both index sections document themselves: a knowledge index may hold a ```tree``` of
+    the knowledge-base layout, and a procedure line may quote a link. A fence is a
+    drawing of the shape, never the shape, so its lines are not entries."""
+    fenced = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if not fenced:
+            yield line
+
+
+def _kb_section(index_text: str) -> list[str]:
+    """The lines under the first level-1 heading that names knowledge.
+
+    Scoped rather than whole-document because this same index also carries the episode
+    list, whose entries are links too (`- [file](episodes/…)` in meta, unity, admiral,
+    infra, trader). Scanning everything would file every episode as knowledge. The level-1
+    heading is the layer boundary in the agent template, and its block ends at the next
+    level-1 heading — which is where the episodes begin.
+
+    Falls back to the whole document when no such heading exists, so an index written
+    against a template this parser has not seen keeps behaving as it did.
+    """
+    out: list[str] = []
+    found = False
+    inside = False
+    for line in _unfenced_lines(index_text):
+        m = _HEADING.match(line)
+        if m and len(m.group(1)) == 1:
+            inside = "knowledge" in m.group(2).lower()
+            found = found or inside
+            continue
+        if inside:
+            out.append(line)
+    return out if found else list(_unfenced_lines(index_text))
+
+
 def parse_knowledge_index(index_text: str) -> list[ParsedItem]:
     """Active knowledge entries from the index's knowledge directory.
 
     ``body`` is the index description, which stands in for the whole body only when the
     file itself is missing (the importer prefers the real file). The same string is
     carried as ``content_summary`` in every case, because that one line is what a browse
-    index shows beside the title."""
+    index shows beside the title.
+
+    A bullet is accepted whatever wraps its link, because the fleet writes both
+    ``- **[title](path)** desc`` and a plain ``- [title](path) desc``; requiring the bold
+    wrapper read the plain form as "not in the index" and archived every file it named.
+    Two targets are not knowledge entries: an absolute path (a procedure link), and
+    ``context-index.md``, which is the project-context pointer Hermod owns — importing it
+    here would file a project's index as one of Munnin's knowledge records.
+    """
     items: list[ParsedItem] = []
-    for line in index_text.splitlines():
-        m = _KNOWLEDGE_ENTRY.match(line.strip())
-        if m:
-            title, path, desc = m.group(1), m.group(2), m.group(3).strip()
-            items.append(
-                ParsedItem(
-                    title=title,
-                    body=desc or title,
-                    key=path,
-                    # The separator the index writes before the text is markup, not
-                    # content, so the summary drops it; a leading badge is not markup and
-                    # stays. Only the summary is cleaned — ``body`` stays verbatim, since
-                    # it can stand in for a missing file.
-                    content_summary=desc.lstrip("-–— ").strip() or None,
-                )
+    seen: set[str] = set()
+    for line in _kb_section(index_text):
+        raw = line.strip()
+        if not _BULLET.match(raw):
+            continue
+        m = _KNOWLEDGE_LINK.search(raw)
+        if not m:
+            continue
+        title, path = m.group(1).strip(), m.group(2).strip()
+        if path.startswith(("/", "http://", "https://")):
+            continue
+        if path.rsplit("/", 1)[-1] == "context-index.md":
+            continue
+        if "/episodes/" in f"/{path}":
+            continue
+        # `./` is a spelling of the same path, so it is dropped from the key that the
+        # record's uuid is derived from. A leading `knowledge-base/` is kept: rows
+        # already stored under that spelling must keep their uuid.
+        key = _strip_dot_slash(path)
+        if key in seen:
+            # One path, two bullets is still one file. Without this an index that lists a
+            # ported file twice (software-architect's design-patterns index) reports one
+            # more entry than the store can hold, since both map to the same uuid.
+            continue
+        seen.add(key)
+        desc = raw[m.end() :].lstrip(_ENTRY_SEPARATORS).strip()
+        items.append(
+            ParsedItem(
+                title=title,
+                body=desc or title,
+                key=key,
+                # The separator the index writes before the text is markup, not
+                # content, so the summary drops it; a leading badge is not markup and
+                # stays. Only the summary is cleaned — ``body`` stays verbatim, since
+                # it can stand in for a missing file.
+                content_summary=_cap(desc) or None,
             )
+        )
     return items
+
+
+def _strip_dot_slash(path: str) -> str:
+    """`./episodes/x.md` and `episodes/x.md` are one path; the key is the second."""
+    return path[2:] if path.startswith("./") else path
+
+
+def _cap(text: str) -> str:
+    """A summary is one line: cap it rather than replay an entry's whole prose."""
+    if len(text) <= _SUMMARY_MAX:
+        return text
+    return text[:_SUMMARY_MAX].rstrip() + "…"
+
+
+def _entry_summary(line: str, link_end: int, date_end: int | None) -> str:
+    """The one-liner an entry line carries after its link.
+
+    When nothing follows the link and the line opened with an inline date, the summary is
+    the parenthetical between that date and the link — the only descriptive text the entry
+    has. A heading entry (`### [file](./episodes/f.md)`) has neither, so its summary is
+    empty rather than borrowed from the paragraph below it: that paragraph is the episode's
+    own prose, and guessing at it is how a summary stops describing the entry.
+    """
+    rest = line[link_end:].lstrip(_ENTRY_SEPARATORS).strip()
+    if not rest and date_end is not None:
+        m = _PAREN_AFTER_DATE.match(line[date_end:])
+        if m:
+            rest = m.group(1).strip()
+    return _cap(rest)
 
 
 def parse_active_episodes(index_text: str) -> list[dict[str, str]]:
     """Active episode refs from the index (Recent Context Episodes), deduped by file,
-    newest-first (first occurrence wins). Each: {date, summary, file}."""
+    newest-first (first occurrence wins). Each: {date, summary, file}.
+
+    A line is an entry when it links to an episode file, whatever precedes or wraps that
+    link (see ``_EPISODE_LINK`` for the ten shapes the fleet actually writes). The date
+    comes from, in order: the date this same line opens with, a bold date at the head of a
+    bullet, the date section above it, and lastly the link text — `📌 [2026-10-01
+    14.23](episodes/…)` states its date as the link itself.
+    """
     out: list[dict[str, str]] = []
     seen: set[str] = set()
     cur_date = ""
-    for raw in index_text.splitlines():
+    for raw in _unfenced_lines(index_text):
         line = raw.strip()
         dm = _DATE_GROUP.match(line)
         if dm:
             cur_date = dm.group(1)
-            continue
-        em = _EPISODE_ENTRY.match(line)
-        if em:
-            file = em.group(2)
+        date_end = dm.end() if dm else None
+        lead = _ENTRY_LEADING_DATE.match(line)
+        for m in _EPISODE_LINK.finditer(line):
+            file = m.group(2)
             if file in seen:
                 continue
             seen.add(file)
-            out.append({"date": cur_date, "summary": em.group(3).strip(), "file": file})
+            date = (lead.group(1) if lead else "") or cur_date or _first_date(m.group(1)) or ""
+            out.append(
+                {
+                    "date": date,
+                    "summary": _entry_summary(line, m.end(), date_end),
+                    "file": file,
+                }
+            )
     return out
+
 
 
 def _first_date(text: str) -> str | None:
