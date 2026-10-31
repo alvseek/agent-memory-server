@@ -95,7 +95,7 @@
 
 **Finding from run 2, fixed in the same session**: while a person's selection named a tenant they had just lost access to, `list_tenants` returned their own tenant with **nothing active** — the state was unreportable, so a refusal had no visible cause and the caller could not see where they were standing. `TenantRef` gained `revoked`, the dead selection is now listed as `active` and marked, and `use_tenant` refuses to re-enter it. Covered by `test_a_selection_that_lost_access_is_still_shown_and_still_active`.
 
-**Walked: 16 of 24**
+**Walked: 18 of 24**
 
 | Row | Result |
 |---|---|
@@ -116,7 +116,13 @@
 | D3 switching home restores memory | pass: 200 again |
 | D4 nothing is deleted | pass: the row Roy wrote is still Alvi's |
 | E one row per pair | pass: revoke, re-invite, redeem → one row for Roy |
+| F1 the migration on the deployed Postgres | pass (run 3): `0004_tenant_sharing` applied to a live store at `0003`, both tables and `account.active_user_id` present |
+| F3 the operator script against Postgres | pass (run 3): refused an unknown tenant, then linked onto a scratch database and read back |
 
-**Not walked: 8 rows** — B4 (a double redeem, covered by `test_a_code_works_exactly_once`), F1–F4 (the live Postgres box: migration, import, operator script, proxy), G1–G3 (Helheim holding a real token).
+**Not walked: 6 rows** — B4 (a double redeem, covered by `test_a_code_works_exactly_once`), F2 (a live import would purge a tenant's memory from the production store to prove a path the suite already covers), F4 (needs a token to call the deployed proxy), G1–G3 (Helheim holding a real login).
+
+**Run 3, the deployed box** (`munnin-web-b9f7a0e`, deployed 2026-10-31 16:08Z by the deploy workflow, after a fresh `pg_dump` at 16:07Z): health answered 200 through the proxy; the store is the `munnin` database, **not** `valaskjalf`; the migration applied to an existing store at `0003` with data already in it; `accounts=2 grants=0 invites=0`.
+
+**Operational finding from run 3**: the container came up healthy with the **unmigrated** schema still in place. Migrations run lazily on the first store connection, and `/health` deliberately reads nothing, so a green healthcheck says nothing about the schema. The migration was applied deliberately with an empty-store-connection probe, and a first request from a real client would have done the same at whatever moment that client arrived. `docker ps` showing the new tag is therefore not evidence of a migrated store; reading `migration_history` is.
 
 **Verdict**: the two-person path works end to end over real HTTP with real bearer tokens and per-request tenant resolution, and a revoked person is refused, told why, and shown where they are. What remains unproven is a **real issuer** (Logto and Google) and the **deployed Postgres box**, which are F and G.
