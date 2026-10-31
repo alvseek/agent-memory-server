@@ -5,11 +5,13 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 if [ -f qa/.munnin.pid ]; then
   PID="$(cat qa/.munnin.pid)"
-  # Windows/git-bash: taskkill is more reliable than kill for the uvicorn child tree.
-  if command -v taskkill >/dev/null 2>&1; then
+  # `kill` first, because `$!` in this shell is a POSIX pid and that is what `kill` takes.
+  # `taskkill` wants a Windows pid, so handing it the same number can signal an unrelated
+  # process and report success while the server keeps serving — measured 2026-10-31.
+  kill "$PID" 2>/dev/null || true
+  sleep 1
+  if kill -0 "$PID" 2>/dev/null && command -v taskkill >/dev/null 2>&1; then
     taskkill //PID "$PID" //T //F >/dev/null 2>&1 || true
-  else
-    kill "$PID" 2>/dev/null || true
   fi
   rm -f qa/.munnin.pid
   echo "stop: munnin (pid $PID) stopped"

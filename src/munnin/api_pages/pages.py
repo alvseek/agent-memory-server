@@ -134,8 +134,11 @@ so your agents can read it back.</li>
 <h2>What is not done</h2>
 <ul>
 <li>No analytics, no tracking, no advertising. Munnin itself sets no cookies.</li>
-<li>Your data is not sold, shared or used for anything beyond serving it back to
-you. Every read and write is scoped to your own tenant.</li>
+<li>Your data is not sold or used for anything beyond serving it back to you. Every
+read and write is scoped to the account you are acting in. An account can be opened to
+another person only by its owner, with a single-use invitation, and that access can be
+ended at any time; the person keeps their own account, and anything they wrote there
+stays theirs.</li>
 <li>These pages load no third-party resources.</li>
 </ul>
 
@@ -168,7 +171,8 @@ discontinued at any time without notice.</li>
 <h2>Acceptable use</h2>
 <ul>
 <li>Store only content you have the right to store; nothing unlawful.</li>
-<li>Do not attempt to access other tenants' data or to disrupt the service.</li>
+<li>Do not attempt to access other tenants' data beyond access an owner has explicitly
+granted you, and do not disrupt the service.</li>
 </ul>
 
 <h2>Your content</h2>

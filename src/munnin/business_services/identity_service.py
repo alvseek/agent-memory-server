@@ -13,6 +13,7 @@ control, whereas a log tells you when it opened unexpectedly.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from uuid import uuid4
 
 from munnin.data_entities.identity import Account, UserIdentity
@@ -25,8 +26,14 @@ _log = get_logger("identity")
 class IdentityService:
     """Resolves ``(iss, sub)`` to an internal ``user_id``, creating the tenant on a miss."""
 
-    def __init__(self, repo: IdentityRepository) -> None:
+    def __init__(
+        self,
+        repo: IdentityRepository,
+        *,
+        on_created: Callable[[str, str | None], None] | None = None,
+    ) -> None:
         self._repo = repo
+        self._on_created = on_created
 
     def resolve(
         self,
@@ -61,4 +68,13 @@ class IdentityService:
         # on a server whose log level has been raised, because while sign-up is
         # invitation-only it should happen only when you invited somebody.
         _log.warning("new tenant created: user_id=%s iss=%s sub=%s", resolved, iss, sub)
+
+        # The tenant has just been born, and this is the only place that knows it. The hook
+        # is best-effort on purpose: a stranger signing in should never be refused, or left
+        # in a half-created state, because a profile write failed.
+        if self._on_created is not None:
+            try:
+                self._on_created(resolved, display_name)
+            except Exception:  # noqa: BLE001 — login must survive a failed seed
+                _log.exception("profile seed failed for tenant %s", resolved)
         return resolved

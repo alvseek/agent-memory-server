@@ -71,10 +71,11 @@ def test_an_existing_base_schema_gets_the_ras_migration() -> None:
         "0002_shared_record_ras",
         "0003_record_content_summary",
         "0004_shared_record_coding_reasoning",
+        "0005_tenant_sharing",
     ]
     assert "'ras'" in _shared_ddl(conn)
     assert "'coding_reasoning'" in _shared_ddl(conn)
-    assert conn.execute("SELECT COUNT(*) FROM migration_history").fetchone()[0] == 4
+    assert conn.execute("SELECT COUNT(*) FROM migration_history").fetchone()[0] == 5
 
 
 def test_the_ras_migration_preserves_rows_and_rebuilds_the_fts_index() -> None:
@@ -132,3 +133,35 @@ def test_editing_an_applied_migration_is_refused() -> None:
     conn.commit()
     with pytest.raises(RuntimeError, match="changed after it was applied"):
         apply_migrations(conn)
+
+
+def test_the_sharing_migration_upgrades_an_existing_store_without_touching_its_rows() -> None:
+    """The retrofit path, which is the one that matters: a live store already holds a
+    tenant and its memory, and 0005 adds a column and two tables. The files are run
+    directly, in order, on a store at the 0004 shape, so what is exercised is the upgrade
+    itself rather than a fresh database that was never at risk."""
+    conn = _conn()
+    for name in (
+        "0001_init",
+        "0002_shared_record_ras",
+        "0003_record_content_summary",
+        "0004_shared_record_coding_reasoning",
+    ):
+        conn.executescript(next(m for m in known() if m.name == name).sql)
+    conn.execute("INSERT INTO account (user_id, created_date) VALUES ('alvi','2026-10-31')")
+    conn.execute(
+        "INSERT INTO shared_record "
+        "(uuid, user_id, record_type, created_date, modified_date, full_content) "
+        "VALUES ('s1','alvi','reasoning','d','d','deep thought')"
+    )
+    conn.commit()
+
+    conn.executescript(next(m for m in known() if m.name == "0005_tenant_sharing").sql)
+
+    active = conn.execute(
+        "SELECT active_user_id FROM account WHERE user_id = 'alvi'"
+    ).fetchone()[0]
+    assert active is None
+    assert conn.execute("SELECT COUNT(*) FROM shared_record").fetchone()[0] == 1
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert {"tenant_access", "tenant_invite"} <= tables

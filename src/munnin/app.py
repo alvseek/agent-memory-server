@@ -29,6 +29,7 @@ from munnin.api_http.api import build_router
 from munnin.api_mcp.server import build_mcp
 from munnin.api_pages.pages import build_pages_router
 from munnin.business_services.identity_service import IdentityService
+from munnin.business_services.profile_seed import seed_profile
 from munnin.business_services.service_factory import ServiceFactory
 from munnin.business_services.tenant_resolver import (
     LocalTenantResolver,
@@ -42,6 +43,8 @@ from munnin.data_repositories.identity_repository import SqliteIdentityRepositor
 from munnin.data_repositories.postgres_identity_repository import (
     PostgresIdentityRepository,
 )
+from munnin.data_repositories.postgres_sharing_repository import PostgresSharingRepository
+from munnin.data_repositories.sharing_repository import SqliteSharingRepository
 
 #: Where the MCP face is mounted, and therefore the address clients actually connect to.
 #: It is a constant rather than two literals because the resource identifier this server
@@ -289,6 +292,13 @@ def _build_identity_repository(config: Config):
     return SqliteIdentityRepository(config.db_path)
 
 
+def _build_sharing_repository(config: Config):
+    """The sharing repository for the configured backend (both satisfy the Protocol)."""
+    if config.db_backend == "postgres":
+        return PostgresSharingRepository(config.db_url)
+    return SqliteSharingRepository(config.db_path)
+
+
 def build_auth(config: Config) -> MultiAuth | None:
     """The single verifier both faces share — or ``None``, in local mode.
 
@@ -385,7 +395,13 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     # the submodule. The factory replaces the single boot-time service: the tenant is now
     # a property of each request rather than of the process.
     _validate_backend(config)
-    factory = ServiceFactory(config.db_path, backend=config.db_backend, db_url=config.db_url)
+    sharing_repo = _build_sharing_repository(config)
+    factory = ServiceFactory(
+        config.db_path,
+        backend=config.db_backend,
+        db_url=config.db_url,
+        sharing=sharing_repo,
+    )
     content = ContentLoader(config.content_root)
 
     # Both faces resolve their tenant the same way — the MCP face from FastMCP's request
@@ -394,13 +410,24 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     # through the identity service; in local mode it is the one constant tenant, whose
     # account row is created here so the first write does not fail its foreign key.
     identity_repo = _build_identity_repository(config)
-    identity = IdentityService(identity_repo)
+
+    def _seed_new_tenant(user_id: str, display_name: str | None) -> None:
+        """Give a tenant born from a first login its starting profile.
+
+        Hooked here rather than inside the identity service because the two sides are
+        deliberately separate: identity answers "who is this", memory answers "whose
+        records are these", and a service that reached across would have to import the
+        other's repository.
+        """
+        seed_profile(factory.for_user(user_id), display_name)
+
+    identity = IdentityService(identity_repo, on_created=_seed_new_tenant)
     resolver: TenantResolver
     if local:
         identity_repo.ensure_account(Account(user_id=config.user_id))
         resolver = LocalTenantResolver(config.user_id)
     else:
-        resolver = TokenTenantResolver(identity)
+        resolver = TokenTenantResolver(identity, sharing_repo)
     mcp = build_mcp(
         factory,
         resolver,

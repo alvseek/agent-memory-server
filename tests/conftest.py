@@ -48,6 +48,7 @@ from munnin.data_entities.memory_record import Agent, MemoryRecord
 from munnin.data_repositories.identity_repository import SqliteIdentityRepository
 from munnin.data_repositories.postgres_identity_repository import PostgresIdentityRepository
 from munnin.data_repositories.postgres_memory_repository import PostgresMemoryRepository
+from munnin.data_repositories.sharing_repository import SqliteSharingRepository
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 TEST_ISSUER = "https://munnin-tests.authkit.invalid"
@@ -70,6 +71,9 @@ class FixedTenantResolver:
         self._user_id = user_id
 
     def current_user_id(self) -> str:
+        return self._user_id
+
+    def current_home_user_id(self) -> str:
         return self._user_id
 
 
@@ -181,7 +185,10 @@ def mcp_for(
     factory here keeps every face test on the same wiring the server actually runs."""
     seed_account(db, user_id)
     return build_mcp(
-        ServiceFactory(db), FixedTenantResolver(user_id), content, endpoint=endpoint
+        ServiceFactory(db, sharing=SqliteSharingRepository(db)),
+        FixedTenantResolver(user_id),
+        content,
+        endpoint=endpoint,
     )
 
 

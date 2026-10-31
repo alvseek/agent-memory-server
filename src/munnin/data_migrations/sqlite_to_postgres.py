@@ -1,7 +1,7 @@
 """One-shot migration: copy the Valaskjalf store from SQLite to PostgreSQL.
 
 This is **not** the served path. It is a deliberate, verified, cold migration (high-wizard
-decision 3): read the five tables from a SQLite file and insert them into PostgreSQL
+decision 3): read every table from a SQLite file and insert them into PostgreSQL
 preserving ``id`` (the FTS link and the ordering key) and the ISO date strings verbatim,
 then reset the identity sequences.
 
@@ -27,7 +27,7 @@ from munnin.data_entities.postgres_migrations import ensure_schema
 
 # (table, columns) in insert order — parents before children, so foreign keys hold.
 _TABLES: list[tuple[str, tuple[str, ...]]] = [
-    ("account", ("user_id", "display_name", "email", "created_date")),
+    ("account", ("user_id", "display_name", "email", "created_date", "active_user_id")),
     ("user_identity", ("iss", "sub", "user_id", "linked_date")),
     ("agent", ("user_id", "agent_id", "name", "role", "uuid", "created_date")),
     (
@@ -44,6 +44,20 @@ _TABLES: list[tuple[str, tuple[str, ...]]] = [
             "id", "uuid", "user_id", "agent_id", "record_type", "project", "title",
             "tags", "created_date", "modified_date", "archived_date", "deleted_date",
             "full_content",
+        ),
+    ),
+    # Access and invitations are instance state, not markdown-derived memory — but they
+    # are still the store's, so a cutover that moved memory and left every grant behind
+    # would strand exactly the people the grants exist for.
+    (
+        "tenant_access",
+        ("tenant_user_id", "member_user_id", "granted_date", "revoked_date"),
+    ),
+    (
+        "tenant_invite",
+        (
+            "code", "tenant_user_id", "created_by", "created_date", "expires_date",
+            "used_by", "used_date", "revoked_date",
         ),
     ),
 ]

@@ -119,7 +119,9 @@ class MemoryService:
     def version(self) -> str:
         return __version__
 
-    def awaken(self, domain: str) -> dict[str, Any]:
+    def awaken(
+        self, domain: str, caller: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Assemble an agent's memory payload from the DB (4-layer model, C-2).
 
         Always-load whole: layer i (fleet-shared reasoning, knowledge, the universal RAS
@@ -167,7 +169,10 @@ class MemoryService:
 
         return {
             "agent_id": domain,
-            # layer i — always-load for every agent
+            # Who is signed in, when the face knows. Omitted rather than nulled when it
+            # does not, so a caller can tell "nobody told us" from "a guest".
+            **({"caller": caller} if caller is not None else {}),
+            # layer i - always-load for every agent
             "shared": {
                 "reasoning": [_whole(r) for r in shared_reasoning],
                 "knowledge": [_whole(r) for r in shared_knowledge],

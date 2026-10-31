@@ -25,12 +25,26 @@ from typing import Protocol
 from fastmcp.server.dependencies import get_access_token
 
 from munnin.business_services.identity_service import IdentityService
+from munnin.business_services.sharing_service import SharingService, TenantAccessRevoked
+from munnin.data_repositories.sharing_repository import SharingRepository
+
+#: Re-exported: the refusal is raised by the sharing service, but the resolver is where a
+#: reader looks for it, and both faces import it from here.
+__all__ = [
+    "LocalTenantResolver",
+    "MissingTokenError",
+    "TenantAccessRevoked",
+    "TenantResolver",
+    "TokenTenantResolver",
+]
 
 
 class TenantResolver(Protocol):
     """Answers "whose memory is this request acting on?" for the call in progress."""
 
     def current_user_id(self) -> str: ...
+
+    def current_home_user_id(self) -> str: ...
 
 
 class MissingTokenError(RuntimeError):
@@ -45,10 +59,11 @@ class MissingTokenError(RuntimeError):
 class TokenTenantResolver:
     """The tenant named by the verified token of the call in progress."""
 
-    def __init__(self, identity: IdentityService) -> None:
+    def __init__(self, identity: IdentityService, sharing: SharingRepository) -> None:
         self._identity = identity
+        self._sharing = sharing
 
-    def current_user_id(self) -> str:
+    def _claims(self) -> tuple[str, str, dict]:
         token = get_access_token()
         if token is None:
             raise MissingTokenError(
@@ -64,12 +79,34 @@ class TokenTenantResolver:
             raise MissingTokenError(
                 "verified token carries no issuer/subject pair, so it names no tenant"
             )
+        return str(iss), str(sub), claims
+
+    def current_home_user_id(self) -> str:
+        """The tenant the caller's login belongs to, before any selection is applied.
+
+        The membership tools read this one: it is what keeps them reachable while a bad
+        selection is refusing every memory operation.
+        """
+        iss, sub, claims = self._claims()
         return self._identity.resolve(
-            str(iss),
-            str(sub),
+            iss,
+            sub,
             email=claims.get("email"),
             display_name=claims.get("name"),
         )
+
+    def current_user_id(self) -> str:
+        """The tenant this request acts on: the caller's home, or a selection still permitted.
+
+        The check itself lives in ``SharingService.resolved_user_id`` so both faces call one
+        implementation rather than each re-deriving it.
+        """
+        home = self.current_home_user_id()
+        return SharingService(
+            self._sharing,
+            home_user_id=home,
+            selected_user_id=self._sharing.find_active(home),
+        ).resolved_user_id()
 
 
 class LocalTenantResolver:
@@ -80,10 +117,16 @@ class LocalTenantResolver:
     ``build_app`` and only after ``build_auth`` has accepted ``MUNNIN_AUTH=off``, which it
     does solely for a loopback public URL — so a deployment cannot arrive here through a
     missing setting, only by choosing local mode on a machine nobody else can reach.
+
+    There is nobody else to switch to and no grant to consult, so both answers are the same
+    constant. That is a property of local mode, not a shortcut.
     """
 
     def __init__(self, user_id: str) -> None:
         self._user_id = user_id
 
     def current_user_id(self) -> str:
+        return self._user_id
+
+    def current_home_user_id(self) -> str:
         return self._user_id

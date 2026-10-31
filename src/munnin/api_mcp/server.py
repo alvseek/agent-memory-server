@@ -22,10 +22,12 @@ from collections.abc import Callable
 from typing import Any
 
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 
 from munnin.business_services.memory_service import MemoryService
 from munnin.business_services.service_factory import ServiceFactory
+from munnin.business_services.sharing_service import SharingError, SharingService
 from munnin.business_services.tenant_resolver import TenantResolver
 from munnin.content.loader import ContentLoader
 
@@ -140,7 +142,7 @@ def build_mcp(
         episodic/knowledge index and the latest episode body. Project-blind: no project is
         accepted or resolved, ``latest_episode`` is the newest episode overall, and the
         whole index is returned with ``project`` on every entry so a caller selects."""
-        return _svc().awaken(domain)
+        return _svc().awaken(domain, caller=_sharing().caller_block())
 
     @mcp.tool(title="Read the coding-reasoning lane", annotations=_READ)
     def coding_reasoning() -> list[dict[str, Any]]:
@@ -184,6 +186,101 @@ def build_mcp(
         Metadata only, no bodies. An agent with no identity recorded comes back with
         ``name``/``role`` of ``null`` rather than being omitted."""
         return _svc().list_agents()
+
+    # --- sharing: which tenant you act in, and who may enter yours ---
+    #
+    # These read the caller's *home* tenant, never the resolved one. That is what keeps
+    # them reachable while every memory tool is refusing because the selection names a
+    # tenant whose access was revoked: the way out must not be behind the door.
+
+    def _sharing() -> SharingService:
+        """The sharing rules for whoever is calling right now."""
+        return factory.sharing_for(resolver.current_home_user_id())
+
+    @mcp.tool(title="List the tenants you may act in", annotations=_READ)
+    def list_tenants() -> list[dict[str, Any]]:
+        """Every tenant open to you: your own first, then the ones you were granted.
+        ``role`` is ``owner`` for your own tenant and ``guest`` for a granted one, and
+        ``active`` marks the one your calls are currently acting in. Access is whole
+        tenant, so this list is the whole choice; there is nothing per agent or project."""
+        return [
+            {
+                "user_id": ref.user_id,
+                "role": ref.role,
+                "label": ref.label,
+                "active": ref.active,
+                "revoked": ref.revoked,
+            }
+            for ref in _sharing().list_tenants()
+        ]
+
+    @mcp.tool(title="Act in one of your tenants", annotations=_ADDITIVE)
+    def use_tenant(tenant: str | None = None) -> dict[str, Any]:
+        """Switch which tenant your calls act in; ``None`` returns to your own.
+        ``tenant`` is an id from ``list_tenants``, or its label when that label names
+        exactly one tenant you may enter. The choice is remembered per person, so it
+        survives a restart and applies to every client you sign in with. A tenant whose
+        access was revoked is refused by name, and is always switchable away from."""
+        try:
+            ref = _sharing().use_tenant(tenant)
+        except SharingError as exc:
+            raise ToolError(str(exc)) from exc
+        return {"user_id": ref.user_id, "role": ref.role, "label": ref.label, "active": True}
+
+    @mcp.tool(title="List who has access to this tenant", annotations=_READ)
+    def list_members() -> list[dict[str, Any]]:
+        """Everyone with access to the tenant you are acting in, the owner included."""
+        try:
+            return _sharing().list_members()
+        except SharingError as exc:
+            raise ToolError(str(exc)) from exc
+
+    @mcp.tool(title="Invite somebody to this tenant", annotations=_ADDITIVE)
+    def create_invite(days: int = 7) -> dict[str, Any]:
+        """Mint a single-use code that admits whoever redeems it to this tenant.
+        Only the owner of the tenant you are acting in may call this. The code expires in
+        ``days`` days, works once, and can be revoked before use with ``revoke_invite``.
+        Send it to the person out of band; they redeem it with ``redeem_invite``."""
+        try:
+            invite = _sharing().create_invite(days)
+        except SharingError as exc:
+            raise ToolError(str(exc)) from exc
+        return {
+            "code": invite.code,
+            "tenant_user_id": invite.tenant_user_id,
+            "created_date": invite.created_date,
+            "expires_date": invite.expires_date,
+        }
+
+    @mcp.tool(title="Revoke an unused invitation", annotations=_DESTRUCTIVE)
+    def revoke_invite(code: str) -> dict[str, Any]:
+        """Retire a code before it is redeemed. A used or unknown code is refused."""
+        try:
+            _sharing().revoke_invite(code)
+        except SharingError as exc:
+            raise ToolError(str(exc)) from exc
+        return {"code": code, "revoked": True}
+
+    @mcp.tool(title="Join a tenant with an invitation", annotations=_ADDITIVE)
+    def redeem_invite(code: str) -> dict[str, Any]:
+        """Join the tenant an invitation names, as a guest. Does not switch you into it.
+        Redeem first, then call ``use_tenant`` when you want to work there; your own
+        tenant and everything in it are untouched by joining."""
+        try:
+            return _sharing().redeem(code)
+        except SharingError as exc:
+            raise ToolError(str(exc)) from exc
+
+    @mcp.tool(title="Revoke somebody's access", annotations=_DESTRUCTIVE)
+    def revoke_member(member: str) -> dict[str, Any]:
+        """End a person's access to the tenant you are acting in, which you must own.
+        ``member`` is the ``user_id`` from ``list_members``. Their access ends on their
+        next call, immediately, and nothing they wrote is deleted."""
+        try:
+            _sharing().revoke_member(member)
+        except SharingError as exc:
+            raise ToolError(str(exc)) from exc
+        return {"member": member, "revoked": True}
 
     @mcp.tool(title="Create an agent", annotations=_ADDITIVE)
     def create_agent(

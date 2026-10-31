@@ -88,6 +88,11 @@ _PROMPT_ARGUMENTS: dict[str, tuple[str, str]] = {
     "awaken-agent": ("domain", "the agent domain to awaken; asks if omitted"),
     "anchor-memory": ("harness", "`claude` or `opencode`; asks if omitted"),
     "register-core-access": ("harness", "`claude` or `opencode`; asks if omitted"),
+    "tenant-sharing": (
+        "request",
+        "`switch <tenant>`, `switch home`, `members`, `invite` or `revoke <member>`; "
+        "lists the tenants open to the caller if omitted",
+    ),
 }
 _ARGUMENTS_PLACEHOLDER = "$ARGUMENTS"
 _DB_BACKEND = "procedures/memory/storage-backends/db.md"

@@ -13,6 +13,10 @@ same ``MemoryRepository`` Protocol.
 The content loader is deliberately **not** held here. Framework content is identical for
 every tenant, so putting it in a per-tenant factory would imply a variation that does not
 exist; the adapters take it directly, as they always have.
+
+The sharing repository is held here for the same reason the memory one is: a
+``SharingService`` is bound to one caller, and the factory is the one place that knows which
+backend that caller's store lives on.
 """
 
 from __future__ import annotations
@@ -20,8 +24,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from munnin.business_services.memory_service import MemoryService
+from munnin.business_services.sharing_service import SharingService
 from munnin.data_repositories.memory_repository import MemoryRepository
 from munnin.data_repositories.postgres_memory_repository import PostgresMemoryRepository
+from munnin.data_repositories.sharing_repository import SharingRepository
 from munnin.data_repositories.sqlite_memory_repository import SqliteMemoryRepository
 
 
@@ -34,10 +40,12 @@ class ServiceFactory:
         *,
         backend: str = "sqlite",
         db_url: str | None = None,
+        sharing: SharingRepository | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._backend = backend
         self._db_url = db_url
+        self._sharing = sharing
         self._services: dict[str, MemoryService] = {}
 
     def _repository(self, user_id: str) -> MemoryRepository:
@@ -60,3 +68,21 @@ class ServiceFactory:
             service = MemoryService(self._repository(user_id), user_id=user_id)
             self._services[user_id] = service
         return service
+
+    def sharing_for(self, home_user_id: str) -> SharingService:
+        """The sharing rules for one caller, with the selection they have stored.
+
+        The selection is read here rather than handed in by the resolver, and that is the
+        point: the resolver refuses a revoked selection, while this path must still answer
+        so that ``use_tenant`` is reachable and the caller can get out.
+        """
+        if self._sharing is None:
+            raise RuntimeError(
+                "this factory was built without a sharing repository, so the membership "
+                "tools are not wired"
+            )
+        return SharingService(
+            self._sharing,
+            home_user_id=home_user_id,
+            selected_user_id=self._sharing.find_active(home_user_id),
+        )

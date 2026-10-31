@@ -4,11 +4,17 @@ Exposes the full memory data-primitive surface over the shared MemoryService cor
 ``/health`` + ``/api/awaken`` + the generic read/write ops. ``ValueError`` → 400,
 ``LookupError`` → 404.
 
-Every ``/api`` route sits behind a token. The guard is declared **once**, on the router
-that carries them all, rather than per handler — a per-handler guard is a list you can
-forget to add to, and forgetting is silent. Adding a route to this file therefore guards
-it by construction, and ``test_route_coverage`` fails if one is ever hung on the open
-router by mistake.
+Every ``/api`` route sits behind a token. The guard is declared **once** per router, rather
+than per handler — a per-handler guard is a list you can forget to add to, and forgetting is
+silent. Adding a route to this file therefore guards it by construction, and
+``test_route_coverage`` fails if one is ever hung unprotected by mistake.
+
+Two guarded routers, not one, and the split is deliberate. Memory routes resolve the
+remembered tenant selection, so a revoked selection makes them refuse. The membership
+routes resolve the caller's **home** tenant only, because they are the way out of a
+revoked selection: a door that refuses to open until you step out of the room is not an
+exit. Which router a route belongs on is therefore a real decision, and the membership
+set is the only thing on the home-only one.
 
 The tenant arrives the same way: a dependency verifies the caller, resolves them to a
 tenant and hands the handler a service already bound to it. Nothing is stashed in ambient
@@ -37,6 +43,12 @@ from munnin import __version__
 from munnin.business_services.identity_service import IdentityService
 from munnin.business_services.memory_service import MemoryService
 from munnin.business_services.service_factory import ServiceFactory
+from munnin.business_services.sharing_service import (
+    NotOwner,
+    NotPermitted,
+    SharingError,
+    SharingService,
+)
 from munnin.content.loader import ContentLoader
 
 _UNAUTHENTICATED = {"WWW-Authenticate": "Bearer"}
@@ -121,6 +133,22 @@ class UuidBody(_WriteBody):
     uuid: str
 
 
+class TenantBody(_WriteBody):
+    tenant: str | None = None
+
+
+class InviteBody(_WriteBody):
+    days: int = 7
+
+
+class InviteCodeBody(_WriteBody):
+    code: str
+
+
+class MemberBody(_WriteBody):
+    member: str
+
+
 def build_router(
     factory: ServiceFactory,
     content: ContentLoader | None = None,
@@ -146,8 +174,8 @@ def build_router(
             "ambiguous who a request acts as"
         )
 
-    async def _caller(request: Request) -> str:
-        """The tenant behind this request, or 401.
+    async def _home_caller(request: Request) -> str:
+        """The tenant this caller's login belongs to, or 401.
 
         In local mode every request acts as the one configured tenant. Otherwise this
         uses the **same** provider object the MCP face was given. Two independently
@@ -179,6 +207,26 @@ def build_router(
             display_name=access.claims.get("name"),
         )
 
+    def _caller(home: str = Depends(_home_caller)) -> str:
+        """The tenant this request acts on: the caller's own, or a selection still permitted.
+
+        The check is the sharing service's, deliberately, so this face and the MCP one
+        cannot drift. A revoked selection answers 403 naming the tenant rather than quietly
+        serving the caller's own memory, which would look like a successful request.
+        """
+        try:
+            return factory.sharing_for(home).resolved_user_id()
+        except NotPermitted as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    def _sharing_service(home: str = Depends(_home_caller)) -> SharingService:
+        """The sharing rules for this caller, with the selection they have stored.
+
+        On the home tenant, not the resolved one: the membership routes must stay reachable
+        while every memory route is refusing a revoked selection.
+        """
+        return factory.sharing_for(home)
+
     def _tenant_service(user_id: str = Depends(_caller)) -> MemoryService:
         """A service that can reach this caller's records and no others."""
         return factory.for_user(user_id)
@@ -200,12 +248,15 @@ def build_router(
     def awaken(
         agent_id: str,
         svc: MemoryService = Depends(_tenant_service),
+        sharing: SharingService = Depends(_sharing_service),
     ) -> dict[str, Any]:
         """Assemble + return an agent's full memory payload from the DB (M0). Project-blind:
         no project is accepted or resolved, and ``latest_episode`` is the newest episode
-        overall; the returned index carries ``project`` on every entry so a caller selects."""
+        overall; the returned index carries ``project`` on every entry so a caller selects.
+        ``caller`` names the person signed in, which is not the account being read when
+        they are a guest in it."""
         try:
-            return svc.awaken(agent_id)
+            return svc.awaken(agent_id, caller=sharing.caller_block())
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -419,5 +470,102 @@ def build_router(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    # --- sharing: twin of the MCP membership tools ---
+    #
+    # These hang on their own guarded router, and the guard is the **home** caller.
+    # That is the whole point of it existing separately from ``api``: those routes
+    # resolve the remembered selection and refuse a revoked one, while these must
+    # keep answering so the caller can switch away. A way out that sits behind the
+    # door it opens is not a way out.
+    identity_api = APIRouter(dependencies=[Depends(_home_caller)])
+
+    def _sharing_failure(exc: SharingError) -> HTTPException:
+        """A refusal a caller can act on: 403 when permission is missing, 400 when the ask is."""
+        status = 403 if isinstance(exc, (NotOwner, NotPermitted)) else 400
+        return HTTPException(status_code=status, detail=str(exc))
+
+    @identity_api.get("/api/tenants")
+    def list_tenants(
+        sharing: SharingService = Depends(_sharing_service),
+    ) -> list[dict[str, Any]]:
+        """Every tenant open to you: your own first, then the ones you were granted."""
+        return [
+            {
+                "user_id": ref.user_id,
+                "role": ref.role,
+                "label": ref.label,
+                "active": ref.active,
+                "revoked": ref.revoked,
+            }
+            for ref in sharing.list_tenants()
+        ]
+
+    @identity_api.post("/api/tenants/use")
+    def use_tenant(
+        body: TenantBody, sharing: SharingService = Depends(_sharing_service)
+    ) -> dict[str, Any]:
+        """Select the tenant your calls act in. ``null`` returns to your own."""
+        try:
+            ref = sharing.use_tenant(body.tenant)
+        except SharingError as exc:
+            raise _sharing_failure(exc) from exc
+        return {"user_id": ref.user_id, "role": ref.role, "label": ref.label, "active": True}
+
+    @identity_api.get("/api/members")
+    def list_members(
+        sharing: SharingService = Depends(_sharing_service),
+    ) -> list[dict[str, Any]]:
+        """Everyone with access to the tenant you are acting in, the owner included."""
+        return sharing.list_members()
+
+    @identity_api.post("/api/invites")
+    def create_invite(
+        body: InviteBody, sharing: SharingService = Depends(_sharing_service)
+    ) -> dict[str, Any]:
+        """Mint a single-use code that admits whoever redeems it to this tenant."""
+        try:
+            invite = sharing.create_invite(body.days)
+        except SharingError as exc:
+            raise _sharing_failure(exc) from exc
+        return {
+            "code": invite.code,
+            "tenant_user_id": invite.tenant_user_id,
+            "created_date": invite.created_date,
+            "expires_date": invite.expires_date,
+        }
+
+    @identity_api.post("/api/invites/revoke")
+    def revoke_invite(
+        body: InviteCodeBody, sharing: SharingService = Depends(_sharing_service)
+    ) -> dict[str, Any]:
+        """Retire a code before it is redeemed."""
+        try:
+            sharing.revoke_invite(body.code)
+        except SharingError as exc:
+            raise _sharing_failure(exc) from exc
+        return {"code": body.code, "revoked": True}
+
+    @identity_api.post("/api/invites/redeem")
+    def redeem_invite(
+        body: InviteCodeBody, sharing: SharingService = Depends(_sharing_service)
+    ) -> dict[str, Any]:
+        """Join the tenant an invitation names, as a guest. Does not switch you into it."""
+        try:
+            return sharing.redeem(body.code)
+        except SharingError as exc:
+            raise _sharing_failure(exc) from exc
+
+    @identity_api.post("/api/members/revoke")
+    def revoke_member(
+        body: MemberBody, sharing: SharingService = Depends(_sharing_service)
+    ) -> dict[str, Any]:
+        """End somebody's access to the tenant you are acting in, which you must own."""
+        try:
+            sharing.revoke_member(body.member)
+        except SharingError as exc:
+            raise _sharing_failure(exc) from exc
+        return {"member": body.member, "revoked": True}
+
+    router.include_router(identity_api)
     router.include_router(api)
     return router

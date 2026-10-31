@@ -35,6 +35,8 @@ It runs in one of two shapes, chosen by `MUNNIN_AUTH`; everything else in this d
 
 Two thin adapters over one transport-agnostic core, co-hosted on a single uvicorn app. Both faces share **one** token verifier and **one** tenant resolver, so there is no seam where they could drift apart. The store sits behind a `MemoryRepository` Protocol (SQLite by default, PostgreSQL for the deployment). Structured in **A-Boxed L1 boxes** — one package per box:
 
+A tenant is shared by invitation, not by login. `tenant_access` records that one account is open to another person, `account.active_user_id` remembers which tenant that person is acting in, and neither changes how a record is scoped: every query still belongs to exactly one `user_id`. Nothing is granted per agent or per project.
+
 ```
                 ┌────────────── one uvicorn app ───────────────────────────────┐
    MCP client   │  /mcp    → api_mcp   (FastMCP streamable-HTTP)               │
