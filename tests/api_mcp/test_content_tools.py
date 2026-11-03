@@ -202,5 +202,5 @@ async def test_permanent_layer_is_the_ras_plus_the_digest(tmp_path: Path) -> Non
     assert "### **MEMORY RECOVERY**" in out["content"]  # the store half
     assert "REAQ" in out["content"]  # the digest half
     assert out["content"].index("MEMORY RECOVERY") < out["content"].index("REAQ")
-    assert out["version"] == "2026-10-06"  # the digest's authored dated stamp
+    assert out["version"] == "2026-11-03"  # the digest's authored dated stamp
     assert len(out["hash"]) == 12  # a content hash, derived not typed
