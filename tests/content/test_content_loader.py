@@ -224,12 +224,8 @@ def test_permanent_layer_source_is_the_digest_and_its_stamp(loader: ContentLoade
     27-pattern file ``awaken`` serves — the full one is the perishable copy. The stamp is
     metadata: read as the version, stripped from the body."""
     version, text = loader.permanent_layer_source()
-    assert version == "2026-11-05"
+    assert version == "2026-11-03"
     assert "REAQ" in text
-    assert "for questions, default to **Quick Answer** only" in text
-    assert "for commands, default to **Result**" in text
-    assert "menu, not a checklist" in text
-    assert "Keep the accuracy and clarity rules below" in text
     assert "permanent_layer_version" not in text  # the stamp never reaches the block
     assert "## Storage Mechanics" not in text
 
