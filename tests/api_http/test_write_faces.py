@@ -1,10 +1,11 @@
-"""HTTP face — full /api/* read/write surface (SP-3 Step 2.1).
+"""HTTP face â€” full /api/* read/write surface (SP-3 Step 2.1).
 
 ASGI in-process via httpx; the whole DI graph is built by build_app over a temp DB.
 """
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import httpx
@@ -19,13 +20,13 @@ CF = Path(__file__).resolve().parents[2] / "control-files"
 
 
 def _ver(resource: str) -> str:
-    """The live stamp of a template — what a well-behaved writer declares."""
+    """The live stamp of a template â€” what a well-behaved writer declares."""
     return ContentLoader(CF).template_version(resource)
 
 
 def _client(tmp_path: Path) -> httpx.AsyncClient:
     db = tmp_path / "m.db"
-    # `meta` has to exist before its memory can be written — the foreign key is the
+    # `meta` has to exist before its memory can be written â€” the foreign key is the
     # point of the entity, and these tests go through the real repository.
     seed_agent(db, "meta", name="Claude Meta", role="Meta Agent")
     app = build_app(
@@ -127,7 +128,7 @@ async def test_multi_edit_face_atomic(tmp_path: Path) -> None:
         ]})
         assert ok.status_code == 200
         assert ok.json()["content"] == "1 2"
-        # a failing edit → 400 and nothing written
+        # a failing edit â†’ 400 and nothing written
         bad = await c.post("/api/multi-edit", json={"uuid": "e1", "edits": [
             {"old_string": "1", "new_string": "X"},
             {"old_string": "nope", "new_string": "Y"},
@@ -211,7 +212,7 @@ async def test_edit_metadata_over_the_http_face(tmp_path: Path) -> None:
 
 async def test_a_write_body_refuses_a_field_it_does_not_take(tmp_path: Path) -> None:
     """Pydantic ignores unknown keys by default, so without this a caller still sending
-    `content_summary` to `/api/edit` — the argument that op no longer takes — would get a
+    `content_summary` to `/api/edit` â€” the argument that op no longer takes â€” would get a
     200 and no change, which is exactly the silent no-op this change exists to remove. The
     mistake is a 422 naming the field instead. The MCP face cannot match: the transport
     drops an undeclared argument before the server sees it."""
@@ -222,3 +223,64 @@ async def test_a_write_body_refuses_a_field_it_does_not_take(tmp_path: Path) -> 
         assert stale.status_code == 422
         typo = await c.post("/api/edit-metadata", json={"uuid": "k1", "titel": "typo"})
         assert typo.status_code == 422
+
+
+async def test_archive_memories_scans_then_applies_then_unarchives(tmp_path: Path) -> None:
+    """The route's whole cycle on one fixture: dry run reads, apply writes the tagged set,
+    unarchive puts it back."""
+    db = tmp_path / "m.db"
+    async with _client(tmp_path) as c:
+        for uid in ("e1", "e2"):
+            ins = await c.post(
+                "/api/insert",
+                json={
+                    "content_summary": "a one-line summary of this record",
+                    "agent_id": "meta",
+                    "record_type": "episode",
+                    "content": "body",
+                    "uuid": uid,
+                    "title": f"proj-theme-{uid}",
+                    "project": "proj",
+                    "template_version": _ver("episodic-entry-template"),
+                },
+            )
+            assert ins.status_code == 200, ins.text
+        # Backdate directly: the API stamps dates, and the rule needs an older row.
+        with sqlite3.connect(db) as conn:
+            conn.execute(
+                "UPDATE memory_record SET created_date='2026-01-01', "
+                "modified_date='2026-01-01' WHERE uuid='e1'"
+            )
+            conn.execute(
+                "UPDATE memory_record SET created_date='2026-06-01', "
+                "modified_date='2026-06-01' WHERE uuid='e2'"
+            )
+        tagged = await c.post("/api/edit-metadata", json={"uuid": "e1", "tags": ["finished"]})
+        assert tagged.status_code == 200, tagged.text
+
+        dry = await c.post("/api/archive-memories", json={"agent_id": "meta", "days": 30})
+        assert dry.status_code == 200, dry.text
+        assert dry.json()["applied"] is False
+        assert [r["uuid"] for r in dry.json()["auto"]] == ["e1"]
+        assert (await c.get("/api/record/e1")).json()["archived_date"] is None
+
+        applied = await c.post(
+            "/api/archive-memories", json={"agent_id": "meta", "days": 30, "apply": True}
+        )
+        assert applied.json()["archived"] == ["e1"]
+        assert (await c.get("/api/record/e1")).json()["archived_date"] is not None
+
+        back = await c.post("/api/unarchive", json={"uuid": "e1"})
+        assert back.json() == {"uuid": "e1", "status": "active"}
+        assert (await c.get("/api/record/e1")).json()["archived_date"] is None
+
+
+async def test_archive_memories_rejects_a_bad_window(tmp_path: Path) -> None:
+    async with _client(tmp_path) as c:
+        r = await c.post("/api/archive-memories", json={"agent_id": "meta", "days": 0})
+        assert r.status_code == 400
+
+
+async def test_unarchive_of_a_missing_record_is_404(tmp_path: Path) -> None:
+    async with _client(tmp_path) as c:
+        assert (await c.post("/api/unarchive", json={"uuid": "nope"})).status_code == 404

@@ -1,4 +1,4 @@
-"""MCP face — full tool surface (SP-3 Step 3.1).
+"""MCP face â€” full tool surface (SP-3 Step 3.1).
 
 In-process fastmcp Client over a MemoryService on a seeded temp DB.
 """
@@ -18,7 +18,7 @@ CF = Path(__file__).resolve().parents[2] / "control-files"
 
 
 def _mcp(tmp_path: Path):
-    # The face now runs over a per-tenant factory, which wires the **real** repository —
+    # The face now runs over a per-tenant factory, which wires the **real** repository â€”
     # so the agent these tools write to has to exist, where the auto-creating double used
     # to invent it. Seeding it explicitly is the honest version of that precondition.
     db = tmp_path / "m.db"
@@ -33,7 +33,7 @@ def _mcp_content(tmp_path: Path):
 
 
 def _ver(resource: str) -> str:
-    """The live stamp of a template — what a well-behaved writer declares."""
+    """The live stamp of a template â€” what a well-behaved writer declares."""
     return ContentLoader(CF).template_version(resource)
 
 
@@ -43,6 +43,7 @@ async def test_tool_surface_present(tmp_path: Path) -> None:
     assert {
         "awaken", "insert", "edit", "append", "prepend", "multi_edit",
         "get", "query", "search", "archive", "soft_delete",
+        "archive_memories", "unarchive",
     } <= names
 
 
@@ -171,3 +172,22 @@ async def test_edit_metadata_omits_clears_and_empties(tmp_path: Path) -> None:
             await client.call_tool("edit_metadata", {"uuid": "k1"})
         with pytest.raises(ToolError, match="blank title"):
             await client.call_tool("edit_metadata", {"uuid": "k1", "title": "  "})
+
+
+async def test_archive_memories_defaults_to_a_dry_run(tmp_path: Path) -> None:
+    """The tool's own default must be the safe one: a scan that writes nothing."""
+    async with Client(_mcp(tmp_path)) as client:
+        await client.call_tool(
+            "insert",
+            {
+                "content_summary": "a one-line summary of this record",
+                "agent_id": "meta", "record_type": "episode", "content": "body",
+                "uuid": "e1", "title": "proj-theme", "project": "proj",
+            },
+        )
+        out = await client.call_tool("archive_memories", {"agent_id": "meta"})
+        assert out.data["applied"] is False
+        assert out.data["archived"] == []
+        assert set(out.data) >= {"auto", "ask", "protected"}
+        got = await client.call_tool("get", {"uuid": "e1"})
+        assert got.data["archived_date"] is None

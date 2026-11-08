@@ -13,8 +13,10 @@ import uuid as _uuid
 from typing import Any
 
 from munnin import __version__
+from munnin.business_services.archive_rule import partition_episodes
 from munnin.data_entities.memory_record import (
     Agent,
+    EpisodeMetadata,
     MemoryRecord,
     RecordType,
     SharedRecord,
@@ -83,6 +85,19 @@ def _record(r: SharedRecord) -> dict[str, Any]:
         "modified_date": r.modified_date,
         "archived_date": r.archived_date,
         "content": r.full_content,
+    }
+
+
+def _episode_metadata(m: EpisodeMetadata) -> dict[str, Any]:
+    """The scan's item shape: what the rule decided on, and nothing it did not read."""
+    return {
+        "uuid": m.uuid,
+        "project": m.project,
+        "title": m.title,
+        "content_summary": m.content_summary,
+        "tags": m.tags,
+        "created_date": m.created_date,
+        "modified_date": m.modified_date,
     }
 
 
@@ -548,3 +563,43 @@ class MemoryService:
         """Tombstone a record (excluded from all reads). Raises ``LookupError`` if absent."""
         self._repo.soft_delete(uuid)
         return {"uuid": uuid, "status": "deleted"}
+
+    def archive_memories(
+        self, agent_id: str, *, days: int = 30, apply: bool = False
+    ) -> dict[str, Any]:
+        """Scan one agent's live episodes for themes that may be archived.
+
+        ``apply=False`` is a dry run and writes nothing: it returns the three sets the
+        rule produced. ``apply=True`` archives exactly ``auto`` (tagged ``finished`` and
+        unprotected) and returns the uuids it archived. ``ask`` is never written here,
+        because deciding an aging theme is a per-record judgment, and ``protected`` is
+        reported with the reason each row was spared.
+        """
+        if not 1 <= days <= 3650:
+            raise ValueError("days must be between 1 and 3650")
+        partition = partition_episodes(
+            self._repo.query_episode_metadata(validate_domain(agent_id)), days=days
+        )
+        archived: list[str] = []
+        if apply:
+            for row in partition.auto:
+                self._repo.archive(row.uuid)
+                archived.append(row.uuid)
+        return {
+            "agent_id": agent_id,
+            "days": days,
+            "applied": apply,
+            "archived": archived,
+            "auto": [_episode_metadata(row) for row in partition.auto],
+            "ask": [_episode_metadata(row) for row in partition.ask],
+            "protected": [
+                {**_episode_metadata(row.record), "reason": row.reason}
+                for row in partition.protected
+            ],
+        }
+
+    def unarchive(self, uuid: str) -> dict[str, str]:
+        """Return an archived record to the hot index. Raises ``LookupError`` when the
+        record is absent or soft-deleted."""
+        self._repo.unarchive(uuid)
+        return {"uuid": uuid, "status": "active"}

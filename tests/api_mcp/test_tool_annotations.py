@@ -28,9 +28,9 @@ ADDITIVE = {
 }
 DESTRUCTIVE = {
     "edit", "edit_metadata", "multi_edit", "archive", "soft_delete", "revoke_invite",
-    "revoke_member",
+    "revoke_member", "archive_memories", "unarchive",
 }
-IDEMPOTENT_DESTRUCTIVE = {"archive", "soft_delete"}
+IDEMPOTENT_DESTRUCTIVE = {"archive", "soft_delete", "archive_memories", "unarchive"}
 
 
 async def _tools(tmp_path: Path):

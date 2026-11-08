@@ -267,19 +267,20 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # `help` is not a data tool but it is always present: it is the fallback for a client
     # that never shows `instructions`, so it exists whether or not content is served.
     data_tools = [
-        "append", "archive", "awaken", "coding_reasoning", "create_agent", "create_invite",
-        "edit", "edit_metadata", "get", "help", "insert", "list_agents", "list_members",
-        "list_tenants", "multi_edit", "ping", "prepend", "query", "redeem_invite",
-        "revoke_invite", "revoke_member", "search", "soft_delete", "use_tenant",
+        "append", "archive", "archive_memories", "awaken", "coding_reasoning", "create_agent",
+        "create_invite", "edit", "edit_metadata", "get", "help", "insert", "list_agents",
+        "list_members", "list_tenants", "multi_edit", "ping", "prepend", "query",
+        "redeem_invite", "revoke_invite", "revoke_member", "search", "soft_delete",
+        "unarchive", "use_tenant",
     ]
     async with Client(_mcp(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())
     assert names == data_tools
     # with the framework content present, what the Prompts and Resources carry is reachable
-    # a second way — through the one primitive an agent may invoke itself
+    # a second way - through the one primitive an agent may invoke itself
     async with Client(_mcp_content(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())
-    assert len(names) == 29
+    assert len(names) == 31
     assert names == sorted(
         data_tools
         + [

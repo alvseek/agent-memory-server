@@ -222,11 +222,49 @@ def test_set_fields_clears_to_null_empties_tags_and_refuses_an_empty_change(
 
 
 def test_set_fields_reindexes_a_changed_title(memory_repo: Any) -> None:
-    """Both engines index `title` — SQLite through its AFTER UPDATE trigger, PostgreSQL
-    through the STORED `search_tsv` — so a metadata-only write is findable with no extra
+    """Both engines index `title` â€” SQLite through its AFTER UPDATE trigger, PostgreSQL
+    through the STORED `search_tsv` â€” so a metadata-only write is findable with no extra
     step. A trigger narrowed to `full_content` would fail here and nowhere else."""
     rec = _mem(title="unremarkable", content="body text")
     memory_repo.insert(rec)
     assert memory_repo.search("needle") == []
     memory_repo.set_fields(rec.uuid, title="needle")
     assert [r.uuid for r in memory_repo.search("needle")] == [rec.uuid]
+
+def test_episode_metadata_projection_carries_no_body(memory_repo: Any) -> None:
+    """The archive scan decides on tags and dates, so the projection must not ship the
+    body. A `full_content` attribute here would mean the whole point of the read is lost."""
+    rec = _mem(title="theme-a", content="x" * 5000, project="proj", tags=["finished"])
+    memory_repo.insert(rec)
+    rows = memory_repo.query_episode_metadata("meta")
+    assert [r.uuid for r in rows] == [rec.uuid]
+    row = rows[0]
+    assert row.tags == ["finished"]
+    assert row.project == "proj"
+    assert row.title == "theme-a"
+    assert not hasattr(row, "full_content")
+
+
+def test_episode_metadata_excludes_archived_and_deleted(memory_repo: Any) -> None:
+    live = _mem(title="live")
+    archived = _mem(title="archived")
+    deleted = _mem(title="deleted")
+    for rec in (live, archived, deleted):
+        memory_repo.insert(rec)
+    memory_repo.archive(archived.uuid)
+    memory_repo.soft_delete(deleted.uuid)
+    assert [r.uuid for r in memory_repo.query_episode_metadata("meta")] == [live.uuid]
+
+
+def test_unarchive_returns_a_record_to_the_hot_index(memory_repo: Any) -> None:
+    rec = _mem(title="back")
+    memory_repo.insert(rec)
+    memory_repo.archive(rec.uuid)
+    assert memory_repo.query(agent_id="meta") == []
+    memory_repo.unarchive(rec.uuid)
+    assert memory_repo.get(rec.uuid).archived_date is None
+    assert [r.uuid for r in memory_repo.query(agent_id="meta")] == [rec.uuid]
+    memory_repo.unarchive(rec.uuid)  # idempotent: a retry is safe
+    memory_repo.soft_delete(rec.uuid)
+    with pytest.raises(LookupError):
+        memory_repo.unarchive(rec.uuid)

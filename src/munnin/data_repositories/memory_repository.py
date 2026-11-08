@@ -14,7 +14,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from munnin.data_entities.memory_record import Agent, MemoryRecord, RecordType, SharedRecord
+from munnin.data_entities.memory_record import (
+    Agent,
+    EpisodeMetadata,
+    MemoryRecord,
+    RecordType,
+    SharedRecord,
+)
 
 
 class MemoryRepository(Protocol):
@@ -99,6 +105,13 @@ class MemoryRepository(Protocol):
         """Set ``archived_date`` — out of the hot index, still searchable on demand."""
         ...
 
+    def unarchive(self, uuid: str) -> None:
+        """Clear ``archived_date`` — back in the hot index and selectable again.
+
+        Raises ``LookupError`` when the record is missing or soft-deleted, since a
+        tombstone is not something this reverses."""
+        ...
+
     def soft_delete(self, uuid: str) -> None:
         """Set ``deleted_date`` — tombstone, excluded from all reads."""
         ...
@@ -133,6 +146,15 @@ class MemoryRepository(Protocol):
     ) -> Sequence[SharedRecord]:
         """Fleet-shared memory only, filtered by exact field values, bodies included.
         There is no ``agent_id`` parameter because the table has no such column."""
+        ...
+
+    def query_episode_metadata(self, agent_id: str) -> Sequence[EpisodeMetadata]:
+        """One agent's live episodes as metadata only, in the store's own order.
+
+        No body is read: the archive rule decides on tags and dates, and a scan over a
+        whole agent should not pay for content nobody reads. Live means ``deleted_date``
+        and ``archived_date`` both NULL. Ordered by ``(created_date, id)``, the same
+        succession the awakening uses to pick a newest episode."""
         ...
 
     def search(self, text: str, *, include_archived: bool = True) -> Sequence[MemoryRecord]:

@@ -133,6 +133,12 @@ class UuidBody(_WriteBody):
     uuid: str
 
 
+class ArchiveMemoriesBody(_WriteBody):
+    agent_id: str
+    days: int = 30
+    apply: bool = False
+
+
 class TenantBody(_WriteBody):
     tenant: str | None = None
 
@@ -415,6 +421,24 @@ def build_router(
         """Retire a record from the hot index (still searchable)."""
         try:
             return svc.archive(body.uuid)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @api.post("/api/archive-memories")
+    def archive_memories(
+        body: ArchiveMemoriesBody, svc: MemoryService = Depends(_tenant_service)
+    ) -> dict[str, Any]:
+        """Scan an agent's episodes; ``apply`` archives the tagged, unprotected set."""
+        try:
+            return svc.archive_memories(body.agent_id, days=body.days, apply=body.apply)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/api/unarchive")
+    def unarchive(body: UuidBody, svc: MemoryService = Depends(_tenant_service)) -> dict[str, str]:
+        """Clear a record's archive date (back in the hot index)."""
+        try:
+            return svc.unarchive(body.uuid)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

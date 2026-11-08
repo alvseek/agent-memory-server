@@ -405,6 +405,24 @@ def build_mcp(
         """Retire a record from the hot index (still searchable on demand)."""
         return _svc().archive(uuid)
 
+    @mcp.tool(title="Scan for archivable episodes", annotations=_DESTRUCTIVE_IDEMPOTENT)
+    def archive_memories(
+        agent_id: str, days: int = 30, apply: bool = False
+    ) -> dict[str, Any]:
+        """Scan one agent's episodes and report what may be archived.
+
+        ``auto`` is tagged ``finished`` and unprotected; ``apply=True`` archives exactly
+        that set. ``ask`` is untagged and not modified within ``days``, and is never
+        written here because deciding it is a per-record judgment. ``protected`` names
+        the rows the rule refuses, with the reason. The default ``apply=False`` writes
+        nothing."""
+        return _svc().archive_memories(agent_id, days=days, apply=apply)
+
+    @mcp.tool(title="Unarchive a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
+    def unarchive(uuid: str) -> dict[str, str]:
+        """Clear a record's archive date, returning it to the hot index."""
+        return _svc().unarchive(uuid)
+
     @mcp.tool(title="Soft-delete a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
     def soft_delete(uuid: str) -> dict[str, str]:
         """Tombstone a record (excluded from all reads)."""

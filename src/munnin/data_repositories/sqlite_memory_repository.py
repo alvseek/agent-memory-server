@@ -23,6 +23,7 @@ from pathlib import Path
 from munnin.data_entities.memory_record import (
     SHARED_RECORD_TYPES,
     Agent,
+    EpisodeMetadata,
     MemoryRecord,
     RecordType,
     SharedRecord,
@@ -420,8 +421,19 @@ class SqliteMemoryRepository:
         return _row_from(table, updated)
 
     def archive(self, uuid: str) -> None:
-        """Set ``archived_date`` (idempotent — first timestamp preserved)."""
+        """Set ``archived_date`` (idempotent - first timestamp preserved)."""
         self._set_lifecycle("archived_date", uuid)
+
+    def unarchive(self, uuid: str) -> None:
+        """Clear ``archived_date``. Soft-deleted rows stay out of reach."""
+        with self._conn() as conn:
+            table = self._locate(conn, uuid)
+            if table is None:
+                raise LookupError(f"record not found: {uuid}")
+            conn.execute(
+                f"UPDATE {table} SET archived_date=NULL WHERE uuid=? AND user_id=?",
+                (uuid, self._user_id),
+            )
 
     def soft_delete(self, uuid: str) -> None:
         """Set ``deleted_date`` tombstone (idempotent)."""
@@ -547,6 +559,34 @@ class SqliteMemoryRepository:
                     for r in conn.execute(shared_sql, shared_params).fetchall()
                 ]
         return records
+
+    def query_episode_metadata(self, agent_id: str) -> Sequence[EpisodeMetadata]:
+        """Live episodes of one agent, metadata only, ordered ``(created_date, id)``.
+
+        Deliberately not built on ``_filtered_sql``: that helper selects every column,
+        body included, and this read exists so a scan never transports a body."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT uuid, agent_id, project, title, content_summary, tags, "
+                "created_date, modified_date FROM memory_record "
+                "WHERE user_id=? AND agent_id=? AND record_type=? "
+                "AND deleted_date IS NULL AND archived_date IS NULL "
+                "ORDER BY created_date, id",
+                (self._user_id, agent_id, RecordType.episode.value),
+            ).fetchall()
+        return [
+            EpisodeMetadata(
+                uuid=row["uuid"],
+                agent_id=row["agent_id"],
+                project=row["project"],
+                title=row["title"],
+                content_summary=row["content_summary"],
+                tags=json.loads(row["tags"]) if row["tags"] else [],
+                created_date=row["created_date"],
+                modified_date=row["modified_date"],
+            )
+            for row in rows
+        ]
 
     def query_shared(
         self,

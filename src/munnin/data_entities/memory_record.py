@@ -140,3 +140,21 @@ class MemoryRecord(SharedRecord):
     enforces it with a foreign key, and no sentinel value exists."""
 
     agent_id: str
+
+
+@dataclass(kw_only=True)
+class EpisodeMetadata:
+    """One episode's metadata, with no body.
+
+    The archive rule decides on tags and dates alone, and a scan over a whole agent
+    should not pull every body to reach them. This is the projection that read returns;
+    anything that needs the text goes through ``get`` or ``query`` instead."""
+
+    uuid: str
+    agent_id: str
+    project: str | None = None
+    title: str | None = None
+    content_summary: str | None = None
+    tags: list[str] = field(default_factory=list)
+    created_date: str | None = None
+    modified_date: str | None = None
