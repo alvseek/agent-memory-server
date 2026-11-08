@@ -126,6 +126,14 @@ def test_an_invalid_domain_is_refused(tmp_path: Path) -> None:
         svc.archive_memories("Not A Domain")
 
 
+def test_an_unknown_agent_is_refused(tmp_path: Path) -> None:
+    """An agent this account does not have must not scan to three empty lists: that
+    answer is indistinguishable from 'nothing to archive'."""
+    _repo, svc = _svc(tmp_path)
+    with pytest.raises(ValueError, match="no agent"):
+        svc.archive_memories("no-such-agent")
+
+
 def test_unarchive_returns_the_record_and_refuses_a_tombstone(tmp_path: Path) -> None:
     repo, svc = _svc(tmp_path)
     ids = _seed(repo)

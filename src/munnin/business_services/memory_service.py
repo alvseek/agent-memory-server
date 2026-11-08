@@ -573,10 +573,17 @@ class MemoryService:
         rule produced. ``apply=True`` archives exactly ``auto`` (tagged ``finished`` and
         unprotected) and returns the uuids it archived. ``ask`` is never written here,
         because deciding an aging theme is a per-record judgment, and ``protected`` is
-        reported with the reason each row was spared.
+        reported with the reason each row was spared. An agent this account does not
+        have raises, because an empty scan would otherwise read as "nothing to do".
         """
         if not 1 <= days <= 3650:
             raise ValueError("days must be between 1 and 3650")
+        known = {agent.agent_id for agent in self._repo.list_agents()}
+        if agent_id not in known:
+            # An unknown agent scans to three empty lists, which reads exactly like
+            # "nothing to archive". The store refuses an unknown agent on writes through
+            # its foreign key; this read agrees with that rather than inventing an answer.
+            raise ValueError(f"no agent {agent_id!r} in this account")
         partition = partition_episodes(
             self._repo.query_episode_metadata(validate_domain(agent_id)), days=days
         )
