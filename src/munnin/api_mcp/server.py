@@ -569,12 +569,11 @@ def _register_content(
     @mcp.tool(title="Read the permanent layer", annotations=_READ)
     def permanent_layer() -> dict[str, Any]:
         """The always-on memory a client writes into its system-prompt file: the
-        universal RAS triggers plus the compacted reasoning digest, with a content hash.
+        universal RAS triggers plus one entry per reasoning rule, with a content hash.
 
         This is the slice that must survive context compaction, which is why it is
         pushed into the harness's instruction file rather than pulled per session — a
         tool result is conversation history and compaction eats it. The hash tells a
         stale local copy from a current one. Follow read_procedure("anchor-memory") to
         install it."""
-        version, digest = content.permanent_layer_source()
-        return svc().permanent_layer(digest=digest, version=version)
+        return svc().permanent_layer()

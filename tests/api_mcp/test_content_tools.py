@@ -182,25 +182,53 @@ async def test_resources_as_tools(tmp_path: Path) -> None:
     }
 
 
-async def test_permanent_layer_is_the_ras_plus_the_digest(tmp_path: Path) -> None:
-    """The pushed slice: the store's universal RAS triggers, then the compacted reasoning
-    digest, plus a derived version. Assembled server-side so a client never hand-formats
-    records into the block it writes into its system prompt."""
+async def test_permanent_layer_projects_the_store_per_tenant(tmp_path: Path) -> None:
+    """The pushed slice is derived from the tenant's own records: the RAS triggers, then
+    one entry per reasoning rule. Nothing is read from the content tree, and a rule with
+    no capsule is named rather than dropped in silence."""
     db = tmp_path / "m.db"
     mcp = _mcp(tmp_path)  # builds the face and seeds the tenant
-    SqliteMemoryRepository(db, user_id="alvi").insert_shared(
+    repo = SqliteMemoryRepository(db, user_id="alvi")
+    repo.insert_shared(
         SharedRecord(
             uuid="ras-1",
             user_id="",
             record_type=RecordType.ras,
             title="Memory Recovery",
             full_content="### **MEMORY RECOVERY**\n\nSTOP and reload.",
+            created_date="2026-01-01",
+            modified_date="2026-02-01T00:00:00+00:00",
+        )
+    )
+    repo.insert_shared(
+        SharedRecord(
+            uuid="r-1",
+            user_id="",
+            record_type=RecordType.reasoning,
+            title="**A RULE** 🎯 TAG 🎯",
+            full_content="**Rule**: do it.\n**Final Conclusion**: Do it, because it broke once.",
+            created_date="2026-01-02",
+            modified_date="2026-03-04T00:00:00+00:00",
+        )
+    )
+    repo.insert_shared(
+        SharedRecord(
+            uuid="r-2",
+            user_id="",
+            record_type=RecordType.reasoning,
+            title="**OFF TEMPLATE**",
+            full_content="**Rule**: no capsule here.",
+            created_date="2026-01-03",
+            modified_date="2026-03-05T00:00:00+00:00",
         )
     )
     async with Client(mcp) as client:
         out = (await client.call_tool("permanent_layer", {})).data
-    assert "### **MEMORY RECOVERY**" in out["content"]  # the store half
-    assert "REAQ" in out["content"]  # the digest half
-    assert out["content"].index("MEMORY RECOVERY") < out["content"].index("REAQ")
-    assert out["version"] == "2026-11-07"  # the digest's authored dated stamp
+
+    assert "### **MEMORY RECOVERY**" in out["content"]  # the RAS half
+    assert "### **A RULE** 🎯 TAG 🎯\nDo it, because it broke once." in out["content"]
+    assert out["content"].index("MEMORY RECOVERY") < out["content"].index("A RULE")
+    assert "OFF TEMPLATE" not in out["content"]
+    assert out["skipped"] == ["**OFF TEMPLATE**"]
+    assert out["version"] == "2026-03-04"  # newest included modified_date, not typed
     assert len(out["hash"]) == 12  # a content hash, derived not typed

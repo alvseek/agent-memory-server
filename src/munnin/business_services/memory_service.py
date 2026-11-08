@@ -8,6 +8,7 @@ add_reasoning, ...) land in Phase 5; Phase 4 provides only liveness.
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid as _uuid
 from typing import Any
 
@@ -92,17 +93,72 @@ def _agent(a: Agent) -> dict[str, Any]:
     return {"agent_id": a.agent_id, "name": a.name, "role": a.role, "uuid": a.uuid}
 
 
-def _permanent_layer_content(ras: list[SharedRecord], digest: str) -> str:
-    """The permanent layer's block: the universal RAS triggers, then the compacted
-    reasoning digest.
+#: A reasoning pattern's compression-survival capsule: everything after its final marker,
+#: to the end of the body. Anchored at the end on purpose — the template puts the marker
+#: last, and text appended after it is not part of the capsule.
+_FINAL_CONCLUSION = re.compile(r"\*\*Final Conclusion\*\*:\s*(.*)\Z", re.DOTALL)
 
-    RAS order is the store's own insertion order, which preserves the order the source
-    file authored them in. Both halves are storage-neutral already — the RAS records are
-    imported from ``shared-memory/core-ras-memory.md`` and the digest carries no storage
-    mechanics — so nothing here needs a backend section."""
-    parts = [r.full_content.strip() for r in sorted(ras, key=lambda r: r.id or 0)]
-    parts.append(digest.strip())
-    return "\n\n".join(p for p in parts if p)
+#: The template's sanctioned opt-out. A rule declaring it says it has no capsule, which
+#: is intent, not a defect, so it leaves the block without being reported.
+_NONE_DECLARED = "none declared"
+
+
+def _final_conclusion(body: str) -> str | None:
+    """The one line the always-on block keeps for a rule, or ``None`` when it has none."""
+    match = _FINAL_CONCLUSION.search(body or "")
+    if not match:
+        return None
+    return " ".join(match.group(1).split()) or None
+
+
+def _permanent_layer_projection(shared: list[SharedRecord]) -> tuple[str, str, list[str]]:
+    """The permanent layer's block, derived from records: ``(content, version, skipped)``.
+
+    The universal RAS triggers come first, in the store's insertion order, which preserves
+    the order the source file authored them in. Then one entry per reasoning record, in
+    authoring order: the stored title as a heading, and the rule's ``Final Conclusion`` as
+    the paragraph under it. Nothing is selected and nothing is authored, so a new rule is
+    always-on the moment it is written and no artifact can fall behind the corpus.
+
+    A rule with no capsule is left out and named in ``skipped``: dropping it silently
+    would remove it from the always-on layer with nothing to notice. ``None declared`` is
+    the template's explicit opt-out and is left out without a report.
+
+    ``version`` is the newest ``modified_date`` among the records the block includes, so it
+    moves when a rule is edited instead of being typed by hand. ``hash`` stays over the
+    assembled text, which is what tells a stale local copy from a current one."""
+    ras = sorted(
+        (r for r in shared if r.record_type is RecordType.ras), key=lambda r: r.id or 0
+    )
+    rules = sorted(
+        (r for r in shared if r.record_type is RecordType.reasoning),
+        key=lambda r: (r.created_date or "", r.id or 0),
+    )
+
+    parts: list[str] = []
+    included: list[SharedRecord] = []
+    skipped: list[str] = []
+
+    for record in ras:
+        body = (record.full_content or "").strip()
+        if body:
+            parts.append(body)
+            included.append(record)
+
+    for record in rules:
+        conclusion = _final_conclusion(record.full_content or "")
+        if conclusion is None:
+            skipped.append(record.title or record.uuid)
+            continue
+        if conclusion.casefold().startswith(_NONE_DECLARED):
+            continue
+        parts.append(f"### {record.title or record.uuid}\n{conclusion}")
+        included.append(record)
+
+    version = max(
+        (r.modified_date or r.created_date or "" for r in included), default=""
+    )
+    return "\n\n".join(parts), version[:10], skipped
 
 
 class MemoryService:
@@ -189,25 +245,26 @@ class MemoryService:
             "latest_episode": _episode(latest),
         }
 
-    def permanent_layer(self, digest: str, version: str) -> dict[str, Any]:
+    def permanent_layer(self) -> dict[str, Any]:
         """The always-on permanent layer a client writes into its system prompt.
 
-        Two halves, both fleet memory: the universal RAS triggers read from the store,
-        and the compacted reasoning digest passed in by the content layer. This is the
-        slice that must survive context compaction, which is why it is assembled here
-        rather than pulled from ``awaken`` — ``awaken`` returns the full, perishable
-        layer, and a tool result is eaten by compaction.
+        Derived, per tenant, from the store's own records: the universal RAS triggers and
+        the reasoning lane, projected into one block. This is the slice that must survive
+        context compaction, which is why it is assembled here rather than pulled from
+        ``awaken`` — ``awaken`` returns the full, perishable layer, and a tool result is
+        eaten by compaction.
 
-        ``version`` is the digest's authored stamp and ``hash`` a content hash over the
-        whole block. The client stores both beside its local copy and compares the hash
-        on the next anchor to tell a stale install from a current one, so neither is
-        typed here."""
-        ras = [r for r in self._repo.query_shared() if r.record_type is RecordType.ras]
-        content = _permanent_layer_content(ras, digest)
+        Nothing is stored for it and nothing is authored, so there is no second copy to
+        drift from the rules, and one tenant's reasoning never reaches another's. ``version``
+        and ``hash`` are both derived: the date from the newest record the block includes,
+        the hash over the assembled text, so a client can tell a stale local copy from a
+        current one. ``skipped`` names any rule left out for having no capsule."""
+        content, version, skipped = _permanent_layer_projection(self._repo.query_shared())
         return {
             "version": version,
             "hash": hashlib.sha256(content.encode("utf-8")).hexdigest()[:12],
             "content": content,
+            "skipped": skipped,
         }
 
     # --- reads (load by id / browse / full-text) ---
