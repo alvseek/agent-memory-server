@@ -571,6 +571,11 @@ def _register_content(
         """The always-on memory a client writes into its system-prompt file: the
         universal RAS triggers plus one entry per reasoning rule, with a content hash.
 
+        Both halves come from this tenant's own records, so one account's reasoning is
+        never served to another's, and nothing is authored or stored for the block.
+        ``skipped`` names any rule left out for carrying no ``Final Conclusion``; an
+        empty list means every rule is in it.
+
         This is the slice that must survive context compaction, which is why it is
         pushed into the harness's instruction file rather than pulled per session — a
         tool result is conversation history and compaction eats it. The hash tells a
