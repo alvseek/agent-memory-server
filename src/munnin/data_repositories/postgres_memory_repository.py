@@ -36,6 +36,12 @@ from munnin.data_entities.memory_record import (
     validate_domain,
 )
 from munnin.data_entities.postgres_migrations import ensure_schema
+from munnin.data_entities.record_reference import (
+    AmbiguousRecordReference,
+    RecordCandidate,
+    normalize_prefix,
+    uuid_candidate,
+)
 
 # One source of truth for column order (identical to the SQLite repository).
 _COL = (
@@ -265,9 +271,10 @@ class PostgresMemoryRepository:
         transform: Callable[[str], str],
     ) -> SharedRecord:
         with self._conn() as conn, conn.cursor() as cur:
-            table = self._locate(cur, uuid)
-            if table is None:
+            target = self._locate(cur, uuid)
+            if target is None:
                 raise LookupError(f"record not found: {uuid}")
+            table, uuid = target
             cur.execute(
                 f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=%s AND user_id=%s",
                 (uuid, self._user_id),
@@ -313,9 +320,10 @@ class PostgresMemoryRepository:
             clearing=clearing,
         )
         with self._conn() as conn, conn.cursor() as cur:
-            table = self._locate(cur, uuid)
-            if table is None:
+            target = self._locate(cur, uuid)
+            if target is None:
                 raise LookupError(f"record not found: {uuid}")
+            table, uuid = target
             assignments.append("modified_date=%s")
             params.append(_now())
             params.extend([uuid, self._user_id])
@@ -330,44 +338,49 @@ class PostgresMemoryRepository:
             updated = cur.fetchone()
         return _row_from(table, updated)
 
-    def archive(self, uuid: str) -> None:
-        self._set_lifecycle("archived_date", uuid)
+    def archive(self, uuid: str) -> str:
+        return self._set_lifecycle("archived_date", uuid)
 
-    def unarchive(self, uuid: str) -> None:
+    def unarchive(self, uuid: str) -> str:
         """Clear ``archived_date``. ``_locate`` excludes soft-deleted rows, so a
         tombstone is never revived by this."""
         with self._conn() as conn, conn.cursor() as cur:
-            table = self._locate(cur, uuid)
-            if table is None:
+            target = self._locate(cur, uuid)
+            if target is None:
                 raise LookupError(f"record not found: {uuid}")
+            table, uuid = target
             cur.execute(
                 f"UPDATE {table} SET archived_date=NULL WHERE uuid=%s AND user_id=%s",
                 (uuid, self._user_id),
             )
+        return uuid
 
-    def soft_delete(self, uuid: str) -> None:
-        self._set_lifecycle("deleted_date", uuid)
+    def soft_delete(self, uuid: str) -> str:
+        return self._set_lifecycle("deleted_date", uuid)
 
-    def _set_lifecycle(self, column: str, uuid: str) -> None:
+    def _set_lifecycle(self, column: str, uuid: str) -> str:
         # `column` is a literal constant from archive/soft_delete, never caller input;
         # `table` comes from the _TABLES whitelist. Neither can be parameterised.
         with self._conn() as conn, conn.cursor() as cur:
-            table = self._locate(cur, uuid, include_deleted=True)
-            if table is None:
+            target = self._locate(cur, uuid, include_deleted=True)
+            if target is None:
                 raise LookupError(f"record not found: {uuid}")
+            table, uuid = target
             cur.execute(
                 f"UPDATE {table} SET {column}=COALESCE({column}, %s) "
                 "WHERE uuid=%s AND user_id=%s",
                 (_now(), uuid, self._user_id),
             )
+        return uuid
 
     # --- reads ---
 
     def get(self, uuid: str) -> SharedRecord | None:
         with self._conn() as conn, conn.cursor() as cur:
-            table = self._locate(cur, uuid)
-            if table is None:
+            target = self._locate(cur, uuid)
+            if target is None:
                 return None
+            table, uuid = target
             cur.execute(
                 f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=%s AND user_id=%s",
                 (uuid, self._user_id),
@@ -535,16 +548,43 @@ class PostgresMemoryRepository:
 
     def _locate(
         self, cur: psycopg.Cursor, uuid: str, *, include_deleted: bool = False
-    ) -> str | None:
-        tail = "" if include_deleted else " AND deleted_date IS NULL"
+    ) -> tuple[str, str] | None:
+        """Resolve before accessing a body or mutating, scoped to the selected tenant."""
+        exact: list[RecordCandidate] = []
+        deleted_exact = False
         for table in _TABLES:
             cur.execute(
-                f"SELECT 1 FROM {table} WHERE uuid=%s AND user_id=%s{tail}",
+                f"SELECT uuid, title, deleted_date FROM {table} WHERE uuid=%s AND user_id=%s",
                 (uuid, self._user_id),
             )
-            if cur.fetchone():
-                return table
-        return None
+            row = cur.fetchone()
+            if row:
+                if include_deleted or row["deleted_date"] is None:
+                    exact.append(RecordCandidate(table, row["uuid"], row["title"]))
+                else:
+                    deleted_exact = True
+        if len(exact) > 1:
+            raise AmbiguousRecordReference(uuid, exact)
+        if exact:
+            return exact[0].table, exact[0].uuid
+        if deleted_exact:
+            return None
+        prefix = normalize_prefix(uuid)
+        tail = "" if include_deleted else " AND deleted_date IS NULL"
+        candidates: list[RecordCandidate] = []
+        for table in _TABLES:
+            cur.execute(
+                f"SELECT uuid, title FROM {table} WHERE user_id=%s "
+                f"AND lower(replace(uuid, '-', '')) LIKE %s{tail}",
+                (self._user_id, prefix + "%"),
+            )
+            candidates.extend(
+                candidate for row in cur.fetchall()
+                if uuid_candidate(candidate := RecordCandidate(table, row["uuid"], row["title"]))
+            )
+        if len(candidates) > 1:
+            raise AmbiguousRecordReference(uuid, candidates)
+        return (candidates[0].table, candidates[0].uuid) if candidates else None
 
     # --- the agent entity ---
 

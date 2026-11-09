@@ -36,6 +36,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from fastapi.routing import APIRoute
 from fastmcp.server.auth import AuthProvider
 from pydantic import BaseModel, ConfigDict
 
@@ -50,8 +51,29 @@ from munnin.business_services.sharing_service import (
     SharingService,
 )
 from munnin.content.loader import ContentLoader
+from munnin.data_entities.record_reference import (
+    AmbiguousRecordReference,
+    InvalidRecordReference,
+)
 
 _UNAUTHENTICATED = {"WWW-Authenticate": "Bearer"}
+
+
+class _RecordReferenceRoute(APIRoute):
+    """One error translation for every memory route, including reads and lifecycle writes."""
+
+    def get_route_handler(self):
+        original = super().get_route_handler()
+
+        async def handle(request: Request):
+            try:
+                return await original(request)
+            except AmbiguousRecordReference as exc:
+                raise HTTPException(status_code=409, detail=exc.detail()) from exc
+            except InvalidRecordReference as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return handle
 
 
 class MarkdownResponse(PlainTextResponse):
@@ -241,7 +263,7 @@ def build_router(
     # Every route below this line is guarded, including the served-content ones: one rule
     # with no exceptions is checkable, and an unauthenticated exception is what produced
     # the hole this work closes.
-    api = APIRouter(dependencies=[Depends(_caller)])
+    api = APIRouter(dependencies=[Depends(_caller)], route_class=_RecordReferenceRoute)
 
     @router.get("/health")
     def health() -> dict[str, str]:

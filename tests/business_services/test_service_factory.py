@@ -38,10 +38,10 @@ def test_two_tenants_cannot_see_each_others_records(tmp_path: Path) -> None:
     mine = factory.for_user("alvi")
     theirs = factory.for_user("interviewer")
 
-    _write(mine, "mine-1", "my private memory")
+    _write(mine, "fedcba00123443219876123456789abc", "my private memory")
 
-    assert mine.get("mine-1") is not None
-    assert theirs.get("mine-1") is None
+    assert mine.get("fedcba00123443219876123456789abc") is not None
+    assert theirs.get("fedcba00123443219876123456789abc") is None
 
 
 def test_a_second_tenant_cannot_reach_the_record_by_query(tmp_path: Path) -> None:

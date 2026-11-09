@@ -101,19 +101,19 @@ class MemoryRepository(Protocol):
         a value and named in ``clearing``, or when nothing at all would change."""
         ...
 
-    def archive(self, uuid: str) -> None:
-        """Set ``archived_date`` — out of the hot index, still searchable on demand."""
+    def archive(self, uuid: str) -> str:
+        """Set ``archived_date`` and return the full resolved UUID."""
         ...
 
-    def unarchive(self, uuid: str) -> None:
+    def unarchive(self, uuid: str) -> str:
         """Clear ``archived_date`` — back in the hot index and selectable again.
 
         Raises ``LookupError`` when the record is missing or soft-deleted, since a
         tombstone is not something this reverses."""
         ...
 
-    def soft_delete(self, uuid: str) -> None:
-        """Set ``deleted_date`` — tombstone, excluded from all reads."""
+    def soft_delete(self, uuid: str) -> str:
+        """Set ``deleted_date`` and return the full resolved UUID."""
         ...
 
     # --- reads ---

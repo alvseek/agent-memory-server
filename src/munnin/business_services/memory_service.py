@@ -556,12 +556,12 @@ class MemoryService:
     def archive(self, uuid: str) -> dict[str, str]:
         """Retire a record from the hot index (still searchable). Raises ``LookupError`` if
         absent."""
-        self._repo.archive(uuid)
+        uuid = self._repo.archive(uuid)
         return {"uuid": uuid, "status": "archived"}
 
     def soft_delete(self, uuid: str) -> dict[str, str]:
         """Tombstone a record (excluded from all reads). Raises ``LookupError`` if absent."""
-        self._repo.soft_delete(uuid)
+        uuid = self._repo.soft_delete(uuid)
         return {"uuid": uuid, "status": "deleted"}
 
     def archive_memories(
@@ -608,5 +608,5 @@ class MemoryService:
     def unarchive(self, uuid: str) -> dict[str, str]:
         """Return an archived record to the hot index. Raises ``LookupError`` when the
         record is absent or soft-deleted."""
-        self._repo.unarchive(uuid)
+        uuid = self._repo.unarchive(uuid)
         return {"uuid": uuid, "status": "active"}

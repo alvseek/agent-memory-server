@@ -57,7 +57,7 @@ async def test_insert_get_round_trip(tmp_path: Path) -> None:
 
 async def test_get_missing_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        assert (await c.get("/api/record/nope")).status_code == 404
+        assert (await c.get("/api/record/fedcba")).status_code == 404
 
 
 async def test_edit_and_query(tmp_path: Path) -> None:
@@ -139,7 +139,7 @@ async def test_multi_edit_face_atomic(tmp_path: Path) -> None:
 
 async def test_append_missing_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        r = await c.post("/api/append", json={"uuid": "nope", "text": "x"})
+        r = await c.post("/api/append", json={"uuid": "fedcba", "text": "x"})
         assert r.status_code == 404
 
 
@@ -154,7 +154,7 @@ async def test_insert_bad_record_type_400(tmp_path: Path) -> None:
 
 async def test_edit_missing_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        r = await c.post("/api/edit", json={"uuid": "nope", "old_string": "a", "new_string": "b"})
+        r = await c.post("/api/edit", json={"uuid": "fedcba", "old_string": "a", "new_string": "b"})
         assert r.status_code == 404
 
 
@@ -206,7 +206,7 @@ async def test_edit_metadata_over_the_http_face(tmp_path: Path) -> None:
         assert cleared.json()["tags"] == []
         empty_change = await c.post("/api/edit-metadata", json={"uuid": "k1"})
         assert empty_change.status_code == 400
-        absent = await c.post("/api/edit-metadata", json={"uuid": "absent", "title": "t"})
+        absent = await c.post("/api/edit-metadata", json={"uuid": "fedcba", "title": "t"})
         assert absent.status_code == 404
 
 
@@ -283,4 +283,4 @@ async def test_archive_memories_rejects_a_bad_window(tmp_path: Path) -> None:
 
 async def test_unarchive_of_a_missing_record_is_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
-        assert (await c.post("/api/unarchive", json={"uuid": "nope"})).status_code == 404
+        assert (await c.post("/api/unarchive", json={"uuid": "fedcba"})).status_code == 404

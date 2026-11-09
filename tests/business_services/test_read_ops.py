@@ -39,7 +39,7 @@ def test_get_round_trip(tmp_path: Path) -> None:
 
 def test_get_missing_returns_none(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
-    assert svc.get("nope") is None
+    assert svc.get("fedcba") is None
 
 
 def test_query_filters_by_agent_and_type(tmp_path: Path) -> None:

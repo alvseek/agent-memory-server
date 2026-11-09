@@ -212,7 +212,7 @@ def test_edit_errors(tmp_path: Path) -> None:
     repo.insert(MemoryRecord(uuid="k1", user_id="", agent_id="meta",
                              record_type=RecordType.knowledge, full_content="abc"))
     with pytest.raises(LookupError):
-        svc.edit("missing", "a", "b")
+        svc.edit("fedcba", "a", "b")
     with pytest.raises(ValueError):
         svc.edit("k1", "not-present", "b")
 
@@ -229,7 +229,7 @@ def test_append_and_prepend(tmp_path: Path) -> None:
 def test_append_missing_raises_lookup(tmp_path: Path) -> None:
     _repo, svc = _svc(tmp_path)
     with pytest.raises(LookupError):
-        svc.append("nope", "x")
+        svc.append("fedcba", "x")
 
 
 def test_multi_edit_atomic_and_ordered(tmp_path: Path) -> None:
@@ -318,4 +318,4 @@ def test_edit_metadata_refuses_blank_values_and_empty_changes(tmp_path: Path) ->
     with pytest.raises(ValueError, match="cannot clear"):
         svc.edit_metadata("k1", clearing=["record_type"])
     with pytest.raises(LookupError):
-        svc.edit_metadata("absent", title="t")
+        svc.edit_metadata("fedcba", title="t")

@@ -202,7 +202,9 @@ At `initialize` the server returns four sentences of **instructions** — what M
 
 ### HTTP API (REST twin)
 
-Every endpoint is a REST twin of an MCP primitive over the same core; only the naming idiom differs (REST nouns, MCP verbs — `/api/record/{uuid}` *is* the `get` tool). In token mode every `/api/*` route needs `Authorization: Bearer <token>`; in local mode none does.
+Every endpoint is a REST twin of an MCP primitive over the same core; only the naming idiom differs (REST nouns, MCP verbs — `/api/record/{uuid}` *is* the `get` tool). In token mode every `/api/*` route needs `Authorization: Bearer <token>`; in local mode none does. Existing-record reads and writes accept a full stored ID or a unique UUID prefix containing at least **six hexadecimal characters**. UUID matching ignores case and hyphens: `ABCDEF` and `ab-cd-ef` address the same prefix. Successful responses always return the original full stored UUID, not the abbreviation.
+
+An exact stored ID takes precedence, including legacy identifiers shorter than six characters. Otherwise, a UUID prefix is resolved across agent-owned and shared records in the **selected tenant only**, preserving each operation's archive/deletion visibility. No matches retain the existing not-found response; malformed or too-short abbreviations return HTTP `400` or an MCP tool error. Multiple matches return HTTP `409` (`detail.error = "ambiguous_uuid"`, plus `candidates` containing full `uuid` and `title`) or an MCP tool error listing those choices; no write is performed. Supply more characters or an exact full ID. UUIDs passed to `insert` or `create_agent` are literal creation identifiers, never prefixes.
 
 | Method | Endpoint | MCP twin | Description |
 |---|---|---|---|
@@ -222,7 +224,7 @@ Every endpoint is a REST twin of an MCP primitive over the same core; only the n
 | GET | `/api/prompts` · `/api/prompts/{name}` | `list_procedures` · `read_procedure` | Names as JSON · one procedure as raw `text/markdown` |
 | GET | `/api/resources` · `/api/resources/{name}` | `list_resources` · `read_resource` | Names as JSON · one resource as raw text |
 
-A *list* is data and arrives as JSON; a *single* procedure or template is a document and arrives as raw markdown with no enclosing object, so `curl -o wrap-up.md` writes exactly the bytes an installed slash command carries. Errors stay JSON: `ValueError → 400`, `LookupError → 404`, and in token mode a missing or invalid token → `401` with a `WWW-Authenticate` challenge.
+A *list* is data and arrives as JSON; a *single* procedure or template is a document and arrives as raw markdown with no enclosing object, so `curl -o wrap-up.md` writes exactly the bytes an installed slash command carries. Errors stay JSON: validation errors → `400`, a missing record → `404`, an ambiguous UUID reference → `409`, and in token mode a missing or invalid token → `401` with a `WWW-Authenticate` challenge.
 
 Beside the API, three anonymous HTML pages answer in both modes: `GET /` (a landing page — what this instance is and how to connect), `GET /privacy` and `GET /terms`. They are open by design: a stranger reads them to decide whether to sign in, and a Google consent screen published to production must link a homepage, privacy policy and terms hosted on the app's own domain.
 

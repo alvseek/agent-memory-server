@@ -155,7 +155,10 @@ def build_mcp(
 
     @mcp.tool(title="Read one record", annotations=_READ)
     def get(uuid: str) -> dict[str, Any] | None:
-        """Load one record's full body by id (None if absent/deleted)."""
+        """Load one record by full ID or unique UUID prefix (at least 6 hex characters).
+        Case and hyphens are ignored for UUID matching. Ambiguity errors list full IDs
+        and titles; absent/deleted records return None. Existing-record writes accept
+        the same references and refuse ambiguous prefixes before changing anything."""
         return _svc().get(uuid)
 
     @mcp.tool(title="Browse records by field", annotations=_READ)

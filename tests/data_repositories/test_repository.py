@@ -86,7 +86,7 @@ def test_tenancy_isolation(tmp_path: Path) -> None:
     db = tmp_path / "shared.db"
     a = AutoAgentRepository(db, user_id="alvi")
     b = AutoAgentRepository(db, user_id="other")
-    a.insert(_rec("u1"))
-    assert {r.uuid for r in a.query()} == {"u1"}
+    a.insert(_rec("fedcba00123443219876123456789abc"))
+    assert {r.uuid for r in a.query()} == {"fedcba00123443219876123456789abc"}
     assert list(b.query()) == []  # other tenant cannot see alvi's row
-    assert b.get("u1") is None
+    assert b.get("fedcba00123443219876123456789abc") is None

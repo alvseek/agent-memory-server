@@ -111,18 +111,18 @@ def test_soft_delete_is_idempotent_in_either_table(tmp_path: Path, uuid: str) ->
 
 
 def test_get_returns_none_for_an_unknown_uuid(tmp_path: Path) -> None:
-    assert _repo(tmp_path).get("nowhere") is None
+    assert _repo(tmp_path).get("fedcba") is None
 
 
 @pytest.mark.parametrize(
     "op",
     [
-        lambda r: r.edit("nowhere", "a", "b"),
-        lambda r: r.append("nowhere", "x"),
-        lambda r: r.prepend("nowhere", "x"),
-        lambda r: r.multi_edit("nowhere", [("a", "b", False)]),
-        lambda r: r.archive("nowhere"),
-        lambda r: r.soft_delete("nowhere"),
+        lambda r: r.edit("fedcba", "a", "b"),
+        lambda r: r.append("fedcba", "x"),
+        lambda r: r.prepend("fedcba", "x"),
+        lambda r: r.multi_edit("fedcba", [("a", "b", False)]),
+        lambda r: r.archive("fedcba"),
+        lambda r: r.soft_delete("fedcba"),
     ],
 )
 def test_unknown_uuid_still_raises_lookup_error(tmp_path: Path, op) -> None:  # noqa: ANN001

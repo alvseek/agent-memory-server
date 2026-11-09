@@ -86,8 +86,8 @@ def test_insert_across_tenants_is_rejected(tmp_path: Path) -> None:
 def test_nothing_is_written_when_the_insert_is_rejected(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     with pytest.raises(ValueError):
-        repo.insert(_rec("m4", "ghost"))
-    assert repo.get("m4") is None
+        repo.insert(_rec("fedcba00123443219876123456789abc", "ghost"))
+    assert repo.get("fedcba00123443219876123456789abc") is None
 
 
 # --- the second link in the chain: an agent must name a tenant that exists ---

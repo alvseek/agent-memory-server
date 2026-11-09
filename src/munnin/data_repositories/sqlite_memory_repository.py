@@ -29,6 +29,12 @@ from munnin.data_entities.memory_record import (
     SharedRecord,
     validate_domain,
 )
+from munnin.data_entities.record_reference import (
+    AmbiguousRecordReference,
+    RecordCandidate,
+    normalize_prefix,
+    uuid_candidate,
+)
 from munnin.data_entities.schema_migrations import apply_migrations
 
 # One source of truth for column order.
@@ -358,9 +364,10 @@ class SqliteMemoryRepository:
         ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger. Raises
         ``LookupError`` if the record is missing/deleted."""
         with self._conn() as conn:
-            table = self._locate(conn, uuid)
-            if table is None:
+            target = self._locate(conn, uuid)
+            if target is None:
                 raise LookupError(f"record not found: {uuid}")
+            table, uuid = target
             row = conn.execute(
                 f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
@@ -404,9 +411,10 @@ class SqliteMemoryRepository:
             clearing=clearing,
         )
         with self._conn() as conn:
-            table = self._locate(conn, uuid)
-            if table is None:
+            target = self._locate(conn, uuid)
+            if target is None:
                 raise LookupError(f"record not found: {uuid}")
+            table, uuid = target
             assignments.append("modified_date=?")
             params.append(_now())
             params.extend([uuid, self._user_id])
@@ -420,38 +428,42 @@ class SqliteMemoryRepository:
             ).fetchone()
         return _row_from(table, updated)
 
-    def archive(self, uuid: str) -> None:
+    def archive(self, uuid: str) -> str:
         """Set ``archived_date`` (idempotent - first timestamp preserved)."""
-        self._set_lifecycle("archived_date", uuid)
+        return self._set_lifecycle("archived_date", uuid)
 
-    def unarchive(self, uuid: str) -> None:
+    def unarchive(self, uuid: str) -> str:
         """Clear ``archived_date``. Soft-deleted rows stay out of reach."""
         with self._conn() as conn:
-            table = self._locate(conn, uuid)
-            if table is None:
+            target = self._locate(conn, uuid)
+            if target is None:
                 raise LookupError(f"record not found: {uuid}")
+            table, uuid = target
             conn.execute(
                 f"UPDATE {table} SET archived_date=NULL WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
             )
+        return uuid
 
-    def soft_delete(self, uuid: str) -> None:
+    def soft_delete(self, uuid: str) -> str:
         """Set ``deleted_date`` tombstone (idempotent)."""
-        self._set_lifecycle("deleted_date", uuid)
+        return self._set_lifecycle("deleted_date", uuid)
 
-    def _set_lifecycle(self, column: str, uuid: str) -> None:
+    def _set_lifecycle(self, column: str, uuid: str) -> str:
         # `column` is a literal constant from archive/soft_delete, never caller input;
         # `table` comes from the _TABLES whitelist. Neither can be parameterised in SQLite.
         # Already-deleted rows stay addressable so soft_delete keeps its idempotency.
         with self._conn() as conn:
-            table = self._locate(conn, uuid, include_deleted=True)
-            if table is None:
+            target = self._locate(conn, uuid, include_deleted=True)
+            if target is None:
                 raise LookupError(f"record not found: {uuid}")
+            table, uuid = target
             conn.execute(
                 f"UPDATE {table} SET {column}=COALESCE({column}, ?) "
                 "WHERE uuid=? AND user_id=?",
                 (_now(), uuid, self._user_id),
             )
+        return uuid
 
     # --- reads ---
 
@@ -461,9 +473,10 @@ class SqliteMemoryRepository:
         caller can tell them apart by the presence of ``agent_id``, so the result is
         self-labelling and needs no wrapper."""
         with self._conn() as conn:
-            table = self._locate(conn, uuid)
-            if table is None:
+            target = self._locate(conn, uuid)
+            if target is None:
                 return None
+            table, uuid = target
             row = conn.execute(
                 f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
@@ -676,24 +689,46 @@ class SqliteMemoryRepository:
 
     def _locate(
         self, conn: sqlite3.Connection, uuid: str, *, include_deleted: bool = False
-    ) -> str | None:
-        """Which table holds this uuid, or ``None`` if neither does.
-
-        A uuid identifies one row across both tables by construction — `stable_uuid`
-        derives it from a scope token plus the record's key, so an agent record and a
-        shared record can never collide. That is what lets the seven uuid-addressed
-        operations keep a single signature instead of growing shared twins: the caller
-        already carries enough information to find the row, so asking them which table
-        it lives in would be asking for something the id contains."""
-        tail = "" if include_deleted else " AND deleted_date IS NULL"
+    ) -> tuple[str, str] | None:
+        """Resolve an exact ID or unique UUID prefix on this operation's connection."""
+        # sqlite3's legacy transaction mode does not begin on SELECT. A snapshot must
+        # include resolution and the eventual write, not start only at the UPDATE.
+        if not conn.in_transaction:
+            conn.execute("BEGIN")
+        exact: list[RecordCandidate] = []
+        deleted_exact = False
         for table in _TABLES:
-            found = conn.execute(
-                f"SELECT 1 FROM {table} WHERE uuid=? AND user_id=?{tail}",
+            row = conn.execute(
+                f"SELECT uuid, title, deleted_date FROM {table} WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
             ).fetchone()
-            if found:
-                return table
-        return None
+            if row:
+                if include_deleted or row["deleted_date"] is None:
+                    exact.append(RecordCandidate(table, row["uuid"], row["title"]))
+                else:
+                    deleted_exact = True
+        if len(exact) > 1:
+            raise AmbiguousRecordReference(uuid, exact)
+        if exact:
+            return exact[0].table, exact[0].uuid
+        if deleted_exact:
+            return None
+        prefix = normalize_prefix(uuid)
+        tail = "" if include_deleted else " AND deleted_date IS NULL"
+        candidates: list[RecordCandidate] = []
+        for table in _TABLES:
+            rows = conn.execute(
+                f"SELECT uuid, title FROM {table} WHERE user_id=? "
+                f"AND lower(replace(uuid, '-', '')) LIKE ?{tail}",
+                (self._user_id, prefix + "%"),
+            ).fetchall()
+            candidates.extend(
+                candidate for row in rows
+                if uuid_candidate(candidate := RecordCandidate(table, row["uuid"], row["title"]))
+            )
+        if len(candidates) > 1:
+            raise AmbiguousRecordReference(uuid, candidates)
+        return (candidates[0].table, candidates[0].uuid) if candidates else None
 
     # --- the agent entity ---
 

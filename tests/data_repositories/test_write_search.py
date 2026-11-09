@@ -63,7 +63,7 @@ def test_edit_ambiguous_without_replace_all_raises(tmp_path: Path) -> None:
 def test_edit_missing_record_raises_lookup(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     with pytest.raises(LookupError):
-        repo.edit("nope", "a", "b")
+        repo.edit("fedcba", "a", "b")
 
 
 def test_edit_deleted_record_raises_lookup(tmp_path: Path) -> None:
@@ -110,7 +110,7 @@ def test_append_no_magic_newline(tmp_path: Path) -> None:
 def test_append_missing_or_deleted_raises_lookup(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     with pytest.raises(LookupError):
-        repo.append("nope", "x")
+        repo.append("fedcba", "x")
     repo.insert(_rec("u1", "hi"))
     repo.soft_delete("u1")
     with pytest.raises(LookupError):
@@ -168,7 +168,7 @@ def test_multi_edit_replace_all_flag(tmp_path: Path) -> None:
 def test_multi_edit_missing_record_raises_lookup(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     with pytest.raises(LookupError):
-        repo.multi_edit("nope", [("a", "b", False)])
+        repo.multi_edit("fedcba", [("a", "b", False)])
 
 
 # --- archive / soft_delete ---
@@ -203,9 +203,9 @@ def test_archive_is_idempotent_first_timestamp_kept(tmp_path: Path) -> None:
 def test_lifecycle_missing_record_raises(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     with pytest.raises(LookupError):
-        repo.archive("nope")
+        repo.archive("fedcba")
     with pytest.raises(LookupError):
-        repo.soft_delete("nope")
+        repo.soft_delete("fedcba")
 
 
 # --- search ---
