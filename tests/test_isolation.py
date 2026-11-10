@@ -142,8 +142,11 @@ async def test_bobs_write_does_not_reach_alices_agent(tmp_path: Path) -> None:
     assert resp.status_code == 400
 
     async with _client(app, ALICE) as alice:
-        still = await alice.get("/api/query")
-    assert [r["content"] for r in still.json()] == [SECRET]
+        still = (await alice.get("/api/query")).json()
+        # A browse listing is metadata only now; the body is a deliberate read.
+        bodies = [(await alice.get(f"/api/record/{row['uuid']}")).json()["content"]
+                  for row in still]
+    assert bodies == [SECRET]
 
 
 async def test_isolation_holds_on_the_mcp_face_too(tmp_path: Path) -> None:

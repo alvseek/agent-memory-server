@@ -18,7 +18,13 @@ from __future__ import annotations
 
 import pytest
 
-from munnin.app import AuthNotConfiguredError, build_auth
+from munnin.app import (
+    AuthNotConfiguredError,
+    StoreBackendError,
+    _validate_body_ceiling,
+    build_auth,
+)
+from munnin.business_services.episode_page import DEFAULT_MAX_BODY_BYTES
 from munnin.configuration.config import Config, load_config
 
 
@@ -177,3 +183,44 @@ def test_local_bind_all_is_off_unless_stated(monkeypatch: pytest.MonkeyPatch, va
     assert load_config().local_bind_all is False
     monkeypatch.delenv("MUNNIN_LOCAL_BIND_ALL", raising=False)
     assert load_config().local_bind_all is False
+
+
+# --- the page content ceiling ---------------------------------------------------------------
+
+
+def test_the_page_ceiling_has_one_documented_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Absent means the derived default, and a directly-built Config agrees with the loader.
+
+    Two ways of asking must not have two answers: the default is what a deployment that has
+    never heard of the setting gets, and it has to be the number recorded in
+    ``episode_page.DEFAULT_MAX_BODY_BYTES`` with its evidence."""
+    monkeypatch.delenv("MUNNIN_MAX_BODY_BYTES", raising=False)
+    assert load_config().max_body_bytes == DEFAULT_MAX_BODY_BYTES
+    assert Config().max_body_bytes == DEFAULT_MAX_BODY_BYTES
+    assert DEFAULT_MAX_BODY_BYTES == 32_000
+
+
+def test_the_page_ceiling_is_read_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MUNNIN_MAX_BODY_BYTES", "4096")
+    assert load_config().max_body_bytes == 4096
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "", "  ", "32k", "1.5", "true"])
+def test_a_bad_page_ceiling_refuses_to_load(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """A typo must fail the boot rather than silently restore "no ceiling" or ask for empty
+    pages. ``32k`` and ``1.5`` are the near-misses worth pinning — both look like sizes."""
+    monkeypatch.setenv("MUNNIN_MAX_BODY_BYTES", value)
+    with pytest.raises(ValueError):
+        load_config()
+
+
+@pytest.mark.parametrize("value", [0, -5])
+def test_a_direct_config_with_a_bad_ceiling_is_refused_at_startup(value: int) -> None:
+    """``load_config`` is not the only door: tests and launchers build ``Config`` directly."""
+    with pytest.raises(StoreBackendError):
+        _validate_body_ceiling(Config(max_body_bytes=value))
+    _validate_body_ceiling(Config(max_body_bytes=1))

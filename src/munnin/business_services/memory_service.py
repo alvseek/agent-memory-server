@@ -14,6 +14,12 @@ from typing import Any
 
 from munnin import __version__
 from munnin.business_services.archive_rule import partition_episodes
+from munnin.business_services.episode_page import (
+    DEFAULT_MAX_BODY_BYTES,
+    PageBody,
+    count_groups,
+    page_body,
+)
 from munnin.data_entities.memory_record import (
     Agent,
     EpisodeMetadata,
@@ -22,7 +28,12 @@ from munnin.data_entities.memory_record import (
     SharedRecord,
     validate_domain,
 )
+from munnin.data_entities.search_hit import SearchHit
 from munnin.data_repositories.memory_repository import MemoryRepository
+
+#: How many timestamp groups an awakening carries. The agreed bounded starting context: the
+#: newest page of the latest episode at no extra call, with its cursor when more remains.
+AWAKEN_BLOCK_LIMIT = 3
 
 #: The record types a browse index reads a ``content_summary`` from: ``episodic_index`` and
 #: ``knowledge_index``, the two the awakening hands back as metadata-only listings. Every
@@ -42,12 +53,16 @@ def _whole(r: SharedRecord) -> dict[str, Any]:
     }
 
 
-def _episode(r: SharedRecord | None) -> dict[str, Any] | None:
-    """The latest-episode item: the whole record plus its ``project``, so a caller can
-    tell a project-matched episode from the fallback without a second field."""
+def _episode(r: SharedRecord | None, page: PageBody | None) -> dict[str, Any] | None:
+    """The latest-episode item: a page of the record plus its ``project``, so a caller can
+    tell a project-matched episode from the fallback without a second field.
+
+    The body is a page, never the whole rolling document: ``blocks_returned`` /
+    ``blocks_total`` say how much of it arrived and a non-null ``next_cursor`` says more
+    remains. The two counts measure timestamp groups, not sub-episode headings."""
     if r is None:
         return None
-    return {**_whole(r), "project": r.project}
+    return {**_whole(r), **page.fields(), "content": page.content, "project": r.project}
 
 
 def _index(r: SharedRecord) -> dict[str, Any]:
@@ -85,6 +100,59 @@ def _record(r: SharedRecord) -> dict[str, Any]:
         "modified_date": r.modified_date,
         "archived_date": r.archived_date,
         "content": r.full_content,
+    }
+
+
+def _paged_record(r: SharedRecord, page: PageBody) -> dict[str, Any]:
+    """A deliberate single-record read: the record, with ``content`` replaced by one page
+    and the three page fields beside it.
+
+    Every type carries the fields, episode or not, so one response shape answers "did I
+    receive the whole body?" — and for a non-episode record the answer is always
+    ``blocks_total == 1``, because a record that is not an episode is one atomic block.
+    """
+    return {**_record(r), **page.fields(), "content": page.content}
+
+
+def _browse(r: SharedRecord, blocks_total: int) -> dict[str, Any]:
+    """A browse listing entry: every metadata field a caller filters on, the group count it
+    needs to know whether a body is worth fetching, and **no** body.
+
+    ``_record`` minus ``content`` is not this function — keeping them apart is the point, so
+    no future edit can hand a listing a body through a shared dict."""
+    return {
+        "uuid": r.uuid,
+        **({"agent_id": r.agent_id} if isinstance(r, MemoryRecord) else {}),
+        "record_type": r.record_type.value,
+        "project": r.project,
+        "title": r.title,
+        "content_summary": r.content_summary,
+        "tags": r.tags,
+        "created_date": r.created_date,
+        "modified_date": r.modified_date,
+        "archived_date": r.archived_date,
+        "blocks_total": blocks_total,
+    }
+
+
+def _hit(h: SearchHit) -> dict[str, Any]:
+    """A search result: the record's metadata plus the plain-text excerpt that matched.
+
+    No body and no ``full_content`` — the match is what was asked for, and a caller that
+    wants the record reads it by uuid. ``agent_id`` appears only on agent-owned memory, the
+    same self-labelling rule the browse projection uses."""
+    return {
+        "uuid": h.uuid,
+        **({"agent_id": h.agent_id} if h.agent_id is not None else {}),
+        "record_type": h.record_type.value,
+        "project": h.project,
+        "title": h.title,
+        "content_summary": h.content_summary,
+        "tags": h.tags,
+        "created_date": h.created_date,
+        "modified_date": h.modified_date,
+        "archived_date": h.archived_date,
+        "snippet": h.snippet,
     }
 
 
@@ -178,17 +246,54 @@ def _permanent_layer_projection(shared: list[SharedRecord]) -> tuple[str, str, l
 
 class MemoryService:
     """Assembly + writes over the store. Constructed with a repository (DI) and the
-    server-side ``user_id`` (v1: a constant, never from agent input)."""
+    server-side ``user_id`` (v1: a constant, never from agent input).
 
-    def __init__(self, repo: MemoryRepository, *, user_id: str) -> None:
+    ``max_body_bytes`` is the content ceiling one page of a record body may reach. It is
+    injected rather than read from the environment here: the composition root owns the
+    policy, and a service that looked the value up ambiently could not be tested at a
+    second setting. Every tenant gets the same policy — it is a transport fact, not data —
+    while each service still reaches only its own rows."""
+
+    def __init__(
+        self,
+        repo: MemoryRepository,
+        *,
+        user_id: str,
+        max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
+    ) -> None:
+        if isinstance(max_body_bytes, bool) or not isinstance(max_body_bytes, int):
+            raise ValueError("max_body_bytes must be a whole number of bytes")
+        if max_body_bytes < 1:
+            raise ValueError("max_body_bytes must be a positive number of bytes")
         self._repo = repo
         self._user_id = user_id
+        self._max_body_bytes = max_body_bytes
 
     def health(self) -> dict[str, str]:
         return {"status": "ok", "service": "munnin", "version": __version__}
 
     def version(self) -> str:
         return __version__
+
+    def _page_of(
+        self,
+        record: SharedRecord,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> PageBody:
+        """One page of a record's body under this tenant's configured ceiling.
+
+        Splitting is decided by the **record type**, never by what the text happens to
+        contain: only an episode is a rolling document, so an identity or a knowledge body
+        keeps its H3 headings and stays one block."""
+        return page_body(
+            record.full_content or "",
+            cursor=cursor,
+            limit=limit,
+            max_body_bytes=self._max_body_bytes,
+            splittable=record.record_type is RecordType.episode,
+        )
 
     def awaken(
         self, domain: str, caller: dict[str, Any] | None = None
@@ -254,10 +359,15 @@ class MemoryService:
             "identity": [_whole(r) for r in identity],
             "reasoning": [_whole(r) for r in reasoning],
             "emotional": [_whole(r) for r in emotional],
-            # layer iii — index only (+ latest episode body)
+            # layer iii — index only (+ a page of the latest episode body)
             "knowledge_index": [_index(r) for r in knowledge_idx],
             "episodic_index": [_index(r) for r in episodes],
-            "latest_episode": _episode(latest),
+            "latest_episode": _episode(
+                latest,
+                # The one layer that is paged: up to three timestamp groups, with a cursor
+                # when the record holds more. Every fixed layer above stays whole.
+                self._page_of(latest, limit=AWAKEN_BLOCK_LIMIT) if latest else None,
+            ),
         }
 
     def permanent_layer(self) -> dict[str, Any]:
@@ -284,10 +394,26 @@ class MemoryService:
 
     # --- reads (load by id / browse / full-text) ---
 
-    def get(self, uuid: str) -> dict[str, Any] | None:
-        """Load one record's full body by id. Excludes soft-deleted. ``None`` if absent."""
+    def get(
+        self,
+        uuid: str,
+        *,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Load one record by id — the whole body by default, or one page of it.
+
+        A uuid someone chose is a deliberate read, so the default is the whole record, still
+        capped by the content ceiling (an unbounded body is what truncates silently). Passing
+        ``cursor``/``limit`` asks for a page instead: ``cursor`` is a ``next_cursor`` from a
+        previous read and resumes *at* that timestamp group, and ``limit`` counts groups.
+        Excludes soft-deleted; ``None`` if absent. An unknown cursor or nonpositive limit
+        raises ``ValueError`` rather than falling back to page one.
+        """
         r = self._repo.get(uuid)
-        return _record(r) if r else None
+        if r is None:
+            return None
+        return _paged_record(r, self._page_of(r, cursor=cursor, limit=limit))
 
     def coding_reasoning(self) -> list[dict[str, Any]]:
         """The coding-reasoning lane, loaded whole.
@@ -309,10 +435,15 @@ class MemoryService:
         project: str | None = None,
         include_archived: bool = False,
     ) -> list[dict[str, Any]]:
-        """Filter memory by exact field values, whole records including bodies.
-        ``record_type`` is a string coerced to the enum (invalid → ``ValueError``).
-        Naming an ``agent_id`` reads that agent alone; omitting it also returns
-        fleet-shared memory, and those rows carry no ``agent_id`` key."""
+        """Filter memory by exact field values — metadata only, never bodies.
+
+        A browse answers "which records match, and how big is each one"; a body is a
+        deliberate ``get``. ``blocks_total`` is the number of pagination units the body
+        holds, derived from the same splitter ``get`` pages with, so a caller can tell a
+        one-block document from a thirty-block rolling episode before fetching anything.
+        ``record_type`` is a string coerced to the enum (invalid → ``ValueError``). Naming
+        an ``agent_id`` reads that agent alone; omitting it also returns fleet-shared
+        memory, and those rows carry no ``agent_id`` key."""
         rtype = RecordType(record_type) if record_type else None
         rows = self._repo.query(
             agent_id=agent_id,
@@ -320,22 +451,39 @@ class MemoryService:
             project=project,
             include_archived=include_archived,
         )
-        return [_record(r) for r in rows]
+        return [
+            _browse(
+                r,
+                count_groups(
+                    r.full_content or "",
+                    splittable=r.record_type is RecordType.episode,
+                ),
+            )
+            for r in rows
+        ]
 
     def search(self, text: str, *, include_archived: bool = True) -> list[dict[str, Any]]:
-        """Full-text (FTS5) keyword search over content + title + tags, across **both**
-        corpora. Archived rows are searchable by default; soft-deleted never surface.
+        """Full-text keyword search over content + title + tags, across **both** corpora.
 
-        The two groups arrive from two indexes because FTS5 external-content binds one
-        index to one table, and they are concatenated rather than interleaved by score:
-        bm25 ranks per corpus, so the numbers are not comparable across the join. Within
-        each group the ranking is the real one. Agent hits carry ``agent_id``; fleet hits
-        do not, which is the whole labelling the caller needs."""
+        The result is a *hit*, not a record: the same metadata a browse entry carries plus a
+        backend-generated plain-text ``snippet``, and no body in either field spelling. That
+        is what a keyword lookup asks for — a match — and it is why a search over a whole
+        store no longer transports every body it touched. Read the record itself with
+        ``get`` when the match is worth opening.
+
+        Archived rows are searchable by default; soft-deleted never surface. The two groups
+        arrive from two indexes because FTS5 external-content binds one index to one table,
+        and they are concatenated rather than interleaved by score: bm25 ranks per corpus, so
+        the numbers are not comparable across the join. Within each group the ranking is the
+        real one. Agent hits carry ``agent_id``; fleet hits do not, which is the whole
+        labelling the caller needs."""
         return [
-            _record(r)
-            for r in (
-                *self._repo.search(text, include_archived=include_archived),
-                *self._repo.search_shared(text, include_archived=include_archived),
+            _hit(h)
+            for h in (
+                *self._repo.search_with_snippet(text, include_archived=include_archived),
+                *self._repo.search_shared_with_snippet(
+                    text, include_archived=include_archived
+                ),
             )
         ]
 

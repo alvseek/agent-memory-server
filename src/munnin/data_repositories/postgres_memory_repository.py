@@ -42,6 +42,7 @@ from munnin.data_entities.record_reference import (
     normalize_prefix,
     uuid_candidate,
 )
+from munnin.data_entities.search_hit import SearchHit
 
 # One source of truth for column order (identical to the SQLite repository).
 _COL = (
@@ -513,14 +514,41 @@ class PostgresMemoryRepository:
         rows = self._search_rows("shared_record", text, include_archived=include_archived)
         return [_row_to_shared(r) for r in rows]
 
+    def search_with_snippet(
+        self, text: str, *, include_archived: bool = True
+    ) -> Sequence[SearchHit]:
+        """Agent memory's matches as metadata + a ``ts_headline`` excerpt.
+
+        The headline runs over the **original** ``full_content`` rather than the normalized
+        ``search_tsv``, so the caller reads real text; matching still uses the indexed,
+        punctuation-normalized expression, which is what the engine parity coverage pins."""
+        rows = self._search_rows(
+            "memory_record", text, include_archived=include_archived, snippet=True
+        )
+        return [_row_to_hit(r) for r in rows]
+
+    def search_shared_with_snippet(
+        self, text: str, *, include_archived: bool = True
+    ) -> Sequence[SearchHit]:
+        rows = self._search_rows(
+            "shared_record", text, include_archived=include_archived, snippet=True
+        )
+        return [_row_to_hit(r) for r in rows]
+
     def _search_rows(
-        self, table: str, text: str, *, include_archived: bool
+        self, table: str, text: str, *, include_archived: bool, snippet: bool = False
     ) -> list[dict]:
         """One full-text search over a memory table's generated ``tsvector``.
 
         ``plainto_tsquery`` ANDs the whitespace terms and neutralises operator syntax, the
         closest match to the SQLite ``_to_fts_query`` literal behaviour. ``ts_rank`` ranks;
-        there is no ``bm25`` here, so ordering differs by design."""
+        there is no ``bm25`` here, so ordering differs by design.
+
+        ``snippet=True`` adds a ``ts_headline`` window with **empty** markers: the excerpt is
+        plain text, because a highlight is a rendering decision the server does not get to
+        make for a client's prompt. ``MaxFragments=0`` asks for one contiguous window, and a
+        title- or tag-only match still returns a useful leading excerpt rather than nothing.
+        """
         if not text.strip():
             return []
         where = [
@@ -531,12 +559,25 @@ class PostgresMemoryRepository:
             # `knowledge` row is Hermod's, so it must not surface through search either.
             "(record_type <> %s OR project IS NULL)",
         ]
-        params: list[object] = [text, self._user_id, RecordType.knowledge.value]
+        where_params: list[object] = [text, self._user_id, RecordType.knowledge.value]
         if not include_archived:
             where.append("archived_date IS NULL")
+        selected = _TABLES[table]
+        params: list[object] = []
+        if snippet:
+            selected += (
+                ", ts_headline('simple', coalesce(full_content, ''), "
+                "plainto_tsquery('simple', %s), "
+                "'StartSel=\"\", StopSel=\"\", MaxWords=40, MinWords=10, MaxFragments=0') "
+                "AS snippet"
+            )
+            # The SELECT list is bound before the WHERE clause, and the rank's query comes
+            # after it — one placeholder per position, in the order the server reads them.
+            params.append(text)
+        params.extend(where_params)
         params.append(text)  # for ts_rank
         query = (
-            f"SELECT {_TABLES[table]} FROM {table} "
+            f"SELECT {selected} FROM {table} "
             f"WHERE {' AND '.join(where)} "
             "ORDER BY ts_rank(search_tsv, plainto_tsquery('simple', %s)) DESC"
         )
@@ -686,6 +727,23 @@ def _row_to_shared(row: dict) -> SharedRecord:
         deleted_date=row["deleted_date"],
         full_content=row["full_content"],
         content_summary=row["content_summary"],
+    )
+
+
+def _row_to_hit(row: dict) -> SearchHit:
+    """A search row as a hit projection — metadata plus the excerpt, never the body."""
+    return SearchHit(
+        uuid=row["uuid"],
+        agent_id=row.get("agent_id"),
+        record_type=RecordType(row["record_type"]),
+        project=row["project"],
+        title=row["title"],
+        content_summary=row["content_summary"],
+        tags=json.loads(row["tags"]) if row["tags"] else [],
+        created_date=row["created_date"],
+        modified_date=row["modified_date"],
+        archived_date=row["archived_date"],
+        snippet=row["snippet"] or "",
     )
 
 

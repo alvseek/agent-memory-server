@@ -281,6 +281,8 @@ def build_router(
         """Assemble + return an agent's full memory payload from the DB (M0). Project-blind:
         no project is accepted or resolved, and ``latest_episode`` is the newest episode
         overall; the returned index carries ``project`` on every entry so a caller selects.
+        ``latest_episode`` is a page of up to three timestamp groups with
+        ``blocks_returned``/``blocks_total``/``next_cursor``; every fixed layer is whole.
         ``caller`` names the person signed in, which is not the account being read when
         they are a guest in it."""
         try:
@@ -296,9 +298,22 @@ def build_router(
     # --- reads ---
 
     @api.get("/api/record/{uuid}")
-    def get_record(uuid: str, svc: MemoryService = Depends(_tenant_service)) -> dict[str, Any]:
-        """Load one record's full body by id."""
-        record = svc.get(uuid)
+    def get_record(
+        uuid: str,
+        cursor: str | None = None,
+        limit: int | None = None,
+        svc: MemoryService = Depends(_tenant_service),
+    ) -> dict[str, Any]:
+        """Load one record's body by id — whole by default, or one page of it.
+
+        ``cursor`` is a ``next_cursor`` from a previous read and resumes *at* that timestamp
+        group; ``limit`` counts timestamp groups. Every response carries
+        ``blocks_returned`` / ``blocks_total`` / ``next_cursor``; a non-null cursor is the only
+        signal that more remains. An unknown cursor or a nonpositive limit is a 400."""
+        try:
+            record = svc.get(uuid, cursor=cursor, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         if record is None:
             raise HTTPException(status_code=404, detail=f"record not found: {uuid}")
         return record
@@ -311,8 +326,10 @@ def build_router(
         include_archived: bool = False,
         svc: MemoryService = Depends(_tenant_service),
     ) -> list[dict[str, Any]]:
-        """Filter memory by exact field values (bodies included). Omitting ``agent_id``
-        also returns fleet-shared memory, whose rows carry no ``agent_id``."""
+        """Filter memory by exact field values — metadata only, never bodies.
+        ``blocks_total`` says how many timestamp groups each record's body holds, and the
+        body is one ``GET /api/record/{uuid}`` away. Omitting ``agent_id`` also returns
+        fleet-shared memory, whose rows carry no ``agent_id``."""
         try:
             return svc.query(
                 agent_id=agent_id,
@@ -327,7 +344,8 @@ def build_router(
     def search(
         text: str, include_archived: bool = True, svc: MemoryService = Depends(_tenant_service)
     ) -> list[dict[str, Any]]:
-        """Full-text (FTS5) keyword search."""
+        """Full-text keyword search — metadata plus a plain-text ``snippet``, never a body.
+        Read a hit with ``GET /api/record/{uuid}`` when it is worth opening."""
         return svc.search(text, include_archived=include_archived)
 
     @api.get("/api/agents")

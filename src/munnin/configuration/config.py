@@ -24,6 +24,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from munnin.business_services.episode_page import DEFAULT_MAX_BODY_BYTES
+
 
 @dataclass(frozen=True)
 class Config:
@@ -84,6 +86,27 @@ class Config:
     # default: forgetting to disable them publishes the API's shape, whereas forgetting to
     # enable them costs a developer one environment variable.
     docs_enabled: bool = False
+    # The content ceiling for one page of an episode body, in UTF-8 bytes. One transport fact,
+    # not a memory policy: too tight costs an extra call, too loose costs a silently truncated
+    # body. It bounds the body only — the always-load layers, the index and the JSON envelope
+    # sit outside it — and it never splits a timestamp group. See
+    # ``episode_page.DEFAULT_MAX_BODY_BYTES`` for how the default was derived.
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES
+
+
+def _positive_bytes(raw: str, *, name: str) -> int:
+    """Parse a byte setting, refusing anything that is not a positive whole number.
+
+    A wrong ceiling must fail at startup rather than at a page boundary: a value of ``0``
+    would ask for pages that hold no block, and a typo would silently restore "no ceiling".
+    """
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name}={raw!r} is not a whole number of bytes") from exc
+    if value < 1:
+        raise ValueError(f"{name}={raw!r} must be a positive number of bytes")
+    return value
 
 
 def load_config() -> Config:
@@ -107,4 +130,8 @@ def load_config() -> Config:
         local_bind_all=os.getenv("MUNNIN_LOCAL_BIND_ALL", "").lower() in {"1", "true", "yes"},
         public_base_url=os.getenv("MUNNIN_PUBLIC_BASE_URL", "http://127.0.0.1:8200"),
         docs_enabled=os.getenv("MUNNIN_DOCS", "").lower() in {"1", "true", "yes"},
+        max_body_bytes=_positive_bytes(
+            os.getenv("MUNNIN_MAX_BODY_BYTES", str(DEFAULT_MAX_BODY_BYTES)),
+            name="MUNNIN_MAX_BODY_BYTES",
+        ),
     )

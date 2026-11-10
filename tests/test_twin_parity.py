@@ -59,20 +59,29 @@ async def test_insert_http_get_mcp(tmp_path: Path) -> None:
         })).json()
     async with Client(_mcp(db)) as mcp:
         mcp_rec = (await mcp.call_tool("get", {"uuid": "p1"})).data
-    assert http_rec == mcp_rec
+    # A write result keeps the shape it had; a deliberate read now carries the page fields.
+    assert mcp_rec["content"] == http_rec["content"] == "twin body"
+    assert set(mcp_rec) - set(http_rec) == {
+        "blocks_returned", "blocks_total", "next_cursor",
+    }
+    assert (mcp_rec["blocks_returned"], mcp_rec["blocks_total"]) == (1, 1)
+    assert mcp_rec["next_cursor"] is None
 
 
 async def test_insert_mcp_get_http(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     seed_agent(db, "meta")
     async with Client(_mcp(db)) as mcp:
-        mcp_rec = (await mcp.call_tool("insert", {
+        mcp_insert = (await mcp.call_tool("insert", {
             "content_summary": "a one-line summary of this record",
             "agent_id": "meta", "record_type": "knowledge", "content": "twin2", "uuid": "p2",
         })).data
+        mcp_rec = (await mcp.call_tool("get", {"uuid": "p2"})).data
     async with _http(db) as http:
         http_rec = (await http.get("/api/record/p2")).json()
     assert mcp_rec == http_rec
+    assert "blocks_total" not in mcp_insert
+    assert http_rec["content"] == mcp_insert["content"] == "twin2"
 
 
 async def test_append_http_then_multi_edit_mcp_parity(tmp_path: Path) -> None:
@@ -115,17 +124,20 @@ async def test_shared_insert_parity(tmp_path: Path) -> None:
     """A fleet insert must behave identically on both faces, and neither may need an
     agent: `scope="shared"` is the whole reason the sentinel could go."""
     db = tmp_path / "m.db"  # deliberately no agent anywhere in this store
+    payload = {
+        "content_summary": "a one-line summary of this record",
+        "scope": "shared", "record_type": "reasoning",
+        "content": "fleet pattern", "uuid": "s1",
+        "template_version": _ver("reasoning-pattern-template"),
+    }
     async with _http(db) as http:
-        http_rec = (await http.post("/api/insert", json={
-            "content_summary": "a one-line summary of this record",
-            "scope": "shared", "record_type": "reasoning",
-            "content": "fleet pattern", "uuid": "s1",
-            "template_version": _ver("reasoning-pattern-template"),
-        })).json()
+        http_rec = (await http.post("/api/insert", json=payload)).json()
+        http_page = (await http.get("/api/record/s1")).json()
     async with Client(_mcp(db)) as mcp:
         mcp_rec = (await mcp.call_tool("get", {"uuid": "s1"})).data
-    assert http_rec == mcp_rec
-    assert "agent_id" not in http_rec
+    assert http_page == mcp_rec
+    assert http_rec["content"] == http_page["content"] == "fleet pattern"
+    assert "agent_id" not in http_rec and "agent_id" not in http_page
 
 
 async def test_shared_insert_contradiction_parity(tmp_path: Path) -> None:

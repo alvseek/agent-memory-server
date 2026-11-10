@@ -17,6 +17,7 @@
 | qa/checklists/canonical-mcp-identifier.md | [canonical-mcp-identifier.md](canonical-mcp-identifier.md) | exists-documented |  |
 | qa/checklists/coding-reasoning-lane.md | [coding-reasoning-lane.md](coding-reasoning-lane.md) | exists-documented |  |
 | qa/checklists/edit-metadata.md | [edit-metadata.md](edit-metadata.md) | exists-documented |  |
+| qa/checklists/episodic-block-pagination.md | [episodic-block-pagination.md](episodic-block-pagination.md) | exists-documented | Built 2026-11-10 by the episodic-pagination plan's Step 17. Covers both pagers, both Munnin engines, Hermod's independent pager and the consumer renderer. **Not yet run** |
 | qa/checklists/landing-privacy-terms-pages.md | [landing-privacy-terms-pages.md](landing-privacy-terms-pages.md) | exists-documented |  |
 | qa/checklists/local-mode-and-licence.md | [local-mode-and-licence.md](local-mode-and-licence.md) | exists-documented |  |
 | qa/checklists/munnin-login-tenancy.md | [munnin-login-tenancy.md](munnin-login-tenancy.md) | exists-documented |  |

@@ -36,6 +36,7 @@ from munnin.data_entities.record_reference import (
     uuid_candidate,
 )
 from munnin.data_entities.schema_migrations import apply_migrations
+from munnin.data_entities.search_hit import SearchHit
 
 # One source of truth for column order.
 _COL = (
@@ -649,6 +650,29 @@ class SqliteMemoryRepository:
         )
         return [_row_to_shared(r) for r in rows]
 
+    def search_with_snippet(
+        self, text: str, *, include_archived: bool = True
+    ) -> Sequence[SearchHit]:
+        """Agent memory's matches as metadata + an FTS5 ``snippet()`` excerpt.
+
+        ``snippet(..., -1, ...)`` lets the engine choose the best-matching column, which is
+        what keeps a title-only or tag-only hit useful: the excerpt comes from the column
+        that actually matched instead of from a body that did not."""
+        rows = self._search_rows(
+            "memory_record", "memory_fts", "m", _M_COLUMNS, text,
+            include_archived=include_archived, snippet=True,
+        )
+        return [_row_to_hit(r) for r in rows]
+
+    def search_shared_with_snippet(
+        self, text: str, *, include_archived: bool = True
+    ) -> Sequence[SearchHit]:
+        rows = self._search_rows(
+            "shared_record", "shared_fts", "s", _S_COLUMNS, text,
+            include_archived=include_archived, snippet=True,
+        )
+        return [_row_to_hit(r) for r in rows]
+
     def _search_rows(
         self,
         table: str,
@@ -658,11 +682,16 @@ class SqliteMemoryRepository:
         text: str,
         *,
         include_archived: bool,
+        snippet: bool = False,
     ) -> list[sqlite3.Row]:
         """One FTS5 corpus search, returning raw rows for the caller to map — which is
         what keeps each result the type its own table implies. Table, index and alias are
         literal constants from the two callers above, never caller input, because SQLite
-        cannot parameterise them."""
+        cannot parameterise them.
+
+        ``snippet=True`` adds the matching excerpt beside the record columns. The ellipsis
+        and the empty markers are literals, not caller input, and the excerpt is plain text.
+        """
         match = _to_fts_query(text)
         if not match:
             return []
@@ -677,8 +706,11 @@ class SqliteMemoryRepository:
         params: list[object] = [match, self._user_id, RecordType.knowledge.value]
         if not include_archived:
             where.append(f"{alias}.archived_date IS NULL")
+        selected = columns
+        if snippet:
+            selected += f", snippet({index}, -1, '', '', '...', 40) AS snippet"
         sql = (
-            f"SELECT {columns} FROM {index} "
+            f"SELECT {selected} FROM {index} "
             f"JOIN {table} {alias} ON {alias}.id = {index}.rowid "
             f"WHERE {' AND '.join(where)} ORDER BY {index}.rank"
         )
@@ -872,6 +904,28 @@ def _row_to_agent(row: sqlite3.Row) -> Agent:
         role=row["role"],
         uuid=row["uuid"],
         created_date=row["created_date"],
+    )
+
+
+def _row_to_hit(row: sqlite3.Row) -> SearchHit:
+    """A search row as a hit projection — the record's metadata, never its body.
+
+    ``agent_id`` is present on ``memory_record`` rows and absent on ``shared_record`` ones,
+    so the key's presence still labels the owner; ``row.keys()`` is what lets one mapper
+    serve both tables without inventing a ``None`` that reads as "an agent called None"."""
+    keys = row.keys()
+    return SearchHit(
+        uuid=row["uuid"],
+        agent_id=row["agent_id"] if "agent_id" in keys else None,
+        record_type=RecordType(row["record_type"]),
+        project=row["project"],
+        title=row["title"],
+        content_summary=row["content_summary"],
+        tags=json.loads(row["tags"]) if row["tags"] else [],
+        created_date=row["created_date"],
+        modified_date=row["modified_date"],
+        archived_date=row["archived_date"],
+        snippet=row["snippet"] or "",
     )
 
 

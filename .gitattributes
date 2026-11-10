@@ -1,0 +1,5 @@
+# The conformance artifact is checksummed byte for byte by tests/test_episode_page.py,
+# and the same file is copied into Hermod's pager. A checkout that rewrote its line
+# endings would fail the sha256 assertion on a machine with core.autocrlf=true, so this
+# file must never be treated as text.
+tests/conformance/** -text

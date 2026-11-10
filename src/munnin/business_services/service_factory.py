@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from munnin.business_services.episode_page import DEFAULT_MAX_BODY_BYTES
 from munnin.business_services.memory_service import MemoryService
 from munnin.business_services.sharing_service import SharingService
 from munnin.data_repositories.memory_repository import MemoryRepository
@@ -41,11 +42,17 @@ class ServiceFactory:
         backend: str = "sqlite",
         db_url: str | None = None,
         sharing: SharingRepository | None = None,
+        max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     ) -> None:
+        if isinstance(max_body_bytes, bool) or not isinstance(max_body_bytes, int):
+            raise ValueError("max_body_bytes must be a whole number of bytes")
+        if max_body_bytes < 1:
+            raise ValueError("max_body_bytes must be a positive number of bytes")
         self._db_path = Path(db_path)
         self._backend = backend
         self._db_url = db_url
         self._sharing = sharing
+        self._max_body_bytes = max_body_bytes
         self._services: dict[str, MemoryService] = {}
 
     def _repository(self, user_id: str) -> MemoryRepository:
@@ -65,7 +72,13 @@ class ServiceFactory:
         keeping one per tenant is nothing next to that."""
         service = self._services.get(user_id)
         if service is None:
-            service = MemoryService(self._repository(user_id), user_id=user_id)
+            service = MemoryService(
+                self._repository(user_id),
+                user_id=user_id,
+                # One policy for every tenant: the ceiling is a property of the transport, not
+                # of whose rows are being read, so it is deliberately not per-tenant state.
+                max_body_bytes=self._max_body_bytes,
+            )
             self._services[user_id] = service
         return service
 

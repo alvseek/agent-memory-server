@@ -113,7 +113,7 @@ def test_insert_is_idempotent_upsert(tmp_path: Path) -> None:
         agent_id="meta", record_type="episode", content="B", uuid="dup")
     rows = svc.query(agent_id="meta")
     assert len(rows) == 1
-    assert rows[0]["content"] == "B"
+    assert svc.get("dup")["content"] == "B"
 
 
 def test_insert_shared_scope_writes_fleet_memory(tmp_path: Path) -> None:
@@ -136,9 +136,8 @@ def test_insert_shared_scope_accepts_the_coding_reasoning_lane(tmp_path: Path) -
         scope="shared", record_type="coding_reasoning", content="a coding pattern")
     assert "agent_id" not in out
     assert out["record_type"] == "coding_reasoning"
-    assert [r["content"] for r in svc.query(record_type="coding_reasoning")] == [
-        "a coding pattern"
-    ]
+    rows = svc.query(record_type="coding_reasoning")
+    assert [svc.get(r["uuid"])["content"] for r in rows] == ["a coding pattern"]
 
 
 def test_the_coding_lane_is_readable_but_absent_from_a_chat_awakening(tmp_path: Path) -> None:

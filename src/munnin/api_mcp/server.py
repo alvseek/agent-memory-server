@@ -139,9 +139,14 @@ def build_mcp(
         """Assemble and return an agent's full memory payload from the DB.
 
         Loads the shared always-load layer + the agent's identity whole, plus the
-        episodic/knowledge index and the latest episode body. Project-blind: no project is
-        accepted or resolved, ``latest_episode`` is the newest episode overall, and the
-        whole index is returned with ``project`` on every entry so a caller selects."""
+        episodic/knowledge index and a page of the latest episode body. Project-blind: no
+        project is accepted or resolved, ``latest_episode`` is the newest episode overall,
+        and the whole index is returned with ``project`` on every entry so a caller selects.
+
+        ``latest_episode`` is a page of up to three timestamp groups, never the whole rolling
+        body: ``blocks_returned``/``blocks_total`` count groups and a non-null ``next_cursor``
+        means more remain — continue with ``get(latest_episode.uuid, cursor=…)``. Every fixed
+        layer above (identity, reasoning, emotional, knowledge, the shared layers) is whole."""
         return _svc().awaken(domain, caller=_sharing().caller_block())
 
     @mcp.tool(title="Read the coding-reasoning lane", annotations=_READ)
@@ -154,12 +159,27 @@ def build_mcp(
     # --- reads ---
 
     @mcp.tool(title="Read one record", annotations=_READ)
-    def get(uuid: str) -> dict[str, Any] | None:
+    def get(
+        uuid: str,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any] | None:
         """Load one record by full ID or unique UUID prefix (at least 6 hex characters).
         Case and hyphens are ignored for UUID matching. Ambiguity errors list full IDs
         and titles; absent/deleted records return None. Existing-record writes accept
-        the same references and refuse ambiguous prefixes before changing anything."""
-        return _svc().get(uuid)
+        the same references and refuse ambiguous prefixes before changing anything.
+
+        The body comes back whole by default, still capped by the configured content
+        ceiling. Pass ``cursor`` (a ``next_cursor`` from an earlier read) and/or ``limit``
+        to read one page instead: both count *timestamp groups*, where every sub-episode
+        block sharing one ``###`` timestamp is one indivisible group. ``blocks_total``
+        counts the whole record; ``next_cursor`` is null only when nothing remains, so a
+        final page may return fewer than ``blocks_total``. An unknown cursor or a
+        nonpositive limit is an error, never a quiet fall back to the first page."""
+        try:
+            return _svc().get(uuid, cursor=cursor, limit=limit)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
 
     @mcp.tool(title="Browse records by field", annotations=_READ)
     def query(
@@ -168,19 +188,29 @@ def build_mcp(
         project: str | None = None,
         include_archived: bool = False,
     ) -> list[dict[str, Any]]:
-        """Filter memory by exact field values, returning whole records with bodies.
-        Naming an ``agent_id`` reads that agent alone; omitting it also returns
-        fleet-shared memory, whose rows carry no ``agent_id``."""
-        return _svc().query(
-            agent_id=agent_id,
-            record_type=record_type,
-            project=project,
-            include_archived=include_archived,
-        )
+        """Filter memory by exact field values — metadata only, never bodies: a browse
+        answers what matches, ``blocks_total`` says how many timestamp groups its body
+        holds, and the body itself is one ``get`` by uuid away. Naming an ``agent_id``
+        reads that agent alone; omitting it also returns fleet-shared memory, whose rows
+        carry no ``agent_id``."""
+        try:
+            return _svc().query(
+                agent_id=agent_id,
+                record_type=record_type,
+                project=project,
+                include_archived=include_archived,
+            )
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
 
     @mcp.tool(title="Full-text search", annotations=_READ)
     def search(text: str, include_archived: bool = True) -> list[dict[str, Any]]:
-        """Full-text (FTS5) keyword search over content + title + tags."""
+        """Full-text keyword search over content + title + tags, both corpora.
+
+        Each hit is metadata plus a plain-text ``snippet`` of the match — **not** a body;
+        read one with ``get`` when it is worth opening. Archived records are searchable by
+        default, soft-deleted never are, and a title-only or tag-only match still yields an
+        excerpt. Agent hits carry ``agent_id``; fleet hits do not."""
         return _svc().search(text, include_archived=include_archived)
 
     @mcp.tool(title="List the agents", annotations=_READ)

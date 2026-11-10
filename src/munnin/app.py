@@ -285,6 +285,22 @@ def _validate_backend(config: Config) -> None:
         )
 
 
+def _validate_body_ceiling(config: Config) -> None:
+    """Refuse a nonpositive page ceiling at startup.
+
+    ``load_config`` already refuses a bad env value, but a ``Config`` built directly (tests,
+    the scratch launcher) bypasses that path, and a ceiling of ``0`` would ask for pages
+    that hold no block — a request-time failure that looks like a record with one group.
+    """
+    if isinstance(config.max_body_bytes, bool) or not isinstance(config.max_body_bytes, int):
+        raise StoreBackendError("MUNNIN_MAX_BODY_BYTES must be a whole number of bytes.")
+    if config.max_body_bytes < 1:
+        raise StoreBackendError(
+            f"MUNNIN_MAX_BODY_BYTES={config.max_body_bytes!r} must be a positive number of "
+            "bytes: a page always holds at least one timestamp group."
+        )
+
+
 def _build_identity_repository(config: Config):
     """The identity repository for the configured backend (both satisfy the Protocol)."""
     if config.db_backend == "postgres":
@@ -395,12 +411,16 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
     # the submodule. The factory replaces the single boot-time service: the tenant is now
     # a property of each request rather than of the process.
     _validate_backend(config)
+    _validate_body_ceiling(config)
     sharing_repo = _build_sharing_repository(config)
     factory = ServiceFactory(
         config.db_path,
         backend=config.db_backend,
         db_url=config.db_url,
         sharing=sharing_repo,
+        # The page ceiling reaches every public body read through here. Validated at startup
+        # (``_validate_body_ceiling``) so a bad value fails the boot, not a request.
+        max_body_bytes=config.max_body_bytes,
     )
     content = ContentLoader(config.content_root)
 

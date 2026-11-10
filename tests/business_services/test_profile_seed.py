@@ -69,7 +69,8 @@ def test_the_seed_writes_the_three_line_profile(tmp_path: Path) -> None:
 
     rows = memory.query(record_type="user_profile")
     assert len(rows) == 1
-    body = rows[0]["content"]
+    # A browse listing carries metadata only; the body is a deliberate read by uuid.
+    body = memory.get(rows[0]["uuid"])["content"]
     assert body == USER_PROFILE_TEMPLATE.format(name="Roy")
     assert "[USER-NAME]** = Roy" in body
     assert "[USER-PHILOSOPHY]** =" in body and "[USER-AGENT-VISION]** =" in body
@@ -95,8 +96,9 @@ def test_the_seed_never_touches_an_authored_profile(tmp_path: Path) -> None:
     assert seed_profile(memory, "Somebody else") is False
     rows = memory.query(record_type="user_profile")
     assert len(rows) == 1
-    assert "Alvi" in rows[0]["content"]
-    assert "Somebody else" not in rows[0]["content"]
+    body = memory.get(rows[0]["uuid"])["content"]
+    assert "Alvi" in body
+    assert "Somebody else" not in body
 
 
 def test_a_seeded_profile_is_what_awakening_returns(tmp_path: Path) -> None:
