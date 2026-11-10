@@ -33,7 +33,7 @@ The ceiling (`MUNNIN_MAX_BODY_BYTES`, `HERMOD_MAX_BODY_BYTES`, both default `32_
 | Cursor is the first group not returned and survives a prepend | `many-units-page-1/2/terminal`, `legacy-cursor-colon-resolves-dot`, `legacy-cursor-bracketed-resolves`; `test_get_pages_on_request_and_resumes_inclusively` | Deployed resume after a real write |
 | Counts measure groups and agree between page and total | `test_count_groups_agrees_with_the_page`, `test_the_group_total_matches_the_page_engine_for_every_shape` | Deployed payload inspection |
 | `awaken` pages the newest episode and leaves other layers whole | `test_awaken_pages_the_latest_episode_and_keeps_every_other_layer_whole` | Deployed `awaken` for a real 250K-char record |
-| `get` whole-by-default, paged on request, both engines | `test_get_pages_on_request_and_resumes_inclusively`, `test_a_final_page_can_return_fewer_than_total_with_nothing_left`, `test_the_page_contract_holds_on_both_engines` | Deployed `get` over real OAuth |
+| `get` bounded by the ceiling, paged on request, both engines | `test_get_pages_on_request_and_resumes_inclusively`, `test_a_final_page_can_return_fewer_than_total_with_nothing_left`, `test_the_page_contract_holds_on_both_engines` | Deployed `get` over real OAuth; a record larger than the ceiling |
 | Search snippets carry no bodies; query carries `blocks_total` | `test_a_search_hit_carries_a_snippet_and_no_body`, `test_search_snippets.py` (6 cases), `test_search_over_postgres.py` | Deployed search in Helheim |
 | Ceiling is configured and validated, not hard-coded | `test_the_page_ceiling_has_one_documented_default`, `test_the_page_ceiling_is_read_from_the_environment`, `test_a_bad_page_ceiling_refuses_to_load` | The deployed container's env value |
 | Hermod pages its own store independently | `test_awakening_pagination.py` (5 cases), `test_episode_page.py` | Cross-server resume over TCP against a deployed Hermod |
@@ -48,7 +48,7 @@ The ceiling (`MUNNIN_MAX_BODY_BYTES`, `HERMOD_MAX_BODY_BYTES`, both default `32_
 - [ ] **Manual**: After deploy, `awaken` the `lsgi-unreal` agent and confirm the newest episode reports `blocks_returned` < `blocks_total` with a `next_cursor` present.
 - [ ] **Manual**: Resume that record from its `next_cursor` and confirm the first block returned is the one the cursor named.
 - [ ] **Manual**: `read_procedure` for `db.md` and `load-episodic.md` returns the updated text that documents groups, counts and the cursor rule.
-- [ ] **Manual**: `get(uuid)` with no cursor on a large record still returns the whole body, and `get` with a cursor returns a page — checked over both MCP and HTTP.
+- [ ] **Manual**: `get(uuid)` with no cursor returns as much as the ceiling allows — the whole body for a small record, one page with a `next_cursor` for a record larger than the ceiling — and `get` with a cursor resumes at the group that cursor names; checked over both MCP and HTTP.
 - [ ] **Manual, UI-bound**: In a real chat turn, a partial record visibly shows the counts, the record uuid and the next cursor, and the transcript makes no second memory request to fetch the rest.
 - [ ] **Manual**: Confirm the `search` result a caller sees carries a snippet and no full body, and that `query` returns `blocks_total`.
 
