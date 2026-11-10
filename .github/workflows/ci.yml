@@ -33,7 +33,10 @@ jobs:
         env:
           POSTGRES_USER: munnin
           POSTGRES_PASSWORD: munnin
-          POSTGRES_DB: munnin_test
+          # Named to satisfy the integration tests' reset guard: they DROP SCHEMA
+          # before each case, so they refuse any database whose name does not start
+          # with this prefix. The local rig uses the same convention.
+          POSTGRES_DB: pagination_qa_ci
         ports:
           - 5432:5432
         options: >-
@@ -42,7 +45,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      MUNNIN_PG_TEST_URL: postgresql://munnin:munnin@127.0.0.1:5432/munnin_test
+      MUNNIN_PG_TEST_URL: postgresql://munnin:munnin@127.0.0.1:5432/pagination_qa_ci
     steps:
       - uses: actions/checkout@v7
         with:
