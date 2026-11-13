@@ -61,6 +61,7 @@ def _first_sentence(paragraph: str) -> str:
                 return paragraph[: i + 1]
     return paragraph
 
+
 # The served procedures are the framework's command set (``procedures/command_set.py``,
 # read through the bridge) minus these. Not served because the DB write is durable —
 # there is nothing to push or pull — and recovering after compaction is another ``awaken``
@@ -218,7 +219,11 @@ class ContentLoader:
         ``KeyError`` for an unknown prompt name, as ``get_prompt`` does.
         """
         lead = _lead_sentence(self._procedure_path(name).read_text(encoding="utf-8"))
-        return lead or f"Memory procedure '{name}'."
+        purpose = lead or f"Memory procedure '{name}'."
+        return (
+            f"{purpose} Read with read_procedure and follow its steps; "
+            "fetching the instructions does not execute them."
+        )
 
     def title_prompt(self, name: str) -> str:
         """A display title for a served procedure, taken from its own `#` heading.
@@ -321,8 +326,15 @@ class ContentLoader:
         ``_SERVED_SCRIPTS``.
         """
         if name in _SERVED_SCRIPTS:
-            return _SERVED_SCRIPTS[name][1]
-        return _lead_sentence(self._resource_text(name)) or f"Framework template '{name}'."
+            return (
+                f"{_SERVED_SCRIPTS[name][1]} Read with read_resource; fetching the script "
+                "does not save or execute it. Follow the calling procedure before running it."
+            )
+        purpose = _lead_sentence(self._resource_text(name)) or f"Framework template '{name}'."
+        return (
+            f"{purpose} Read verbatim with read_resource before authoring this memory type. "
+            "Pass its template_version stamp separately for gated writes; do not store the stamp."
+        )
 
     def title_resource(self, name: str) -> str:
         """A display title for a served resource, taken from its own `#` heading (template)

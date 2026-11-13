@@ -18,17 +18,41 @@ from tests.conftest import mcp_for
 CF = Path(__file__).resolve().parents[2] / "control-files"
 
 READ_ONLY = {
-    "ping", "help", "awaken", "coding_reasoning", "get", "query", "search", "list_agents",
-    "list_procedures", "read_procedure", "list_resources", "read_resource",
-    "permanent_layer", "list_tenants", "list_members",
+    "ping",
+    "help",
+    "awaken",
+    "coding_reasoning",
+    "get",
+    "query",
+    "search",
+    "list_agents",
+    "list_procedures",
+    "read_procedure",
+    "list_resources",
+    "read_resource",
+    "permanent_layer",
+    "list_tenants",
+    "list_members",
 }
 ADDITIVE = {
-    "insert", "create_agent", "append", "prepend", "use_tenant", "create_invite",
+    "insert",
+    "create_agent",
+    "append",
+    "prepend",
+    "use_tenant",
+    "create_invite",
     "redeem_invite",
 }
 DESTRUCTIVE = {
-    "edit", "edit_metadata", "multi_edit", "archive", "soft_delete", "revoke_invite",
-    "revoke_member", "archive_memories", "unarchive",
+    "edit",
+    "edit_metadata",
+    "multi_edit",
+    "archive",
+    "soft_delete",
+    "revoke_invite",
+    "revoke_member",
+    "archive_memories",
+    "unarchive",
 }
 IDEMPOTENT_DESTRUCTIVE = {"archive", "soft_delete", "archive_memories", "unarchive"}
 
@@ -66,3 +90,25 @@ async def test_titles_are_human_names_not_tool_names(tmp_path: Path) -> None:
     for name, tool in tools.items():
         assert tool.title != name, name
         assert " " in tool.title, name  # a phrase a picker can show, not an identifier
+
+
+async def test_every_tool_and_parameter_explains_its_contract(tmp_path: Path) -> None:
+    tools = await _tools(tmp_path)
+    for name, tool in tools.items():
+        assert tool.description, name
+        for parameter, schema in tool.inputSchema.get("properties", {}).items():
+            assert schema.get("description"), (name, parameter)
+
+    get_schema = tools["get"].inputSchema
+    assert get_schema["required"] == ["uuid"]
+    assert get_schema["properties"]["cursor"]["default"] is None
+    assert get_schema["properties"]["limit"]["default"] is None
+    assert "same record" in get_schema["properties"]["cursor"]["description"]
+    assert "6 hex" in get_schema["properties"]["uuid"]["description"]
+    assert tools["query"].inputSchema["properties"]["include_archived"]["default"] is False
+    assert tools["search"].inputSchema["properties"]["include_archived"]["default"] is True
+    assert tools["archive_memories"].inputSchema["properties"]["apply"]["default"] is False
+    assert "whole-tenant access" in tools["create_invite"].description
+    assert "every client" in tools["use_tenant"].description
+    assert "no undelete tool" in tools["soft_delete"].description
+    assert "upsert key" in tools["insert"].description

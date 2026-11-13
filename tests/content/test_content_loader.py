@@ -82,8 +82,15 @@ def test_prompt_descriptions_are_distinct_and_read_from_the_procedures(
     # a command menu is only readable if its rows differ — one templated sentence with
     # the name swapped in gives twelve entries that all say the same thing
     assert len(set(described.values())) == len(described)
-    assert described["awaken-agent"] == "Load agent memory and activate a domain-specific agent."
-    assert described["update-episodic"] == "Capture session context as rolling per-theme episodes."
+    assert described["awaken-agent"].startswith(
+        "Load agent memory and activate a domain-specific agent."
+    )
+    assert described["update-episodic"].startswith(
+        "Capture session context as rolling per-theme episodes."
+    )
+    assert all(
+        "fetching the instructions does not execute them" in text for text in described.values()
+    )
 
 
 def test_prompt_description_stops_before_the_storage_caveat(loader: ContentLoader) -> None:
@@ -114,12 +121,11 @@ def test_prompt_with_no_prose_falls_back_to_naming_itself(tmp_path: Path) -> Non
     proc = root / "procedures" / "memory"
     proc.mkdir(parents=True)
     _install_framework_modules(root)
-    (proc / "update-episodic.md").write_text(
-        "# Update Episodic\n", encoding="utf-8", newline="\n"
-    )
+    (proc / "update-episodic.md").write_text("# Update Episodic\n", encoding="utf-8", newline="\n")
     assert (
-        ContentLoader(root).describe_prompt("update-episodic")
-        == "Memory procedure 'update-episodic'."
+        ContentLoader(root)
+        .describe_prompt("update-episodic")
+        .startswith("Memory procedure 'update-episodic'.")
     )
 
 
@@ -165,7 +171,10 @@ def test_resource_titles_and_descriptions_come_from_the_templates(loader: Conten
     titled = {n: loader.title_resource(n) for n in names}
     # the same defect the prompts had: one templated sentence per name tells a reader nothing
     assert len(set(described.values())) == len(names)
-    assert described["knowledge-file-template"] == "The structure of a knowledge-base entry."
+    assert described["knowledge-file-template"].startswith(
+        "The structure of a knowledge-base entry."
+    )
+    assert "do not store the stamp" in described["knowledge-file-template"]
     assert titled["reasoning-pattern-template"] == "Reasoning Pattern Template"
     for n in names:
         assert "**" not in described[n] and "`" not in described[n]
@@ -253,7 +262,7 @@ def test_served_set_is_discovered_from_the_command_dirs(tmp_path: Path) -> None:
 
     loader = ContentLoader(root)
     assert loader.list_prompts() == ["brand-new", "deeper-new"]
-    assert loader.describe_prompt("brand-new") == "A procedure nobody listed."
+    assert loader.describe_prompt("brand-new").startswith("A procedure nobody listed.")
     # no seam and no db backend in this tree: the core is served as-is
     assert loader.get_prompt("deeper-new") == "# Deeper New\n\nAlso unlisted.\n"
     with pytest.raises(KeyError):
@@ -289,7 +298,7 @@ def test_lead_sentence_does_not_end_inside_a_parenthetical(loader: ContentLoader
     assert described.startswith(
         "Reusable format definition for WAIT Options (What Am I Thinking? Options)"
     )
-    assert described.endswith("collecting an answer.")
+    assert "collecting an answer. Read with read_procedure" in described
 
 
 def test_awaken_agent_prompt_stands_alone(loader: ContentLoader) -> None:

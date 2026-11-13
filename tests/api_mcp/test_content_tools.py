@@ -96,7 +96,11 @@ async def test_list_procedures_carries_name_title_and_purpose(tmp_path: Path) ->
     assert by_name["awaken-agent"] == {
         "name": "awaken-agent",
         "title": "Awaken Agent",
-        "description": "Load agent memory and activate a domain-specific agent.",
+        "description": (
+            "Load agent memory and activate a domain-specific agent. "
+            "Read with read_procedure and follow its steps; "
+            "fetching the instructions does not execute them."
+        ),
     }
     assert "wait-options" in by_name  # served with no list naming it
     assert "push-memory" not in by_name  # excluded by policy
@@ -180,6 +184,36 @@ async def test_resources_as_tools(tmp_path: Path) -> None:
             "call list_resources() to see what is"
         ),
     }
+
+
+async def test_native_and_tool_discovery_share_descriptions(tmp_path: Path) -> None:
+    loader = ContentLoader(CF)
+    async with Client(_mcp(tmp_path)) as client:
+        prompts = await client.list_prompts()
+        resources = await client.list_resources()
+        procedures = (await client.call_tool("list_procedures")).data
+        templates = (await client.call_tool("list_resources")).data
+    procedure_rows = {row["name"]: row for row in procedures}
+    resource_rows = {row["name"]: row for row in templates}
+    assert set(procedure_rows) == {prompt.name for prompt in prompts}
+    assert set(resource_rows) == {resource.name for resource in resources}
+    for prompt in prompts:
+        assert prompt.description == procedure_rows[prompt.name]["description"]
+        assert "does not execute" in prompt.description
+        expected = loader.argument_prompt(prompt.name)
+        arguments = prompt.arguments or []
+        assert len(arguments) == (1 if expected else 0)
+        for argument in arguments:
+            assert argument.name == expected[0]
+            assert expected[1] in argument.description
+            assert "$ARGUMENTS" in argument.description
+            assert not argument.required
+    for resource in resources:
+        assert resource.description == resource_rows[resource.name]["description"]
+        if loader.is_script(resource.name):
+            assert "does not save or execute" in resource.description
+        else:
+            assert "do not store the stamp" in resource.description
 
 
 async def test_permanent_layer_projects_the_store_per_tenant(tmp_path: Path) -> None:

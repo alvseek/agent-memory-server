@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
+from pydantic import Field
 
 from munnin.business_services.memory_service import MemoryService
 from munnin.business_services.service_factory import ServiceFactory
@@ -55,6 +56,52 @@ _ADDITIVE = {"readOnlyHint": False, "destructiveHint": False, "openWorldHint": F
 _DESTRUCTIVE = {"readOnlyHint": False, "destructiveHint": True, "openWorldHint": False}
 # Archiving or tombstoning a record twice leaves it archived or tombstoned — a retry is safe.
 _DESTRUCTIVE_IDEMPOTENT = {**_DESTRUCTIVE, "idempotentHint": True}
+
+# Shared parameter semantics, not additional validation: defaults and wire types stay unchanged.
+RecordRef = Annotated[
+    str,
+    Field(
+        description="Existing record's full ID or unique UUID prefix of at least 6 hex "
+        "characters, from query/search/get. UUID matching ignores case and hyphens; "
+        "ambiguous prefixes are refused. Not an agent domain or project name."
+    ),
+]
+ExistingAgent = Annotated[
+    str, Field(description="Existing agent's kebab-case domain from list_agents, e.g. meta.")
+]
+OptionalAgent = Annotated[
+    str | None,
+    Field(
+        description="Agent domain to filter by. Omit or pass null for all agents plus "
+        "fleet-shared records; naming an agent excludes fleet-shared records."
+    ),
+]
+OptionalProject = Annotated[
+    str | None,
+    Field(description="Exact project name filter. Omit or pass null for all projects."),
+]
+RecordKind = Annotated[
+    str,
+    Field(
+        description="Memory type: episode, knowledge, identity, reasoning, emotional, "
+        "user_profile, ras or coding_reasoning. Shared scope only permits reasoning, "
+        "coding_reasoning, knowledge, ras and user_profile."
+    ),
+]
+OldString = Annotated[
+    str,
+    Field(
+        description="Exact body text to replace, including whitespace. Must occur once "
+        "unless replace_all is true; absent or ambiguous matches are refused."
+    ),
+]
+NewString = Annotated[
+    str,
+    Field(description="Replacement body text, verbatim. Use an empty string to remove the match."),
+]
+ReplaceAll = Annotated[
+    bool, Field(description="False requires a unique match; true replaces every exact occurrence.")
+]
 
 
 def _procedure_rows(content: ContentLoader | None) -> list[dict[str, str]]:
@@ -112,17 +159,24 @@ def build_mcp(
 
     @mcp.tool(title="Liveness check", annotations=_READ)
     def ping() -> str:
-        """Liveness check — returns 'pong'."""
+        """Check that the MCP handler responds; returns the string 'pong'.
+
+        Takes no parameters and changes nothing. Does not test the database, content checkout,
+        agent identity or completeness of stored memory.
+        """
         return "pong"
 
     # Registered whether or not framework content is available: it is the fallback for a
     # client that never shows ``instructions``, so it has to exist in every configuration.
     @mcp.tool(name="help", title="What Munnin is and where to start", annotations=_READ)
     def help_() -> dict[str, Any]:
-        """What this server is and what to call first — the same text a client receives at
-        initialize as ``instructions`` — plus the served procedures, plus the two values a
-        client declares how it reaches this server with. Read-only; call it when you are
-        unsure what Munnin is or which procedure to read next."""
+        """Start here to understand Munnin and choose the next memory procedure.
+
+        Takes no parameters. Returns initialize instructions, the served procedure menu
+        (name/title/description), access='mcp' and the configured endpoint, which may be null.
+        Available without framework content; its procedure menu is then empty. Read-only:
+        use read_procedure to fetch instructions, then follow them with the data tools.
+        """
         # ``access`` is constant because this face only exists as served procedures: a
         # client calling it has already reached the core this way, so there is no second
         # answer to give. ``register-core-access`` reads both values and writes them into
@@ -135,7 +189,7 @@ def build_mcp(
         }
 
     @mcp.tool(title="Awaken an agent", annotations=_READ)
-    def awaken(domain: str) -> dict[str, Any]:
+    def awaken(domain: ExistingAgent) -> dict[str, Any]:
         """Assemble and return an agent's full memory payload from the DB.
 
         Loads the shared always-load layer + the agent's identity whole, plus the
@@ -146,23 +200,41 @@ def build_mcp(
         ``latest_episode`` is a page of up to three timestamp groups, never the whole rolling
         body: ``blocks_returned``/``blocks_total`` count groups and a non-null ``next_cursor``
         means more remain — continue with ``get(latest_episode.uuid, cursor=…)``. Every fixed
-        layer above (identity, reasoning, emotional, knowledge, the shared layers) is whole."""
+        layer above (identity, reasoning, emotional, knowledge, the shared layers) is whole.
+        Read-only; follow read_procedure("awaken-agent", argument=domain) for the processing
+        protocol. This returns data, not an automatically activated or newly created agent.
+        """
         return _svc().awaken(domain, caller=_sharing().caller_block())
 
     @mcp.tool(title="Read the coding-reasoning lane", annotations=_READ)
     def coding_reasoning() -> list[dict[str, Any]]:
         """The coding-reasoning lane, loaded whole: the fleet's coding-only reasoning
         patterns. Kept out of ``awaken`` on purpose, so a chat agent never receives it; a
-        coding awakening reads the lane through this call."""
+        coding awakening normally receives it through Hermod's awaken_coder payload.
+        Takes no parameters. Returns full live shared coding-reasoning records, or an empty
+        list when none are stored; this read does not create the lane.
+        """
         return _svc().coding_reasoning()
 
     # --- reads ---
 
     @mcp.tool(title="Read one record", annotations=_READ)
     def get(
-        uuid: str,
-        cursor: str | None = None,
-        limit: int | None = None,
+        uuid: RecordRef,
+        cursor: Annotated[
+            str | None,
+            Field(
+                description="Opaque next_cursor returned for this same record. Omit or pass "
+                "null to start at the beginning; an unknown cursor is refused."
+            ),
+        ] = None,
+        limit: Annotated[
+            int | None,
+            Field(
+                description="Positive maximum timestamp groups per page, not lines or bytes. "
+                "Omit or pass null to read up to the configured body-size ceiling."
+            ),
+        ] = None,
     ) -> dict[str, Any] | None:
         """Load one record by full ID or unique UUID prefix (at least 6 hex characters).
         Case and hyphens are ignored for UUID matching. Ambiguity errors list full IDs
@@ -171,11 +243,14 @@ def build_mcp(
 
         The body comes back whole by default, still capped by the configured content
         ceiling. Pass ``cursor`` (a ``next_cursor`` from an earlier read) and/or ``limit``
-        to read one page instead: both count *timestamp groups*, where every sub-episode
-        block sharing one ``###`` timestamp is one indivisible group. ``blocks_total``
-        counts the whole record; ``next_cursor`` is null only when nothing remains, so a
-        final page may return fewer than ``blocks_total``. An unknown cursor or a
-        nonpositive limit is an error, never a quiet fall back to the first page."""
+        to read one page instead: limit counts timestamp groups and cursor resumes at the
+        named group. Blocks sharing one ``###`` timestamp form an indivisible group.
+        ``blocks_total`` counts the whole record; ``next_cursor`` is null only when nothing
+        remains, so a final page may return fewer than ``blocks_total``. An unknown cursor or a
+        nonpositive limit is an error, never a quiet fall back to the first page.
+        Returns metadata, content, blocks_returned, blocks_total and next_cursor.
+        Archived records remain readable by ID. Read-only; non-episode bodies are atomic.
+        """
         try:
             return _svc().get(uuid, cursor=cursor, limit=limit)
         except ValueError as exc:
@@ -183,16 +258,27 @@ def build_mcp(
 
     @mcp.tool(title="Browse records by field", annotations=_READ)
     def query(
-        agent_id: str | None = None,
-        record_type: str | None = None,
-        project: str | None = None,
-        include_archived: bool = False,
+        agent_id: OptionalAgent = None,
+        record_type: Annotated[
+            str | None,
+            Field(
+                description="Exact memory type: episode, knowledge, identity, reasoning, "
+                "emotional, user_profile, ras or coding_reasoning. Omit/null for all types."
+            ),
+        ] = None,
+        project: OptionalProject = None,
+        include_archived: Annotated[
+            bool,
+            Field(description="Include archived records when true; deleted records never appear."),
+        ] = False,
     ) -> list[dict[str, Any]]:
         """Filter memory by exact field values — metadata only, never bodies: a browse
         answers what matches, ``blocks_total`` says how many timestamp groups its body
         holds, and the body itself is one ``get`` by uuid away. Naming an ``agent_id``
         reads that agent alone; omitting it also returns fleet-shared memory, whose rows
-        carry no ``agent_id``."""
+        carry no ``agent_id``. Filters combine with AND. Returns an empty list for no matches;
+        invalid record types are refused. Reads only the selected tenant and changes nothing.
+        """
         try:
             return _svc().query(
                 agent_id=agent_id,
@@ -204,20 +290,41 @@ def build_mcp(
             raise ToolError(str(exc)) from exc
 
     @mcp.tool(title="Full-text search", annotations=_READ)
-    def search(text: str, include_archived: bool = True) -> list[dict[str, Any]]:
+    def search(
+        text: Annotated[
+            str,
+            Field(
+                description="Full-text keyword query across titles, bodies and tags; "
+                "not a UUID lookup."
+            ),
+        ],
+        include_archived: Annotated[
+            bool,
+            Field(
+                description="True includes archived matches (the default); "
+                "false searches live records only."
+            ),
+        ] = True,
+    ) -> list[dict[str, Any]]:
         """Full-text keyword search over content + title + tags, both corpora.
 
         Each hit is metadata plus a plain-text ``snippet`` of the match — **not** a body;
         read one with ``get`` when it is worth opening. Archived records are searchable by
         default, soft-deleted never are, and a title-only or tag-only match still yields an
-        excerpt. Agent hits carry ``agent_id``; fleet hits do not."""
+        excerpt. Agent hits carry ``agent_id``; fleet hits do not. Searches the selected tenant
+        only, returns an empty list for no matches and changes nothing. Ranking is per corpus,
+        not one global relevance score across agent and shared results.
+        """
         return _svc().search(text, include_archived=include_archived)
 
     @mcp.tool(title="List the agents", annotations=_READ)
     def list_agents() -> list[dict[str, Any]]:
         """List every agent in the fleet: ``agent_id`` + display name + one-line role.
-        Metadata only, no bodies. An agent with no identity recorded comes back with
-        ``name``/``role`` of ``null`` rather than being omitted."""
+        Metadata only, no bodies. Stored ``name``/``role`` may be null when unset; agents
+        without identity records are still listed. Takes no parameters and reads
+        the selected tenant. An empty list means no agents are registered there; follow
+        read_procedure("create-agent") to create one rather than inventing a domain.
+        """
         return _svc().list_agents()
 
     # --- sharing: which tenant you act in, and who may enter yours ---
@@ -235,7 +342,11 @@ def build_mcp(
         """Every tenant open to you: your own first, then the ones you were granted.
         ``role`` is ``owner`` for your own tenant and ``guest`` for a granted one, and
         ``active`` marks the one your calls are currently acting in. Access is whole
-        tenant, so this list is the whole choice; there is nothing per agent or project."""
+        tenant, so this list is the whole choice; there is nothing per agent or project.
+        Takes no parameters. Each row has user_id, role, label, active and revoked. A selected
+        tenant whose grant ended is also listed, marked revoked; it is not permission to enter.
+        Use use_tenant to select one or return home. Read-only.
+        """
         return [
             {
                 "user_id": ref.user_id,
@@ -248,12 +359,24 @@ def build_mcp(
         ]
 
     @mcp.tool(title="Act in one of your tenants", annotations=_ADDITIVE)
-    def use_tenant(tenant: str | None = None) -> dict[str, Any]:
+    def use_tenant(
+        tenant: Annotated[
+            str | None,
+            Field(
+                description="Tenant user_id from list_tenants, or an exact uniquely matching "
+                "label. Omit, pass null or an empty string to return to your own tenant."
+            ),
+        ] = None,
+    ) -> dict[str, Any]:
         """Switch which tenant your calls act in; ``None`` returns to your own.
         ``tenant`` is an id from ``list_tenants``, or its label when that label names
         exactly one tenant you may enter. The choice is remembered per person, so it
         survives a restart and applies to every client you sign in with. A tenant whose
-        access was revoked is refused by name, and is always switchable away from."""
+        access was revoked is refused by name, and is always switchable away from.
+        Changes a persistent selection, not just this session; subsequent memory reads and writes
+        from your clients use it. Returns user_id, role, label and active=true for the selection.
+        Does not move, copy or delete memory, or grant access to an unpermitted tenant.
+        """
         try:
             ref = _sharing().use_tenant(tenant)
         except SharingError as exc:
@@ -262,18 +385,30 @@ def build_mcp(
 
     @mcp.tool(title="List who has access to this tenant", annotations=_READ)
     def list_members() -> list[dict[str, Any]]:
-        """Everyone with access to the tenant you are acting in, the owner included."""
+        """List current members of the selected tenant, including its owner.
+
+        Takes no parameters. Returns user_id, role, label and granted_date for each member;
+        revoked grants are excluded. Use a guest's user_id with revoke_member if you own the
+        tenant. Read-only; this does not list outstanding invitations.
+        """
         try:
             return _sharing().list_members()
         except SharingError as exc:
             raise ToolError(str(exc)) from exc
 
     @mcp.tool(title="Invite somebody to this tenant", annotations=_ADDITIVE)
-    def create_invite(days: int = 7) -> dict[str, Any]:
+    def create_invite(
+        days: Annotated[
+            int, Field(description="Invitation lifetime in days from creation; defaults to 7.")
+        ] = 7,
+    ) -> dict[str, Any]:
         """Mint a single-use code that admits whoever redeems it to this tenant.
         Only the owner of the tenant you are acting in may call this. The code expires in
         ``days`` days, works once, and can be revoked before use with ``revoke_invite``.
-        Send it to the person out of band; they redeem it with ``redeem_invite``."""
+        Send it to the person out of band; they redeem it with ``redeem_invite``.
+        Returns code, tenant_user_id, created_date and expires_date. Treat the code as a
+        credential: redemption grants whole-tenant access, not read-only or per-agent access.
+        """
         try:
             invite = _sharing().create_invite(days)
         except SharingError as exc:
@@ -286,8 +421,16 @@ def build_mcp(
         }
 
     @mcp.tool(title="Revoke an unused invitation", annotations=_DESTRUCTIVE)
-    def revoke_invite(code: str) -> dict[str, Any]:
-        """Retire a code before it is redeemed. A used or unknown code is refused."""
+    def revoke_invite(
+        code: Annotated[
+            str, Field(description="Exact unused invitation code returned by create_invite.")
+        ],
+    ) -> dict[str, Any]:
+        """Revoke an unused invitation to your selected tenant; owner-only.
+
+        Returns code and revoked=true. Unknown, already used or already revoked codes are
+        refused. Does not remove a redeemed membership; use revoke_member for that.
+        """
         try:
             _sharing().revoke_invite(code)
         except SharingError as exc:
@@ -295,20 +438,37 @@ def build_mcp(
         return {"code": code, "revoked": True}
 
     @mcp.tool(title="Join a tenant with an invitation", annotations=_ADDITIVE)
-    def redeem_invite(code: str) -> dict[str, Any]:
+    def redeem_invite(
+        code: Annotated[
+            str, Field(description="Single-use invitation code received from the tenant owner.")
+        ],
+    ) -> dict[str, Any]:
         """Join the tenant an invitation names, as a guest. Does not switch you into it.
         Redeem first, then call ``use_tenant`` when you want to work there; your own
-        tenant and everything in it are untouched by joining."""
+        tenant and everything in it are untouched by joining. Returns tenant_user_id and label
+        with role='guest'. Unknown, expired, revoked, used or own-tenant invitations are refused.
+        Consumes the invitation and grants whole-tenant access.
+        """
         try:
             return _sharing().redeem(code)
         except SharingError as exc:
             raise ToolError(str(exc)) from exc
 
     @mcp.tool(title="Revoke somebody's access", annotations=_DESTRUCTIVE)
-    def revoke_member(member: str) -> dict[str, Any]:
+    def revoke_member(
+        member: Annotated[
+            str,
+            Field(
+                description="Guest's exact user_id from list_members, "
+                "not their label or an agent domain."
+            ),
+        ],
+    ) -> dict[str, Any]:
         """End a person's access to the tenant you are acting in, which you must own.
         ``member`` is the ``user_id`` from ``list_members``. Their access ends on their
-        next call, immediately, and nothing they wrote is deleted."""
+        next call, immediately, and nothing they wrote is deleted. Returns member and revoked=true.
+        Cannot revoke your own ownership; an unknown or already revoked membership is refused.
+        """
         try:
             _sharing().revoke_member(member)
         except SharingError as exc:
@@ -317,32 +477,101 @@ def build_mcp(
 
     @mcp.tool(title="Create an agent", annotations=_ADDITIVE)
     def create_agent(
-        agent_id: str,
-        name: str | None = None,
-        role: str | None = None,
-        uuid: str | None = None,
+        agent_id: Annotated[
+            str,
+            Field(
+                description="New kebab-case agent domain, e.g. backend-python; "
+                "must not already exist."
+            ),
+        ],
+        name: Annotated[
+            str | None, Field(description="Agent's display name; omit/null if not yet assigned.")
+        ] = None,
+        role: Annotated[
+            str | None,
+            Field(description="One-line specialty for list_agents; omit/null if not yet assigned."),
+        ] = None,
+        uuid: Annotated[
+            str | None,
+            Field(
+                description="Optional identity-document UUID for the agent, "
+                "not a memory-record reference."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """Create a new agent. ``agent_id`` is a kebab domain and must not already exist —
         creating over a live agent raises rather than overwriting its identity. Call this
         **before** inserting any of the agent's memory: memory names an owner the store
         checks, so an insert for an agent with no row is refused. ``uuid`` is the agent's
-        own "digital soul" id from its identity document."""
+        own "digital soul" id from its identity document. Returns agent_id, name, role and uuid.
+        Creates only the agent registration in the selected tenant, not its identity or memories;
+        follow read_procedure("create-agent") for the full creation workflow.
+        """
         return _svc().create_agent(agent_id=agent_id, name=name, role=role, uuid=uuid)
 
     # --- writes (Edit-tool parity; record assembled server-side) ---
 
     @mcp.tool(title="Insert a memory record", annotations=_ADDITIVE)
     def insert(
-        record_type: str,
-        content: str,
-        content_summary: str | None = None,
-        agent_id: str | None = None,
-        scope: str = "agent",
-        title: str | None = None,
-        tags: list[str] | None = None,
-        project: str | None = None,
-        uuid: str | None = None,
-        template_version: str | None = None,
+        record_type: RecordKind,
+        content: Annotated[
+            str,
+            Field(
+                description="Complete authored record body, following its current template; "
+                "no template_version stamp."
+            ),
+        ],
+        content_summary: Annotated[
+            str | None,
+            Field(
+                description="Authored nonblank one-line summary, required for episode "
+                "and knowledge; omit/null otherwise."
+            ),
+        ] = None,
+        agent_id: Annotated[
+            str | None,
+            Field(
+                description="Existing owner domain, required for scope=agent; "
+                "must be omitted/null for scope=shared."
+            ),
+        ] = None,
+        scope: Annotated[
+            str,
+            Field(
+                description="agent (default) for one owner's memory; "
+                "shared for fleet-wide memory without an owner."
+            ),
+        ] = "agent",
+        title: Annotated[
+            str | None,
+            Field(description="Display title for this record; omit/null if not supplied."),
+        ] = None,
+        tags: Annotated[
+            list[str] | None,
+            Field(description="Searchable tag strings; omit/null for an empty list."),
+        ] = None,
+        project: Annotated[
+            str | None,
+            Field(
+                description="Project to file the record under; "
+                "omit/null for memory without a project."
+            ),
+        ] = None,
+        uuid: Annotated[
+            str | None,
+            Field(
+                description="Optional full record ID for idempotent insertion/upsert, never a "
+                "short prefix. Omit/null to generate a new UUID; reuse may update an existing row."
+            ),
+        ] = None,
+        template_version: Annotated[
+            str | None,
+            Field(
+                description="Exact current stamp from read_resource for this type's template. "
+                "Required for episode, reasoning, emotional, knowledge and coding_reasoning "
+                "when framework content is available. Pass separately, not in the body."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """Append a new memory item. ``scope="agent"`` (the default) writes memory owned
         by ``agent_id``, which must be an existing kebab domain; ``scope="shared"`` writes
@@ -357,7 +586,10 @@ def build_mcp(
         without a matching one. ``content_summary`` is required for the types a browse index
         reads (``episode``, ``knowledge``): one line saying what the record holds, which a
         listing shows beside its title and a reader decides on before fetching the body.
-        Author it; a blank one is refused. Other types take none."""
+        Author it; a blank one is refused. Other types do not require one.
+        Writes to the selected tenant and returns the stored record with body and metadata.
+        A supplied UUID is an upsert key: this is not guaranteed to create a new row on replay.
+        """
         _check_template(record_type, template_version)
         return _svc().insert(
             agent_id=agent_id,
@@ -373,56 +605,121 @@ def build_mcp(
 
     @mcp.tool(title="Edit a record's body", annotations=_DESTRUCTIVE)
     def edit(
-        uuid: str,
-        old_string: str,
-        new_string: str,
-        replace_all: bool = False,
+        uuid: RecordRef,
+        old_string: OldString,
+        new_string: NewString,
+        replace_all: ReplaceAll = False,
     ) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity). The body
         only: metadata, `content_summary` included, is `edit_metadata`'s business, so a
-        body edit and the summary describing it are two calls on two named tools."""
+        body edit and the summary describing it are two calls on two named tools.
+        Returns the updated record. Missing/deleted targets or absent/ambiguous matches fail
+        without an edit; use get to obtain the exact text before replacing it.
+        """
         return _svc().edit(uuid, old_string, new_string, replace_all)
 
     @mcp.tool(title="Append to a record", annotations=_ADDITIVE)
-    def append(uuid: str, text: str) -> dict[str, Any]:
+    def append(
+        uuid: RecordRef,
+        text: Annotated[
+            str,
+            Field(description="Text to append verbatim; include leading newlines for separation."),
+        ],
+    ) -> dict[str, Any]:
         """Add ``text`` to the END of a record's body. Verbatim — include your own
-        leading newline(s) for spacing (e.g. a new sub-episode under a date header)."""
+        leading newline(s) for spacing (e.g. a new sub-episode under a date header).
+        Returns the updated record; missing/deleted targets are refused. Does not update metadata
+        or its summary. Retrying duplicates the appended text.
+        """
         return _svc().append(uuid, text)
 
     @mcp.tool(title="Prepend to a record", annotations=_ADDITIVE)
-    def prepend(uuid: str, text: str) -> dict[str, Any]:
+    def prepend(
+        uuid: RecordRef,
+        text: Annotated[
+            str,
+            Field(
+                description="Text to prepend verbatim; include trailing newlines for separation."
+            ),
+        ],
+    ) -> dict[str, Any]:
         """Add ``text`` to the START of a record's body. Verbatim — include your own
-        trailing newline(s) for spacing."""
+        trailing newline(s) for spacing. Returns the updated record; missing/deleted targets
+        are refused. Does not update metadata or its summary. Retrying duplicates the text.
+        """
         return _svc().prepend(uuid, text)
 
     @mcp.tool(title="Apply several edits atomically", annotations=_DESTRUCTIVE)
-    def multi_edit(uuid: str, edits: list[dict[str, Any]]) -> dict[str, Any]:
+    def multi_edit(
+        uuid: RecordRef,
+        edits: Annotated[
+            list[dict[str, Any]],
+            Field(
+                description="Nonempty ordered list of objects with old_string and new_string "
+                "string values, plus optional replace_all (default false). Each matches the "
+                "body resulting from the previous edit; all edits succeed or none are written."
+            ),
+        ],
+    ) -> dict[str, Any]:
         """Apply a sequence of string edits to one record atomically (all-or-nothing).
 
         Each edit is a dict with ``old_string`` + ``new_string`` (+ optional
         ``replace_all``). Edits apply in order, each to the result of the previous; if
-        any fails, nothing is written."""
+        any fails, nothing is written. Returns the updated record; missing/deleted targets and
+        malformed or empty edits are refused. Body only; update its summary with edit_metadata.
+        """
         return _svc().multi_edit(uuid, edits)
 
     @mcp.tool(title="Edit a record's metadata", annotations=_DESTRUCTIVE)
     def edit_metadata(
-        uuid: str,
-        title: str | None = None,
-        tags: list[str] | None = None,
-        project: str | None = None,
-        content_summary: str | None = None,
-        clearing: list[str] | None = None,
+        uuid: RecordRef,
+        title: Annotated[
+            str | None,
+            Field(
+                description="New nonblank display title; omit/null to keep it. "
+                "Use clearing to remove it."
+            ),
+        ] = None,
+        tags: Annotated[
+            list[str] | None,
+            Field(
+                description="Replacement tag list; [] empties it. Omit/null to keep existing tags."
+            ),
+        ] = None,
+        project: Annotated[
+            str | None,
+            Field(
+                description="New nonblank project name; omit/null to keep it. "
+                "Use clearing to remove it."
+            ),
+        ] = None,
+        content_summary: Annotated[
+            str | None,
+            Field(
+                description="New nonblank authored summary; omit/null to keep it. "
+                "Use clearing to remove it."
+            ),
+        ] = None,
+        clearing: Annotated[
+            list[str] | None,
+            Field(
+                description="Fields to set to null: title, tags, project and/or content_summary. "
+                "Omit/null to clear nothing; do not also supply a replacement for a cleared field."
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """Change a record's metadata, leaving its body alone.
 
         `title`, `tags`, `project` and `content_summary` are the fields a record owns
-        beside its body, and this is the only tool that writes `content_summary` — a field
-        with one owner cannot be updated two ways. A field you leave out keeps its stored
+        beside its body. Use this to update an existing record's summary; body-edit tools
+        do not update it. A field you leave out keeps its stored
         value, so this is not a replace: omit `title` and the title stands. Name fields in
         `clearing` to remove them, which is the only way, because a blank string is refused
         rather than stored (for `project`, an empty value still reads as a project row).
         `tags=[]` is a real value and empties the list. Refuses a call that would change
         nothing.
+        Returns the updated record. Missing/deleted targets, unsupported clearing fields and
+        calls with no effective change are refused.
         """
         return _svc().edit_metadata(
             uuid,
@@ -434,13 +731,32 @@ def build_mcp(
         )
 
     @mcp.tool(title="Archive a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
-    def archive(uuid: str) -> dict[str, str]:
-        """Retire a record from the hot index (still searchable on demand)."""
+    def archive(uuid: RecordRef) -> dict[str, str]:
+        """Archive a record without deleting its body; returns uuid and status='archived'.
+
+        Removes it from awakening and default query results. Search includes archived records
+        by default, and get still reads it by ID. Use unarchive to restore it. Repeating is safe;
+        a missing/deleted target is refused.
+        """
         return _svc().archive(uuid)
 
     @mcp.tool(title="Scan for archivable episodes", annotations=_DESTRUCTIVE_IDEMPOTENT)
     def archive_memories(
-        agent_id: str, days: int = 30, apply: bool = False
+        agent_id: ExistingAgent,
+        days: Annotated[
+            int,
+            Field(
+                description="Age in days for the ask set, based on last modification; "
+                "1–3650, default 30."
+            ),
+        ] = 30,
+        apply: Annotated[
+            bool,
+            Field(
+                description="False previews only. True archives auto candidates, "
+                "never ask or protected rows."
+            ),
+        ] = False,
     ) -> dict[str, Any]:
         """Scan one agent's episodes and report what may be archived.
 
@@ -448,17 +764,28 @@ def build_mcp(
         that set. ``ask`` is untagged and not modified within ``days``, and is never
         written here because deciding it is a per-record judgment. ``protected`` names
         the rows the rule refuses, with the reason. The default ``apply=False`` writes
-        nothing."""
+        nothing. Returns agent_id, days, applied, archived UUIDs and the auto/ask/protected
+        candidate lists, including protection reasons. Refuses an unknown agent or invalid days.
+        """
         return _svc().archive_memories(agent_id, days=days, apply=apply)
 
     @mcp.tool(title="Unarchive a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
-    def unarchive(uuid: str) -> dict[str, str]:
-        """Clear a record's archive date, returning it to the hot index."""
+    def unarchive(uuid: RecordRef) -> dict[str, str]:
+        """Restore an archived record to awakening and normal query results.
+
+        Returns uuid and status='active'. Repeating is safe. Does not undo soft deletion;
+        a missing/deleted target is refused. The body and other metadata remain intact.
+        """
         return _svc().unarchive(uuid)
 
     @mcp.tool(title="Soft-delete a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
-    def soft_delete(uuid: str) -> dict[str, str]:
-        """Tombstone a record (excluded from all reads)."""
+    def soft_delete(uuid: RecordRef) -> dict[str, str]:
+        """Tombstone a record, hiding it from get, query, search and awakening.
+
+        Returns uuid and status='deleted'. This is not an archive: unarchive does not restore
+        deleted records, and no undelete tool is exposed. Repeating is safe; unknown IDs fail.
+        Does not physically erase the stored row.
+        """
         return _svc().soft_delete(uuid)
 
     if content is not None and content.available():
@@ -481,6 +808,7 @@ def _register_content(
     run it from; ``read_procedure("wrap-up")`` is what that instruction resolves to on
     this backend (the rule rides in the awakening procedure's db mechanics).
     """
+
     def _make_prompt(procedure: str, argument: tuple[str, str] | None):
         # FastMCP derives a prompt's arguments from the function signature, so a procedure
         # that takes one needs a real parameter carrying its name. The parameter is built
@@ -503,7 +831,10 @@ def _register_content(
             )
             return fn
         arg_name, arg_help = argument
-        fn.__doc__ = f"{procedure}\n\nArgs:\n    {arg_name}: {arg_help}\n"
+        fn.__doc__ = (
+            f"{procedure}\n\nArgs:\n    {arg_name}: {arg_help}. "
+            "Optional text substituted into $ARGUMENTS; fetching does not execute the procedure.\n"
+        )
         fn.__annotations__ = {arg_name: str, "return": str}
         parameter = inspect.Parameter(
             arg_name, inspect.Parameter.KEYWORD_ONLY, default="", annotation=str
@@ -562,20 +893,34 @@ def _register_content(
     def list_procedures() -> list[dict[str, str]]:
         """List the framework procedures this server serves — name, title, one-line purpose.
 
-        A procedure is the how-to an agent follows before calling the data tools. Read one
-        with read_procedure(name).
+        Takes no parameters. A procedure is the how-to an agent follows before calling data
+        tools. Pass a returned name to read_procedure. Read-only discovery: does not execute
+        instructions or load an agent's memory.
         """
         return _procedure_rows(content)
 
     @mcp.tool(title="Read a served procedure", annotations=_READ)
-    def read_procedure(name: str, argument: str | None = None) -> dict[str, Any]:
+    def read_procedure(
+        name: Annotated[
+            str, Field(description="Exact procedure name from list_procedures, without / or .md.")
+        ],
+        argument: Annotated[
+            str | None,
+            Field(
+                description="Optional text for $ARGUMENTS, using the procedure's documented "
+                "format (e.g. a domain for awaken-agent). Omit/null/empty leaves authored text."
+            ),
+        ] = None,
+    ) -> dict[str, Any]:
         """Read a served framework procedure, composed for this server's storage backend.
 
         Use this whenever a procedure or instruction tells you to execute, invoke or run a
         slash command such as `/wrap-up`: call read_procedure("wrap-up") instead of the
         slash command and follow what it returns. `argument` fills the procedure's
         $ARGUMENTS slot (the domain for awaken-agent, a mode for wrap-up). A name that is
-        not served returns served=false rather than an error.
+        not served returns served=false rather than an error. Success returns served=true,
+        name and content; a miss returns name and a discovery note. Read-only: fetching does
+        not run the procedure or perform any memory writes it describes.
         """
         try:
             text = content.get_prompt(name, argument)
@@ -587,9 +932,9 @@ def _register_content(
     def list_resources() -> list[dict[str, str]]:
         """List the framework resources this server serves — name, title, one-line purpose.
 
-        A resource is a template (the format of one memory entry, filled in when that layer
-        is written) or an agent-facing script (a helper you fetch and run). Read one with
-        read_resource(name).
+        Takes no parameters. A resource is a template (the format filled in when one memory
+        entry is written) or an agent-facing script (a helper you fetch and run). Read one with
+        read_resource(name). Read-only discovery: does not write a file or run a script.
         """
         return [
             {
@@ -601,13 +946,23 @@ def _register_content(
         ]
 
     @mcp.tool(title="Read a served resource", annotations=_READ)
-    def read_resource(name: str) -> dict[str, Any]:
+    def read_resource(
+        name: Annotated[
+            str,
+            Field(
+                description="Exact resource stem from list_resources, "
+                "without directory, extension or resource URI."
+            ),
+        ],
+    ) -> dict[str, Any]:
         """Read a served framework resource verbatim — a template or a script.
 
         Use this when a served instruction points at a file by relative path: a reference
         to `resources/episodic-entry-template.md` or `scripts/copy-lines.sh` is
         read_resource("episodic-entry-template") / read_resource("copy-lines"). A name that
-        is not served returns served=false rather than an error.
+        is not served returns served=false rather than an error. Success returns served=true,
+        name and content; a miss includes a discovery note. Does not execute scripts or save
+        files. For template-gated writes, read the template's stamp and pass it separately.
         """
         try:
             text = content.get_resource(name)
@@ -624,12 +979,14 @@ def _register_content(
 
         Both halves come from this tenant's own records, so one account's reasoning is
         never served to another's, and nothing is authored or stored for the block.
-        ``skipped`` names any rule left out for carrying no ``Final Conclusion``; an
-        empty list means every rule is in it.
+        ``skipped`` names any rule left out for carrying no ``Final Conclusion``; a
+        rule explicitly opting out with 'None declared' is omitted without being listed.
 
         This is the slice that must survive context compaction, which is why it is
         pushed into the harness's instruction file rather than pulled per session — a
         tool result is conversation history and compaction eats it. The hash tells a
         stale local copy from a current one. Follow read_procedure("anchor-memory") to
-        install it."""
+        install it. Takes no parameters. Returns version, hash, content and skipped; this
+        read does not install or update the client's local instruction file.
+        """
         return svc().permanent_layer()
