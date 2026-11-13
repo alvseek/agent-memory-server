@@ -73,9 +73,12 @@ def test_episodic_and_knowledge_index_match_source(tmp_path: Path) -> None:
 
 
 def test_shared_knowledge_present(tmp_path: Path) -> None:
-    payload, _repo = _awaken_meta(tmp_path)
-    assert len(payload["shared"]["knowledge"]) >= 1
-    assert all(item["content"] for item in payload["shared"]["knowledge"])
+    payload, repo = _awaken_meta(tmp_path)
+    entries = payload["shared"]["knowledge_index"]
+    assert len(entries) >= 1
+    assert "knowledge" not in payload["shared"]
+    assert all("content" not in item for item in entries)
+    assert all(repo.get(item["uuid"]).full_content for item in entries)
 
 
 def test_the_coding_lane_imports_and_stays_out_of_a_chat_awakening(tmp_path: Path) -> None:

@@ -192,15 +192,17 @@ def build_mcp(
     def awaken(domain: ExistingAgent) -> dict[str, Any]:
         """Assemble and return an agent's full memory payload from the DB.
 
-        Loads the shared always-load layer + the agent's identity whole, plus the
-        episodic/knowledge index and a page of the latest episode body. Project-blind: no
+        Loads shared reasoning/RAS/profile and the agent's identity layers whole, plus
+        shared.knowledge_index, agent knowledge/episode indexes and the latest episode page.
+        Knowledge indexes contain metadata, not bodies: fetch relevant entries with get.
+        Project-blind: no
         project is accepted or resolved, ``latest_episode`` is the newest episode overall,
         and the whole index is returned with ``project`` on every entry so a caller selects.
 
         ``latest_episode`` is a page of up to three timestamp groups, never the whole rolling
         body: ``blocks_returned``/``blocks_total`` count groups and a non-null ``next_cursor``
         means more remain — continue with ``get(latest_episode.uuid, cursor=…)``. Every fixed
-        layer above (identity, reasoning, emotional, knowledge, the shared layers) is whole.
+        body layer above (identity, reasoning, emotional, shared reasoning/RAS/profile) is whole.
         Read-only; follow read_procedure("awaken-agent", argument=domain) for the processing
         protocol. This returns data, not an automatically activated or newly created agent.
         """

@@ -300,11 +300,11 @@ class MemoryService:
     ) -> dict[str, Any]:
         """Assemble an agent's memory payload from the DB (4-layer model, C-2).
 
-        Always-load whole: layer i (fleet-shared reasoning, knowledge, the universal RAS
+        Always-load whole: layer i (fleet-shared reasoning, the universal RAS
         triggers and the user profile) + layer ii (domain identity/reasoning/emotional).
         Index-only: layer iii
-        (domain episode/knowledge) + the latest episode body. All reads are hot-read
-        filtered (deleted + archived excluded) by the repository.
+        (shared knowledge and domain episode/knowledge) + the latest episode body.
+        All reads are hot-read filtered (deleted + archived excluded) by the repository.
 
         Project-blind by design: no project is accepted or resolved here. ``latest_episode``
         is the newest episode overall, and the whole ``episodic_index`` is still returned
@@ -351,7 +351,7 @@ class MemoryService:
             # layer i - always-load for every agent
             "shared": {
                 "reasoning": [_whole(r) for r in shared_reasoning],
-                "knowledge": [_whole(r) for r in shared_knowledge],
+                "knowledge_index": [_index(r) for r in shared_knowledge],
                 "ras": [_whole(r) for r in shared_ras],
                 "user_profile": _whole(profile) if profile else None,
             },

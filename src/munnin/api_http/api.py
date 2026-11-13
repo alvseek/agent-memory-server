@@ -282,7 +282,9 @@ def build_router(
         no project is accepted or resolved, and ``latest_episode`` is the newest episode
         overall; the returned index carries ``project`` on every entry so a caller selects.
         ``latest_episode`` is a page of up to three timestamp groups with
-        ``blocks_returned``/``blocks_total``/``next_cursor``; every fixed layer is whole.
+        ``blocks_returned``/``blocks_total``/``next_cursor``. Shared knowledge is metadata
+        under ``shared.knowledge_index``; agent knowledge is also index-only.
+        Read relevant bodies through /api/record/{uuid}, not by preloading the directory.
         ``caller`` names the person signed in, which is not the account being read when
         they are a guest in it."""
         try:

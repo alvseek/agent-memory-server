@@ -44,7 +44,14 @@ def _service(tmp_path: Path) -> MemoryService:
     # assertions below are untouched: what changed is where fleet memory is stored,
     # not what awaken returns.
     repo.insert_shared(_shared("sr1", RecordType.reasoning))
-    repo.insert_shared(_shared("sk1", RecordType.knowledge))
+    repo.insert_shared(
+        _shared(
+            "sk1", RecordType.knowledge,
+            content_summary="shared knowledge summary", tags=["shared"],
+        )
+    )
+    repo.insert_shared(_shared("sk_arch", RecordType.knowledge, archived_date="2026-02-01"))
+    repo.insert_shared(_shared("sk_del", RecordType.knowledge, deleted_date="2026-02-01"))
     repo.insert_shared(_shared("sras1", RecordType.ras))
     # layer ii (domain)
     repo.insert(_rec("id1", "meta", RecordType.identity))
@@ -72,9 +79,14 @@ def _service(tmp_path: Path) -> MemoryService:
 def test_awaken_assembles_four_layers(tmp_path: Path) -> None:
     payload = _service(tmp_path).awaken("meta")
 
-    # layer i — shared, whole (has body)
+    # Shared reasoning/RAS stay whole; shared knowledge is metadata only.
     assert [r["uuid"] for r in payload["shared"]["reasoning"]] == ["sr1"]
-    assert [r["uuid"] for r in payload["shared"]["knowledge"]] == ["sk1"]
+    assert "knowledge" not in payload["shared"]
+    assert [r["uuid"] for r in payload["shared"]["knowledge_index"]] == ["sk1"]
+    shared_index = payload["shared"]["knowledge_index"][0]
+    assert shared_index["content_summary"] == "shared knowledge summary"
+    assert shared_index["tags"] == ["shared"]
+    assert "content" not in shared_index
     assert [r["uuid"] for r in payload["shared"]["ras"]] == ["sras1"]
     assert payload["shared"]["reasoning"][0]["content"] == "body-sr1"
 
@@ -151,8 +163,18 @@ def test_the_profile_does_not_leak_into_reasoning_or_knowledge(tmp_path: Path) -
     shared = MemoryService(repo, user_id="alvi").awaken("meta")["shared"]
 
     assert [r["uuid"] for r in shared["reasoning"]] == ["sr1"]
-    assert shared["knowledge"] == []
+    assert shared["knowledge_index"] == []
     assert shared["user_profile"]["uuid"] == "up1"
+
+
+def test_shared_knowledge_without_summary_is_discoverable_and_body_is_deliberate(tmp_path):
+    repo = AutoAgentRepository(tmp_path / "m.db", user_id="alvi")
+    repo.insert_shared(_shared("legacy", RecordType.knowledge))
+    svc = MemoryService(repo, user_id="alvi")
+    entry = svc.awaken("meta")["shared"]["knowledge_index"][0]
+    assert entry["content_summary"] is None
+    assert "content" not in entry
+    assert svc.get(entry["uuid"])["content"] == "body-legacy"
 
 
 def test_ras_is_carried_whole_and_kept_out_of_reasoning(tmp_path: Path) -> None:

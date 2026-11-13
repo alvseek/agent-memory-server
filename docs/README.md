@@ -247,7 +247,7 @@ One identifier names the MCP face — `<public URL>/mcp`, no trailing slash — 
 `awaken(domain)` assembles the 4-layer memory model ([flows/awaken-db.md](flows/awaken-db.md)):
 
 1. **Adapter** (`api_mcp/server.py` tool · `api_http/api.py` `/api/awaken`) delegates to the tenant's `MemoryService`.
-2. **Service** (`business_services/memory_service.py`) validates the domain, then reads: the fleet-shared reasoning, knowledge and user profile (whole); the agent's identity, reasoning and emotional records (whole); the knowledge and episode **indexes** (metadata only) plus a **page** of the latest episode body — up to three timestamp groups, with `blocks_returned`/`blocks_total`/`next_cursor` (`business_services/episode_page.py`, the pure pager; `awaken` is its only limit-3 caller).
+2. **Service** (`business_services/memory_service.py`) validates the domain and returns shared reasoning, RAS and user profile whole; agent identity, reasoning and emotional records whole; shared knowledge as `shared.knowledge_index`; agent knowledge and episode indexes as metadata; and a latest-episode page of up to three timestamp groups with `blocks_returned`/`blocks_total`/`next_cursor`. Knowledge bodies stay in the store and are read by UUID only when relevant.
 3. **Repository** (`data_repositories/sqlite_memory_repository.py`) — hot reads, soft-deleted and archived excluded.
 
 The payload is data. The awakening *process* — what to do with it, the first-run profile question, the report — is the served `awaken-agent` procedure, which is why both are needed.
