@@ -69,11 +69,9 @@ def _first_sentence(paragraph: str) -> str:
 # defines: a procedure added to control-files is served on the next request, unlisted.
 _EXCLUDED_PROCEDURES = frozenset({"pull-memory", "push-memory", "refresh-memory"})
 _PROCEDURES_DIR = "procedures"
-# Served procedure -> its single optional argument, as (name, description). Every one is
-# optional because each procedure has an ask-if-missing branch, so declaring the argument
-# adds a slot without making anything stricter. Authored rather than derived: the
-# ``## Arguments`` sections are prose bullets in varying shapes and `wrap-up` has none at
-# all, so parsing them would be a heuristic over data that is not deterministic.
+# Existing prompt argument names/help, retained for client compatibility, not an inventory.
+# The source's literal $ARGUMENTS token determines whether input exists; unlisted procedures
+# with that token get a generic optional slot. Prose argument sections are not parsed.
 _PROMPT_ARGUMENTS: dict[str, tuple[str, str]] = {
     "update-episodic": ("mode", "`new` to force a new episode instead of appending"),
     "add-reasoning": ("context", "the reasoning pattern to document; asks if omitted"),
@@ -236,11 +234,17 @@ class ContentLoader:
     def argument_prompt(self, name: str) -> tuple[str, str] | None:
         """This procedure's single optional argument as ``(name, description)``.
 
-        ``None`` when the procedure takes none. Every declared argument is optional: each
-        procedure asks for what it needs when invoked without one, so the slot only ever
-        saves a round trip.
+        The exact source placeholder determines whether a slot exists. The compatibility
+        map names existing slots; it never blocks a newly discovered procedure's input or
+        adds input absent from a source. Unknown procedure names raise ``KeyError``.
         """
-        return _PROMPT_ARGUMENTS.get(name)
+        text = self._procedure_path(name).read_text(encoding="utf-8")
+        if _ARGUMENTS_PLACEHOLDER not in text:
+            return None
+        return _PROMPT_ARGUMENTS.get(name) or (
+            "argument",
+            "Input text in the format described by this procedure's Arguments section",
+        )
 
     def _inlined(self, text: str) -> tuple[str, tuple[str, ...]]:
         """Inline every component reference; returns ``(text, components used)``.
@@ -258,8 +262,8 @@ class ContentLoader:
     def get_prompt(self, name: str, arguments: str | None = None) -> str:
         """Return the composed procedure, with ``arguments`` filled in when one is given.
 
-        Every procedure carries a ``$ARGUMENTS`` placeholder that an installed slash
-        command fills from what the user typed; a served Prompt fills it the same way so
+        A procedure's ``$ARGUMENTS`` placeholder is filled from what the user typed,
+        just as in an installed slash command; a served Prompt fills it the same way so
         the two stay equivalent. **Substitution happens only when an argument is actually
         supplied** — an empty invocation leaves the placeholder standing, which keeps a
         no-argument served Prompt byte-identical to the command it mirrors.
