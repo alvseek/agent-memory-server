@@ -72,16 +72,55 @@ and real temporary SQLite. None proves a running server was upgraded.
 - [x] **Automated**: HTTP returns 400, MCP raises a tool error, and both name the maximum
   and actual length. The API descriptions advertise the same ceiling; valid emoji
   replacements succeed.
-- [ ] **Manual**: Run the happy path through the running MCP and HTTP interfaces with
+- [x] **Manual**: Run the happy path through the running MCP and HTTP interfaces with
   the actual configured auth. Confirm errors do not become generic 500s through the
   deployed stack and accepted strings are not truncated.
-- [ ] **Manual**: Read a known pre-existing oversized summary before and after upgrade,
+- [x] **Manual**: Read a known pre-existing oversized summary before and after upgrade,
   without modifying it. Compare the full value, not just its displayed preview.
 - [ ] **Manual, UI-bound**: In Helheim, inspect the refreshed `insert`/`edit_metadata`
   parameter descriptions, then submit an oversized summary on a disposable record.
   Confirm the error is readable, Send becomes usable again, and the prior value remains.
 
 ## Result
+
+**Run**: 2026-11-14 · software-architect · Tactic C, deployed PostgreSQL/OAuth and Chrome
+**Automated**: 6/6 green · **Manual**: 2/3 complete; UI row partially observed
+**Sign-off**: NOT SIGNED OFF — Helheim error presentation and post-error Send recovery
+remain unobserved; the browser target stopped responding before submission.
+
+### Evidence
+- Product `740de43`: CI run `43543209265` passed both jobs (Linux default suite:
+  900 passed, 133 skipped; PostgreSQL subset: 111 passed, 922 deselected).
+  Image build `43543209257` succeeded for the same full commit.
+- Deploy run `43543348532` succeeded. Independently observed
+  `munnin-web-740de43`, image `ghcr.io/alvseek/munnin:740de43`, healthy on the host;
+  public `/health` answered 200.
+- Using the existing real OAuth credential, exercised deployed HTTP and network MCP
+  against the live PostgreSQL store. In both agent and shared scope, exactly 1,000
+  emoji code points survived; 1,001-character upserts and metadata replacements
+  were rejected with the maximum and submitted length. Reads confirmed unchanged
+  title, body and summary, followed by successful short replacements.
+- The pre-existing example's complete 14,238-character summary matched the
+  pre-upgrade value byte-for-byte (same SHA-256 recorded below). No legacy summary
+  was edited or truncated.
+- Created only disposable records under the existing agent/shared scopes; no test
+  agent or tenant was added. All four API-test records and the additional UI-test
+  record were tombstoned in cleanup and confirmed to return 404. Tombstones remain
+  in storage by the API's design; no claim of physical row removal is made.
+- Chrome loaded Helheim's refreshed `edit_metadata` form, visibly including
+  "Maximum 1000 Unicode characters; longer input is rejected, never truncated.
+  Aim for 300-500 characters." Filling the disposable UUID succeeded, then filling
+  the title timed out; a fresh snapshot also timed out and relay status marked the
+  target `protectedUi`. Stopped rather than retrying or submitting through another
+  route. No Send click ran; the disposable record remained unchanged before cleanup.
+- Browser sessions created for this run were deleted. The user's Helheim process
+  was left running; its existing local call history was not altered or purged.
+
+### Findings
+| # | Finding | Owner | Status |
+|---|---|---|---|
+| 1 | Deployed OAuth/PostgreSQL behavior and preservation of the legacy example are proven. | qa | Closed |
+| 2 | Helheim's field description was visible, but browser control stopped before submitting an oversized value; error rendering and Send recovery are unobserved. | qa | Open — manual browser check remains |
 
 **Run**: 2026-11-14 · software-architect · Tactic C, local socket verification
 **Automated**: 6/6 green · **Manual**: 0/3 complete (running local interfaces exercised;
