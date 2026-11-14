@@ -38,11 +38,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from fastapi.routing import APIRoute
 from fastmcp.server.auth import AuthProvider
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from munnin import __version__
 from munnin.business_services.identity_service import IdentityService
-from munnin.business_services.memory_service import MemoryService
+from munnin.business_services.memory_service import (
+    CONTENT_SUMMARY_MAX_CHARACTERS,
+    MemoryService,
+)
 from munnin.business_services.service_factory import ServiceFactory
 from munnin.business_services.sharing_service import (
     NotOwner,
@@ -109,7 +112,12 @@ class CreateAgentBody(_WriteBody):
 class InsertBody(_WriteBody):
     record_type: str
     content: str
-    content_summary: str | None = None
+    content_summary: str | None = Field(
+        default=None,
+        description="Authored nonblank summary, required for episode and knowledge. "
+        f"Maximum {CONTENT_SUMMARY_MAX_CHARACTERS} Unicode characters; "
+        "longer input is rejected, never truncated. Aim for 300-500 characters.",
+    )
     agent_id: str | None = None
     scope: str = "agent"
     title: str | None = None
@@ -131,7 +139,12 @@ class EditMetadataBody(_WriteBody):
     title: str | None = None
     tags: list[str] | None = None
     project: str | None = None
-    content_summary: str | None = None
+    content_summary: str | None = Field(
+        default=None,
+        description="New nonblank authored summary; omit/null to keep the stored value. "
+        f"Maximum {CONTENT_SUMMARY_MAX_CHARACTERS} Unicode characters; "
+        "longer input is rejected, never truncated. Aim for 300-500 characters.",
+    )
     clearing: list[str] | None = None
 
 

@@ -35,6 +35,18 @@ from munnin.data_repositories.memory_repository import MemoryRepository
 #: newest page of the latest episode at no extra call, with its cursor when more remains.
 AWAKEN_BLOCK_LIMIT = 3
 
+#: Write-time ceiling only: legacy summaries remain readable and are never truncated.
+CONTENT_SUMMARY_MAX_CHARACTERS = 1_000
+
+
+def _validate_summary_length(summary: str | None) -> None:
+    """Count Unicode code points, not UTF-8 bytes, without changing authored text."""
+    if summary is not None and len(summary) > CONTENT_SUMMARY_MAX_CHARACTERS:
+        raise ValueError(
+            f"content_summary must be at most {CONTENT_SUMMARY_MAX_CHARACTERS} characters; "
+            f"received {len(summary)} characters"
+        )
+
 #: The record types a browse index reads a ``content_summary`` from: ``episodic_index`` and
 #: ``knowledge_index``, the two the awakening hands back as metadata-only listings. Every
 #: other type is loaded whole at awakening, and the markdown backend has no artifact to author
@@ -573,6 +585,7 @@ class MemoryService:
         if scope not in ("agent", "shared"):
             raise ValueError(f"invalid scope {scope!r}: expected 'agent' or 'shared'")
         rtype = RecordType(record_type)
+        _validate_summary_length(content_summary)
         if content_summary is not None and not content_summary.strip():
             raise ValueError(
                 "blank content_summary is not a value: leave it off, or clear a stored one "
@@ -655,6 +668,7 @@ class MemoryService:
         Raises ``LookupError`` for a missing or deleted record, and ``ValueError`` when
         nothing would change or ``clearing`` names something that is not one of the four.
         """
+        _validate_summary_length(content_summary)
         for name, value in (
             ("title", title),
             ("project", project),

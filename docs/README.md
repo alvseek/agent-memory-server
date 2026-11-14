@@ -200,6 +200,13 @@ At `initialize` the server returns four sentences of **instructions** — what M
 
 **4 templates + 1 script** — the framework's block templates, served as `resource://templates/<name>`, and the agent-facing helper `copy-lines`, served as `resource://scripts/<name>`; all are addressed by their bare stem at `read_resource`: `episodic-entry-template`, `reasoning-pattern-template`, `emotional-moment-template`, `knowledge-file-template`, `copy-lines`. Only scripts a served instruction tells an agent to run are served — the harness hooks, the CI guard and the setup installers are installed locally, never fetched.
 
+Summaries supplied to `insert` or `edit_metadata` must be at most **1,000 Unicode
+characters** (Python `len()`, not bytes or tokens); aim for 300–500. Both MCP and HTTP
+reject longer input before writing anything, with the maximum and submitted length in
+the error. Nothing is truncated. This is an input rule, not a database migration:
+existing longer summaries remain readable, and edits that omit the summary leave it
+untouched. Imports retain their existing behavior.
+
 ### HTTP API (REST twin)
 
 Every endpoint is a REST twin of an MCP primitive over the same core; only the naming idiom differs (REST nouns, MCP verbs — `/api/record/{uuid}` *is* the `get` tool). In token mode every `/api/*` route needs `Authorization: Bearer <token>`; in local mode none does. Existing-record reads and writes accept a full stored ID or a unique UUID prefix containing at least **six hexadecimal characters**. UUID matching ignores case and hyphens: `ABCDEF` and `ab-cd-ef` address the same prefix. Successful responses always return the original full stored UUID, not the abbreviation.

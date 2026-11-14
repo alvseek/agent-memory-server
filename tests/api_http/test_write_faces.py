@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 from httpx import ASGITransport
 
+from munnin.api_http.api import EditMetadataBody, InsertBody
 from munnin.app import build_app
 from munnin.configuration.config import Config
 from munnin.content.loader import ContentLoader
@@ -284,3 +285,37 @@ async def test_archive_memories_rejects_a_bad_window(tmp_path: Path) -> None:
 async def test_unarchive_of_a_missing_record_is_404(tmp_path: Path) -> None:
     async with _client(tmp_path) as c:
         assert (await c.post("/api/unarchive", json={"uuid": "fedcba"})).status_code == 404
+
+
+async def test_summary_length_limit_over_http(tmp_path: Path) -> None:
+    async with _client(tmp_path) as c:
+        payload = {
+            "agent_id": "meta", "record_type": "knowledge", "content": "body",
+            "uuid": "bounded-summary", "content_summary": "界" * 1000,
+            "template_version": _ver("knowledge-file-template"),
+        }
+        assert (await c.post("/api/insert", json=payload)).status_code == 200
+        for route, body in (
+            ("/api/insert", {**payload, "content_summary": "界" * 1001}),
+            ("/api/edit-metadata", {
+                "uuid": "bounded-summary", "content_summary": "界" * 1001,
+                "title": "must not change",
+            }),
+        ):
+            rejected = await c.post(route, json=body)
+            assert rejected.status_code == 400
+            assert "at most 1000 characters; received 1001 characters" in rejected.json()["detail"]
+        stored = (await c.get("/api/record/bounded-summary")).json()
+        assert stored["content_summary"] == "界" * 1000
+        assert stored["title"] is None
+        updated = await c.post("/api/edit-metadata", json={
+            "uuid": "bounded-summary", "content_summary": "😀" * 1000,
+        })
+        assert updated.status_code == 200
+        assert updated.json()["content_summary"] == "😀" * 1000
+        for model in (InsertBody, EditMetadataBody):
+            assert "1000 Unicode characters" in model.model_json_schema()["properties"][
+                "content_summary"
+            ][
+                "description"
+            ]

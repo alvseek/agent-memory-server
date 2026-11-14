@@ -191,3 +191,36 @@ async def test_archive_memories_defaults_to_a_dry_run(tmp_path: Path) -> None:
         assert set(out.data) >= {"auto", "ask", "protected"}
         got = await client.call_tool("get", {"uuid": "e1"})
         assert got.data["archived_date"] is None
+
+
+async def test_summary_length_limit_over_mcp(tmp_path: Path) -> None:
+    async with Client(_mcp(tmp_path)) as client:
+        args = {
+            "agent_id": "meta", "record_type": "knowledge", "content": "body",
+            "uuid": "bounded-summary", "content_summary": "界" * 1000,
+        }
+        inserted = await client.call_tool("insert", args)
+        assert inserted.data["content_summary"] == "界" * 1000
+        for tool, fields in (
+            ("insert", {**args, "content_summary": "界" * 1001}),
+            ("edit_metadata", {
+                "uuid": "bounded-summary", "content_summary": "界" * 1001,
+                "title": "must not change",
+            }),
+        ):
+            with pytest.raises(
+                ToolError, match="at most 1000 characters; received 1001 characters",
+            ):
+                await client.call_tool(tool, fields)
+        stored = (await client.call_tool("get", {"uuid": "bounded-summary"})).data
+        assert stored["content_summary"] == "界" * 1000
+        assert stored["title"] is None
+        updated = await client.call_tool("edit_metadata", {
+            "uuid": "bounded-summary", "content_summary": "😀" * 1000,
+        })
+        assert updated.data["content_summary"] == "😀" * 1000
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        for name in ("insert", "edit_metadata"):
+            assert "1000 Unicode characters" in tools[name].inputSchema["properties"][
+                "content_summary"
+            ]["description"]

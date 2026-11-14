@@ -26,7 +26,10 @@ from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from pydantic import Field
 
-from munnin.business_services.memory_service import MemoryService
+from munnin.business_services.memory_service import (
+    CONTENT_SUMMARY_MAX_CHARACTERS,
+    MemoryService,
+)
 from munnin.business_services.service_factory import ServiceFactory
 from munnin.business_services.sharing_service import SharingError, SharingService
 from munnin.business_services.tenant_resolver import TenantResolver
@@ -527,7 +530,9 @@ def build_mcp(
             str | None,
             Field(
                 description="Authored nonblank one-line summary, required for episode "
-                "and knowledge; omit/null otherwise."
+                "and knowledge; omit/null otherwise. "
+                f"Maximum {CONTENT_SUMMARY_MAX_CHARACTERS} Unicode characters; "
+                "longer input is rejected, never truncated. Aim for 300-500 characters."
             ),
         ] = None,
         agent_id: Annotated[
@@ -699,7 +704,9 @@ def build_mcp(
             str | None,
             Field(
                 description="New nonblank authored summary; omit/null to keep it. "
-                "Use clearing to remove it."
+                "Use clearing to remove it. "
+                f"Maximum {CONTENT_SUMMARY_MAX_CHARACTERS} Unicode characters; "
+                "longer input is rejected, never truncated. Aim for 300-500 characters."
             ),
         ] = None,
         clearing: Annotated[
