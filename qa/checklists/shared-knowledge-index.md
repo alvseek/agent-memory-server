@@ -44,6 +44,20 @@ Shared knowledge is available fleet-wide but not loaded in full. Private knowled
 
 ## Result
 
+**Run**: 2026-11-14 · software-architect · Tactic C, Chrome UI continuation
+**Automated**: Prior 5/5 green retained · **Manual**: 5/6 completed; UI row partially observed
+**Sign-off**: NOT SIGNED OFF — Chrome verified index rendering; body-fetch UI remains outstanding.
+
+### Evidence
+- Used Alvi's real Chrome through the connected extension. Helheim connected to Munnin with the existing sign-in; no new Google login was needed.
+- Helheim call 56 (`awaken`, software-architect) rendered `shared` with exactly `reasoning`, `knowledge_index`, `ras` and `user_profile`. Expanded the 32-entry knowledge index and its first entry: UUID, title, authored summary, tags, project and dates were visible, with no body.
+- Opened the `get` form and attempted the first indexed UUID. The Send action timed out; subsequent inspection also timed out. Relay status still reported Chrome connected but marked this target `protectedUi: true`. No successful body-fetch call or result was observed, and no repeated submission was attempted.
+
+### Findings
+| # | Finding | Owner | Status |
+|---|---|---|---|
+| 1 | Existing sign-in and index rendering now verified in Chrome. The get-form interaction stopped responding; the body-result UI is unverified. | qa | Open — inspect the Chrome tab before resuming |
+
 **Run**: 2026-11-14 · software-architect · Tactic C
 **Automated**: 5/5 green · **Manual**: 5/6 completed
 **Sign-off**: NOT SIGNED OFF — Helheim's browser verification requires a fresh user login.
