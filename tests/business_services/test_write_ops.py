@@ -99,7 +99,8 @@ def test_a_rolling_record_moves_its_summary_in_a_second_call(tmp_path: Path) -> 
     assert out["content"] == "newest body"
     assert out["content_summary"] == "first take"  # the body write leaves it standing
     moved = svc.edit_metadata("e1", content_summary="second take")
-    assert moved["content"] == "newest body"
+    assert "content" not in moved
+    assert svc.get("e1")["content"] == "newest body"
     assert moved["content_summary"] == "second take"
 
 
@@ -275,16 +276,23 @@ def test_soft_delete_excluded_everywhere(tmp_path: Path) -> None:
     assert svc.search("gone") == []
 
 
-def test_edit_metadata_changes_a_field_without_the_body(tmp_path: Path) -> None:
+@pytest.mark.parametrize("scope", ["agent", "shared"])
+def test_edit_metadata_changes_a_field_without_the_body(tmp_path: Path, scope: str) -> None:
     """The whole point of the op: a field changes and the body is never handed back."""
     _repo, svc = _svc(tmp_path)
     svc.insert(
         content_summary="first summary",
-        agent_id="meta", record_type="knowledge", content="the body", uuid="k1",
+        scope=scope, agent_id="meta" if scope == "agent" else None,
+        record_type="knowledge", content="the body", uuid="k1",
         title="before", tags=["a"], project="hermod-server")
     out = svc.edit_metadata("k1", content_summary="second summary")
     assert out["content_summary"] == "second summary"
-    assert out["content"] == "the body"
+    assert "content" not in out
+    assert "full_content" not in out
+    assert ("agent_id" in out) == (scope == "agent")
+    assert out["uuid"] == "k1"
+    assert out["record_type"] == "knowledge"
+    assert svc.get("k1")["content"] == "the body"
     assert out["title"] == "before"  # untouched, not cleared
     assert out["tags"] == ["a"]
     assert out["project"] == "hermod-server"

@@ -727,7 +727,8 @@ def build_mcp(
         rather than stored (for `project`, an empty value still reads as a project row).
         `tags=[]` is a real value and empties the list. Refuses a call that would change
         nothing.
-        Returns the updated record. Missing/deleted targets, unsupported clearing fields and
+        Returns updated metadata only, without content; use get to retrieve the body.
+        Missing/deleted targets, unsupported clearing fields and
         calls with no effective change are refused.
         """
         return _svc().edit_metadata(

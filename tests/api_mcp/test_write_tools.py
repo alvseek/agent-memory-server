@@ -150,24 +150,32 @@ async def test_insert_ungated_type_needs_no_version(tmp_path: Path) -> None:
         assert ins.data["uuid"] == "i1"
 
 
-async def test_edit_metadata_omits_clears_and_empties(tmp_path: Path) -> None:
+@pytest.mark.parametrize("scope", ["agent", "shared"])
+async def test_edit_metadata_omits_clears_and_empties(tmp_path: Path, scope: str) -> None:
     """A field left out keeps its value, `clearing` removes one, `tags=[]` empties the
-    list, and the body comes back unchanged because it is never part of the write."""
+    list; the response omits the body, which remains unchanged in get."""
     async with Client(_mcp(tmp_path)) as client:
         await client.call_tool("insert", {
             "content_summary": "first summary",
-            "agent_id": "meta", "record_type": "knowledge", "content": "the body",
+            "scope": scope, "agent_id": "meta" if scope == "agent" else None,
+            "record_type": "knowledge", "content": "the body",
             "uuid": "k1", "title": "before", "tags": ["a"], "project": "hermod-server"})
         out = await client.call_tool(
             "edit_metadata", {"uuid": "k1", "content_summary": "second summary"})
         assert out.data["content_summary"] == "second summary"
-        assert out.data["content"] == "the body"
+        assert "content" not in out.data
+        assert "full_content" not in out.data
+        assert ("agent_id" in out.data) == (scope == "agent")
+        assert "the body" not in str(out.content)
+        body = await client.call_tool("get", {"uuid": "k1"})
+        assert body.data["content"] == "the body"
         assert out.data["title"] == "before"  # omitted, so untouched
         assert out.data["tags"] == ["a"]
         cleared = await client.call_tool(
             "edit_metadata", {"uuid": "k1", "clearing": ["project"], "tags": []})
         assert cleared.data["project"] is None
         assert cleared.data["tags"] == []
+        assert "content" not in cleared.data
         with pytest.raises(ToolError, match="nothing to change"):
             await client.call_tool("edit_metadata", {"uuid": "k1"})
         with pytest.raises(ToolError, match="blank title"):

@@ -92,8 +92,8 @@ def _index(r: SharedRecord) -> dict[str, Any]:
     }
 
 
-def _record(r: SharedRecord) -> dict[str, Any]:
-    """Full public record projection — the whole item including body. Omits the
+def _record_metadata(r: SharedRecord) -> dict[str, Any]:
+    """Public record metadata, without the body. Omits the
     internal ``id`` (never leaves the store) and ``user_id`` (tenancy-internal).
 
     ``agent_id`` appears only on agent-owned memory, because only ``MemoryRecord``
@@ -111,8 +111,12 @@ def _record(r: SharedRecord) -> dict[str, Any]:
         "created_date": r.created_date,
         "modified_date": r.modified_date,
         "archived_date": r.archived_date,
-        "content": r.full_content,
     }
+
+
+def _record(r: SharedRecord) -> dict[str, Any]:
+    """Full public record projection, including the body."""
+    return {**_record_metadata(r), "content": r.full_content}
 
 
 def _paged_record(r: SharedRecord, page: PageBody) -> dict[str, Any]:
@@ -667,6 +671,7 @@ class MemoryService:
 
         Raises ``LookupError`` for a missing or deleted record, and ``ValueError`` when
         nothing would change or ``clearing`` names something that is not one of the four.
+        Returns updated metadata only; use ``get`` to retrieve the unchanged body.
         """
         _validate_summary_length(content_summary)
         for name, value in (
@@ -678,7 +683,7 @@ class MemoryService:
                 raise ValueError(
                     f"blank {name} is not a value: name it in `clearing` to remove it"
                 )
-        return _record(
+        return _record_metadata(
             self._repo.set_fields(
                 uuid,
                 title=title,

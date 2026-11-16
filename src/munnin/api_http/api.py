@@ -428,7 +428,8 @@ def build_router(
         body: EditMetadataBody, svc: MemoryService = Depends(_tenant_service)
     ) -> dict[str, Any]:
         """Change a record's metadata without touching its body. A field left out keeps
-        its stored value, ``clearing`` removes one, and ``tags=[]`` empties the list."""
+        its stored value, ``clearing`` removes one, and ``tags=[]`` empties the list.
+        Returns updated metadata only, without content; use get to retrieve the body."""
         try:
             return svc.edit_metadata(
                 body.uuid,

@@ -9,6 +9,7 @@ import sqlite3
 from pathlib import Path
 
 import httpx
+import pytest
 from httpx import ASGITransport
 
 from munnin.api_http.api import EditMetadataBody, InsertBody
@@ -180,7 +181,8 @@ async def test_insert_stale_template_version_400(tmp_path: Path) -> None:
         assert "stale template" in r.json()["detail"]
 
 
-async def test_edit_metadata_over_the_http_face(tmp_path: Path) -> None:
+@pytest.mark.parametrize("scope", ["agent", "shared"])
+async def test_edit_metadata_over_the_http_face(tmp_path: Path, scope: str) -> None:
     """The second face carries the same op: omitted keeps, `clearing` removes, `tags=[]`
     empties, and the refusals keep their status codes (400 for a bad request, 404 for a
     record this tenant cannot reach)."""
@@ -189,7 +191,8 @@ async def test_edit_metadata_over_the_http_face(tmp_path: Path) -> None:
             "/api/insert",
             json={
                 "content_summary": "first summary",
-                "agent_id": "meta", "record_type": "knowledge", "content": "the body",
+                "scope": scope, "agent_id": "meta" if scope == "agent" else None,
+                "record_type": "knowledge", "content": "the body",
                 "uuid": "k1", "title": "before", "tags": ["a"], "project": "hermod-server",
                 "template_version": _ver("knowledge-file-template")},
         )
@@ -198,13 +201,19 @@ async def test_edit_metadata_over_the_http_face(tmp_path: Path) -> None:
         )
         assert r.status_code == 200
         assert r.json()["content_summary"] == "second summary"
-        assert r.json()["content"] == "the body"
+        assert "content" not in r.json()
+        assert "full_content" not in r.json()
+        assert ("agent_id" in r.json()) == (scope == "agent")
+        body = await c.get("/api/record/k1")
+        assert body.status_code == 200
+        assert body.json()["content"] == "the body"
         assert r.json()["title"] == "before"  # omitted, so untouched
         cleared = await c.post(
             "/api/edit-metadata", json={"uuid": "k1", "clearing": ["project"], "tags": []}
         )
         assert cleared.json()["project"] is None
         assert cleared.json()["tags"] == []
+        assert "content" not in cleared.json()
         empty_change = await c.post("/api/edit-metadata", json={"uuid": "k1"})
         assert empty_change.status_code == 400
         absent = await c.post("/api/edit-metadata", json={"uuid": "fedcba", "title": "t"})
