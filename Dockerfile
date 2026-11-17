@@ -23,6 +23,7 @@ WORKDIR /app
 
 # Dependencies before source, so this layer survives every code edit.
 COPY pyproject.toml uv.lock ./
+COPY control-files/packages/procedure-composer ./control-files/packages/procedure-composer
 RUN --mount=type=cache,target=/opt/uv-cache \
     uv sync --locked --no-dev --no-install-project
 

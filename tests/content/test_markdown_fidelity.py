@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from procedure_composer import Catalog, FileSource, MemorySource
 
 from munnin.content.seam_bridge import seam_compose
 
@@ -107,9 +108,13 @@ CASES: dict[str, dict] = {
 
 
 def _composed_markdown(name: str, case: dict) -> str:
-    core = (PROC_DIR / f"{name}.md").read_text(encoding="utf-8")
-    backend = extract_section((BACKEND / "markdown.md").read_text(encoding="utf-8"), name)
-    composed = substitute_storage_mechanics(core, backend)
+    catalog = Catalog(FileSource(CF))
+    if name in catalog.procedures:
+        composed = catalog.compose(name, "markdown").text
+    else:
+        core = (PROC_DIR / f"{name}.md").read_text(encoding="utf-8")
+        backend = extract_section((BACKEND / "markdown.md").read_text(encoding="utf-8"), name)
+        composed = substitute_storage_mechanics(core, backend)
     templates = "\n".join((CF / t).read_text(encoding="utf-8") for t in case["templates"])
     return composed + "\n" + templates
 
@@ -126,7 +131,13 @@ def test_harness_detects_a_dropped_mechanic() -> None:
     """The gate must BITE: if the markdown backend loses its mechanics, tokens go missing."""
     name = "update-episodic"
     case = CASES[name]
-    core = (PROC_DIR / f"{name}.md").read_text(encoding="utf-8")
-    broken = substitute_storage_mechanics(core, "")  # empty backend = mechanics dropped
+    source = FileSource(CF)
+    data = {path: source.read(path) for directory in
+            ("procedures/assemblies", "procedures/sections") for path in source.paths(directory)}
+    # Mutate only the backend's actual authored mechanics, not a parallel fake seam.
+    for path in data:
+        if path.startswith("procedures/sections/markdown/update-episodic."):
+            data[path] = b""
+    broken = Catalog(MemorySource(data)).compose(name, "markdown").text
     missing = [t for t in case["tokens"] if t not in broken]
     assert missing, "regression check failed: empty backend should drop mechanics"

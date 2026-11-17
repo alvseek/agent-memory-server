@@ -10,11 +10,15 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "procedure-composer",
     "fastapi>=0.141.1",
     "fastmcp>=3.4.6",
     "psycopg[binary,pool]>=3.3.6",
     "uvicorn>=0.52.1",
 ]
+
+[tool.uv.sources]
+procedure-composer = { path = "control-files/packages/procedure-composer" }
 
 [project.scripts]
 munnin = "munnin.__main__:main"

@@ -39,9 +39,14 @@ The default is **token mode**: every `/mcp` and `/api` call needs a bearer token
 
 ```sh
 uv sync
-uv run pytest        # 446 tests
+uv run pytest
 uv run ruff check
 ```
+
+The composer is installed from the pinned `control-files/packages/procedure-composer`
+source by the project environment. Procedure source changes still require the
+normal submodule/package release path; editing a draft source branch does not
+change deployed instructions.
 
 Full architecture, the tool and endpoint surface, the data model, and known debts: [docs/README.md](docs/README.md).
 

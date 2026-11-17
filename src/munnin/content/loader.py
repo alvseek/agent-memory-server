@@ -33,6 +33,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from procedure_composer import Catalog, FileSource
+
 from munnin.content.seam_bridge import command_set, component_inline, seam_compose
 from munnin.logger.logger import get_logger
 
@@ -168,6 +170,8 @@ class ContentLoader:
 
     def __init__(self, content_root: Path) -> None:
         self._root = content_root
+        self._catalog_snapshot: Catalog | None = None
+        self._procedure_snapshot: dict[str, Path] | None = None
 
     def available(self) -> bool:
         """True when the control-files submodule is present."""
@@ -175,6 +179,31 @@ class ContentLoader:
 
     def root(self) -> Path:
         return self._root
+
+    def _catalog(self) -> Catalog | None:
+        if self._catalog_snapshot is not None:
+            return self._catalog_snapshot
+        if not (self._root / "procedures/assemblies").exists():
+            return None
+        return Catalog(FileSource(self._root))
+
+    def metadata_snapshot(self) -> ContentLoader:
+        """One data snapshot for a menu/registration pass, never a timed cache.
+
+        Procedure bodies still use the original live loader. Rebuilding the entire
+        source tree for each title, description and argument would multiply startup
+        IO by the size of the menu without making that one menu more current.
+        """
+        snapshot = ContentLoader(self._root)
+        snapshot._procedure_snapshot = self._procedures()
+        snapshot._catalog_snapshot = self._catalog()
+        return snapshot
+
+    def _converted(self, name: str):
+        catalog = self._catalog()
+        if catalog and name in catalog.procedures:
+            return catalog.compose(name, "db")
+        return None
 
     # --- prompts (memory procedures, composed with the db backend) ---
 
@@ -187,6 +216,8 @@ class ContentLoader:
         not, and neither needs a server edit. An absent submodule yields nothing rather
         than failing, so a server without content still boots.
         """
+        if self._procedure_snapshot is not None:
+            return self._procedure_snapshot
         if not self.available():
             return {}
         commands = command_set(str(self._root))
@@ -216,7 +247,9 @@ class ContentLoader:
         Falls back to naming the procedure when it carries no prose to read. Raises
         ``KeyError`` for an unknown prompt name, as ``get_prompt`` does.
         """
-        lead = _lead_sentence(self._procedure_path(name).read_text(encoding="utf-8"))
+        converted = self._converted(name)
+        lead = (_lead_sentence(converted.description) if converted else
+                _lead_sentence(self._procedure_path(name).read_text(encoding="utf-8")))
         purpose = lead or f"Memory procedure '{name}'."
         return (
             f"{purpose} Read with read_procedure and follow its steps; "
@@ -229,6 +262,9 @@ class ContentLoader:
         Clients show this instead of the hyphenated slug, so a menu reads as sentences
         rather than filenames. Falls back to the slug when the document has no heading.
         """
+        converted = self._converted(name)
+        if converted:
+            return converted.title
         return _h1_title(self._procedure_path(name).read_text(encoding="utf-8")) or name
 
     def argument_prompt(self, name: str) -> tuple[str, str] | None:
@@ -238,6 +274,11 @@ class ContentLoader:
         map names existing slots; it never blocks a newly discovered procedure's input or
         adds input absent from a source. Unknown procedure names raise ``KeyError``.
         """
+        converted = self._converted(name)
+        if converted:
+            if converted.argument_name:
+                return converted.argument_name, converted.argument_description
+            return None
         text = self._procedure_path(name).read_text(encoding="utf-8")
         if _ARGUMENTS_PLACEHOLDER not in text:
             return None
@@ -254,7 +295,9 @@ class ContentLoader:
         dangling link is a real defect, and there is no user on this side to tell.
         """
         inline = component_inline(str(self._root))
-        text, missing, used = inline.inline_components(text, self._root / _COMPONENTS_DIR)
+        text, missing, used = inline.inline_components(
+            text, self._root / _COMPONENTS_DIR, backend="db"
+        )
         if missing:
             _log.warning("unresolved component references: %s", ", ".join(missing))
         return text, tuple(dict.fromkeys(used))  # de-duplicated, order preserved
@@ -283,6 +326,12 @@ class ContentLoader:
         marker or the db backend defines nothing for it. Raises ``KeyError`` for an
         unknown prompt name.
         """
+        converted = self._converted(name)
+        if converted:
+            missing = set(converted.calls) - set(self._procedures()) if converted.calls else set()
+            if missing:
+                raise ValueError(f"{name}: missing served dependencies: {sorted(missing)}")
+            return converted.text
         path = self._procedure_path(name)
         # inline first: a component may be what brings this procedure's ops
         core, components = self._inlined(path.read_text(encoding="utf-8"))
@@ -292,7 +341,8 @@ class ContentLoader:
         compose = seam_compose(str(self._root))
         try:
             section = compose.compose_backend_section(
-                db_path.read_text(encoding="utf-8"), name, components
+                db_path.read_text(encoding="utf-8"), name, components,
+                source_provider=FileSource(self._root),
             )
             composed = compose.substitute_storage_mechanics(core, section)
         except KeyError:
