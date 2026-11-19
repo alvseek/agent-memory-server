@@ -70,22 +70,657 @@ Run from each named repository using its existing approved test environment; do 
 - [ ] **Manual M01 — issuer/deployment**: With approved real-issuer test identities, record running image/source/composer versions and Helheim's immutable dependency pin; inspect MCP `get`, `edit`, `edit_metadata` schemas and HTTP behavior. `include_edit_context` and both guards must be advertised/accepted before editing. Do not restart the user's unrelated instance or treat a review branch as deployed.
 - [x] **Manual M02 — UI-bound source identity**: Open awakening/wrap-up in both backends. Each Edit opens the declared raw section with correct path/hash/HEAD; repeated appearances share one source and show derived dependents. Shared edits visibly warn of both-backend impact. Preview performs no Git or memory writes and shows safe diff/text, not editable generated output.
 - [x] **Manual M03 — GitHub cross-consumer**: On the disposable workspace, save two different sections and independently inspect branch commits/PR diff. Both edits remain in one draft PR; preview combines saved edits with current draft for both backends. No merge/deploy occurs and Munnin's installed source is unchanged. Advance HEAD externally, then Save from the old UI: conflict, no forced write, draft retained. Closed/ready PR reuse and existing-branch collisions must refuse without reset.
-- [ ] **Manual M04 — UI-bound exact paging**: Use an episode exceeding the configured body ceiling, with preamble, non-adjacent equal timestamps, CRLF/LF/CR, leading/trailing blank lines and Unicode. Inspect every page's context/hash/character length/source segments and compare reconstructed UTF-8 bytes with the prepared original. Metadata browsing must not fetch bodies; Save cannot enable before complete verified coverage. Display-order concatenation must not silently replace source order.
-- [ ] **Manual M05 — UI-bound field/newline fidelity**: Dirty both areas; save each first in turn, then save the other using refreshed context. Independently read after each write: only named area changed, no automatic summary, other draft/dirty badge retained. In both source and memory editors change one line, split/join a line and insert/delete a line in CRLF and mixed-newline bodies; inspect submitted and persisted UTF-8, including untouched separators. Verify empty original/replacement and successive saves without global newline normalization.
+- [x] **Manual M04 — UI-bound exact paging**: Use an episode exceeding the configured body ceiling, with preamble, non-adjacent equal timestamps, CRLF/LF/CR, leading/trailing blank lines and Unicode. Inspect every page's context/hash/character length/source segments and compare reconstructed UTF-8 bytes with the prepared original. Metadata browsing must not fetch bodies; Save cannot enable before complete verified coverage. Display-order concatenation must not silently replace source order.
+- [x] **Manual M05 — UI-bound field/newline fidelity**: Dirty both areas; save each first in turn, then save the other using refreshed context. Independently read after each write: only named area changed, no automatic summary, other draft/dirty badge retained. In both source and memory editors change one line, split/join a line and insert/delete a line in CRLF and mixed-newline bodies; inspect submitted and persisted UTF-8, including untouched separators. Verify empty original/replacement and successive saves without global newline normalization.
 - [x] **Manual M06 — tenant-change negative**: Guest opens a disposable owner record, then selects home or another allowed tenant in a second client. Submit old body and metadata saves separately. Subsequent calls must refuse account mismatch (HTTP 409/MCP actionable error), preserve browser draft, write neither tenant and expose neither tenant's current body. Reload under the displayed selected tenant to recover; expected tenant must not switch accounts.
 - [ ] **Manual M07 — revocation/stranger negative**: Invite/select guest, load, then revoke through approved test administration before the next save. Both body and metadata attempts must fail authorization (HTTP 403/MCP permission failure), not write, and retain drafts without body-bearing errors. Stranger cannot read/save the owner UUID; expired/invalid token keeps authentication semantics. An already-authorized in-flight request is not required to be cancelled.
-- [ ] **Manual M08 — mixed/incomplete-pages negative**: In the isolated test transport only, pause after page one, change row metadata/body or selected tenant, then resume. Separately interrupt transport, repeat a cursor, omit context, corrupt hash/length, introduce a segment gap/overlap or wrong UUID. Load must fail closed with reload guidance and no writable editor/save call; restoring transport requires a fresh complete baseline, not concatenating old/new pages.
+- [x] **Manual M08 — mixed/incomplete-pages negative**: In the isolated test transport only, pause after page one, change row metadata/body or selected tenant, then resume. Separately interrupt transport, repeat a cursor, omit context, corrupt hash/length, introduce a segment gap/overlap or wrong UUID. Load must fail closed with reload guidance and no writable editor/save call; restoring transport requires a fresh complete baseline, not concatenating old/new pages.
 - [x] **Manual M09 — stale old/new negative**: Open two editors at one revision. Save from one; attempt old-revision body and metadata writes from the other even if its `old_string` still matches. Both must conflict without overwrite. Load latest in a new tab, preserve old draft for comparison, deliberately reapply and save with the new context; it must succeed only if no intervening change. Repeat after archive/append/prepend/multi-edit via an existing client, and with two near-simultaneous saves.
 - [x] **Manual M10 — UI-bound Close/expiry/cap**: Dirty both areas, cancel Close: no close request, no lost draft. Confirm Close: server baseline released, controls disabled/navigation succeeds, old session cannot write. With disposable sessions, open 33 editors: retained baselines never exceed 32 and a least-recently-used non-saving one ends. Leave an editor without server activity for 30 minutes, including typing locally: no heartbeat extends it; later Save gives ended/expired guidance, retains browser draft and requires opening latest in a new tab. An in-flight save is not evicted.
 - [x] **Manual M11 — old-server/capability negative**: Connect only to an isolated legacy server lacking guard schemas or exact-body reconstruction. Browse remains available, editing refuses; no guard-dropping fallback. Remove capability/change transport after open: Save does not advance the local baseline or erase draft. For uncertain memory write outcome, independently reread latest before reapplying; do not blindly retry an old baseline.
 - [x] **Manual M12 — validation/lifecycle**: On disposable agent/shared records through both faces, reject a missing guard partner, blank token, unknown edit field, blank title/project/summary, and a 1,001-code-point summary; accept valid 1,000-code-point Unicode summary and explicit clearing/empty tags. Body must remain byte-identical on metadata validation/clear. Missing/deleted records stay unavailable; no save revives lifecycle or edits owner/type. Check actual status/error, not just visible text.
-- [ ] **Manual M13 — Git uncertainty/partial-success negatives H1/H2**: With approved disposable remote writes and controlled fault injection, lose the response after branch creation and after commit. UI reports uncertainty, blocks blind saves and retains pending intent; reconcile a confirmed commit without recommit, but never adopt/reset an ambiguous branch. Fail the PR-state read after a confirmed second commit: visible partial success includes commit/source revision; Retry PR changes no source commit. Closed/ready/wrong-head/base PR must not be silently reused.
+- [x] **Manual M13 — Git uncertainty/partial-success negatives H1/H2**: With approved disposable remote writes and controlled fault injection, lose the response after branch creation and after commit. UI reports uncertainty, blocks blind saves and retains pending intent; reconcile a confirmed commit without recommit, but never adopt/reset an ambiguous branch. Fail the PR-state read after a confirmed second commit: visible partial success includes commit/source revision; Retry PR changes no source commit. Closed/ready/wrong-head/base PR must not be silently reused.
 - [x] **Manual M14 — privacy/security**: Put a unique harmless marker in the disposable body/draft; open/preview/save/fail/close using the editor. Inspect generic inspector history, its persisted local DB and accessible logs: no automatic memory-body/draft copy. Baseline release does not promise secure erasure of browser/process memory. Try HTML/script/unsafe-link payloads: literal safe text, no execution. Forged Origin, Host or missing/bad CSRF on every current POST route must fail before Git/Munnin authority; do not rely on loopback alone.
-- [ ] **Manual M15 — UI-bound feedback/inspector regression**: Use native clicks/keyboard: labels, focus, acting account, source/backend/revision and saved-area confirmation remain readable. Duplicate Save/Close while pending causes no second write. Validation/conflict/network errors retain both drafts. Existing inspector Send/history/replay/token counts work unchanged; only deliberate generic inspector calls retain their established history behavior.
+- [x] **Manual M15 — UI-bound feedback/inspector regression**: Use native clicks/keyboard: labels, focus, acting account, source/backend/revision and saved-area confirmation remain readable. Duplicate Save/Close while pending causes no second write. Validation/conflict/network errors retain both drafts. Existing inspector Send/history/replay/token counts work unchanged; only deliberate generic inspector calls retain their established history behavior. Functional native checks passed; visible-layout/focus sign-off remains pending while the browser pane is hidden.
 - [ ] **Manual M16 — content/default API compatibility**: Over actual HTTP and MCP, compare converted `awaken-agent`/`wrap-up` and called procedures with same-revision canonical DB output; no file-backed persistence/push instructions leak. Read legacy `wait-options`, separate templates/resources and prompt argument metadata; absent/empty arguments preserve placeholders, supplied argument substitutes. Default get/query/awaken must not gain `edit_context`/`edit_body`; legacy unguarded body edit stays body-bearing, metadata edit stays metadata-only, guarded success has fresh context/metadata without body. Verify installed Markdown commands and dual/single `refresh-memory` outputs; preserve available overlay seam imports without claiming Hermod migration or unavailable-consumer tests.
 - [ ] **Manual M17 — engine/release evidence**: Read exact-revision CI evidence showing the guarded tests actually executed against PostgreSQL, not skipped/only collected; separately exercise approved isolated PostgreSQL runtime through authenticated faces. Record image build/runtime and deployed content/capabilities independently of SQLite/unit/wheel success. No schema/backfill/reset or production promotion is implied; unresolved issuer, native UI, container or consumer prerequisites remain explicit gaps.
 
 ## Result
+
+**Run**: 2026-11-19 · software-architect · M13 wrong-base live completion
+**Automated**: Existing wrong-head service regression remains green; prior **205 passed, 1 deselected**.
+**Manual**: **M13 completed** with real wrong-base metadata; wrong-head is an unreachable remote mutation covered by existing service regression. M16/M01/M07/M17 limits remain.
+**Sign-off**: NOT SIGNED OFF.
+
+- Created owned branch `helheim/057325583d4c436f9879d6b18eb3f762` and real
+  draft PR #6 at head `c3743eb5...`, base `review/procedure-source-editing`.
+- Changed only PR #6 base to `main` via GitHub metadata; PR head remained
+  `c3743eb5...` and no branch commit was added. Native Save refused:
+  `workspace PR is no longer the original open draft; start a new workspace This
+  draft is retained.` Independent remote read confirmed branch head unchanged
+  and no new commit.
+- Wrong-head cannot be changed after GitHub PR creation; existing regressions
+  `test_existing_pr_refuses_closed_ready_or_wrong_head_base` and
+  `test_listed_pr_refuses_closed_ready_or_wrong_head_base` cover that refusal.
+- PR #6 closed without merge; branch deleted; base/main SHAs unchanged; no
+  `helheim/*` branches remain. Screenshot: `wrong-base-refusal.png`.
+- Evidence:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-m13live-000000000000`
+  (`m13-live-evidence.json`, six inspected screenshots). No source/review/main
+  push, merge, release or deployment.
+
+**Run**: 2026-11-19 · software-architect · M16 correction + exact temp install compatibility + deployed schema gate
+**Automated**: No product/source/test edits; prior **205 passed, 1 deselected** remains current.
+**Manual**: M16 local temp install compatibility completed; M01/M07/M17 deployed writes blocked by old schemas. M16 remains unchecked for global/deployed/consumer portions; M13 unchanged.
+**Sign-off**: NOT SIGNED OFF.
+
+### Correction: prior M16 blocker was a wrong-checkout error
+
+- The earlier `git cat-file` ran in
+  `C:/Work/IM/agent-memory-fleet` (HEAD `a927540...`), not in the control-files
+  repository. The correct root is
+  `C:/Work/IM/munnin-deploy/agent-memory-server/control-files`; its HEAD is
+  **`6412c4dc47606f1d63807d33d4aa14cce013231d`** and `git cat-file -t` returns
+  **commit**. No fetch or checkout was needed; the false blocker is withdrawn.
+
+### M16 — exact-revision temp install compatibility
+
+- Compiler at exact HEAD with `--backend markdown --strict`: **18** procedures,
+  `tenant-sharing` skipped (no backend section).
+- Fresh isolated installer targets all produced **18** commands:
+  Claude batch **18/18 byte-exact**, Codex **18/18 body-exact**, Antigravity
+  **18/18 byte-exact**, OpenCode **18/18 body-exact** against compiler output.
+- Dual compilation produced 16 dual outputs; `refresh-memory.markdown.md` equals
+  the single-backend compiled file and `refresh-memory.db.md` exists.
+- Existing older temp install dirs and ignored `procedures/output` were stale
+  for `awaken-agent`/`refresh-memory`; fresh installers use the exact compiler
+  output. No tracked source diff was produced.
+- Available Hermod seam bridge at `ab49b2f...`: **3 passed**; it remains on its
+  own implementation, not migrated. Broader unavailable consumers are not
+  claimed tested. M16's global/deployed command and consumer portions remain
+  open.
+
+### M01/M07/M17 — authenticated read-only deployed capability
+
+- Existing authenticated Munnin MCP is reachable (`ping` → `pong`); served
+  procedures: 16; `/health` version `0.1.0`.
+- Deployed `get` schema exposes only `uuid`, `cursor`, `limit`; `edit` exposes
+  only `uuid`, `old_string`, `new_string`, `replace_all`; `edit_metadata`
+  exposes no `expected_revision`/`expected_tenant`. The new editor guards are
+  **not deployed**. Anonymous prompts/MCP initialize return 401.
+- Real-issued write verification therefore remains a concrete release gate;
+  no real user login or memory write was attempted. M01/M07/M17 remain
+  unchecked.
+
+### Evidence
+
+- M13 live:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-m13live-000000000000`
+  (`m13-live-evidence.json`, five screenshots, `app-state.json`).
+- M16:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-m16-exact-9879f9d90863`
+  (`m16-deployed-evidence.json`, compiler/dual/fresh-installer logs and
+  installs).
+- No source/review/main commit or push, merge, tag, image, release, deployment,
+  archive or global install occurred. PRs #4/#5 closed; no `helheim/*` branches
+  remain; base/main unchanged.
+
+**Run**: 2026-11-19 · software-architect · live disposable GitHub M13 + remaining-boundary assessment
+**Automated**: No product/test code changed; prior **205 passed, 1 deselected** remains current.
+**Manual**: M13 live disposable subset exercised; M13 remains unchecked. M16 blocked on missing exact local revision. M01/M07/M17 real issuer/deployed checks remain gated.
+**Sign-off**: NOT SIGNED OFF.
+
+### M13 — live disposable GitHub fault subset
+
+- Read-only baseline first: `alvseek/agent-memory-system`
+  `review/procedure-source-editing` and `main` were
+  `6412c4dc47606f1d63807d33d4aa14cce013231d` and
+  `7b4d204f62d8964843195309ac39562af61c34c8`; both unchanged at the end.
+- Real `gh`/`GitHub` adapter created only four owned `helheim/*` branches:
+  - `c9ea...` and `f5f...`: branch creation existed at the base SHA after
+    lost/unreadable branch responses; native Reconcile refused ambiguous
+    adoption; both branches deleted.
+  - `a597...`: commit `47df50d758c7a3a082677401dea1382430c5c434` existed after a
+    lost commit response; native Reconcile adopted it, Retry PR created draft
+    PR #4 (one commit); PR closed without merge and branch deleted.
+  - `f8b...`: commit `dc17683...` existed after an unreadable commit response;
+    Reconcile and Retry PR created draft PR #5. A later partial PR-read fault
+    left the second commit `130c922...` confirmed, head unchanged, and Retry PR
+    did not create another commit (remote PR still two commits). PR #5 was marked
+    ready for an actual ready-state refusal, then closed for an actual closed-state
+    refusal; both were refused by native Save with the draft retained.
+- Native UI screenshots inspected: branch-lost uncertainty, commit-lost
+  reconciliation, Retry PR confirmation, partial PR read failure, and ready-PR
+  refusal. Actual remote refs/commits/PRs were read independently with `gh`.
+- **M13 remains unchecked**: wrong-head and wrong-base PR refusals were not
+  safely producible through the approved app workflow; no existing PR was
+  repurposed. The lost/unreadable cases completed the real remote action and
+  dropped only the local response.
+
+### M16 — installed-command compatibility blocker
+
+- Existing isolated install directories are present
+  (`composer-batch-install`, `composer-codex-install`,
+  `composer-antigravity-install`), but the framework checkout does not contain
+  the immutable review object `6412c4dc47606f1d63807d33d4aa14cce013231d`
+  (`git cat-file -t` returned "could not get object info"). Compiling with the
+  current branch would not be the immutable review revision, and fetching it
+  would exceed the approved disposable-GitHub scope. No M16 pass is claimed.
+
+### M01/M07/M17 — read-only deployed boundary
+
+- Public read-only probes only: `/health` returned
+  `{"status":"ok","service":"munnin","version":"0.1.0"}`; protected-resource
+  metadata named `https://auth.lok.quest/oidc`; `/api/prompts` and MCP
+  initialize returned **401 missing bearer**. No real user login, token or
+  memory write was attempted. Exact deployed guards/version and real issued-token
+  behavior remain release/deployed gates.
+
+### Cleanup
+
+- PRs #4 and #5 are closed; no `helheim/*` branches remain; base/main SHAs
+  unchanged. Owned app/Chrome session/processes were cleaned; prior evidence and
+  workers preserved.
+- Evidence:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-m13live-000000000000`
+  (`m13-live-evidence.json`, five M13 screenshots, `app-state.json`,
+  `teardown.json`). No commit/push of source/review/main, tag, image, release,
+  deployment or archive.
+
+**Run**: 2026-11-19 · software-architect · M15 real-Chrome visible-pane completion
+**Automated**: No product/test code changed; prior **205 passed, 1 deselected** remains current.
+**Manual**: **M15 completed**, including the previously blocked visible layout/focus checks. Prior functional M15 evidence was reused, not repeated.
+**Sign-off**: NOT SIGNED OFF — M01/M07/M13/M16/M17 remain open.
+
+### Actual Chrome screenshots inspected
+
+- **Source editor** — `source-editor-chrome.png` (90,383 bytes): visibly shows
+  Helheim navigation, Flow, **Source commit**, **Composer: 0.1.0**,
+  **PREVIEW, NOT DEPLOYED CONTENT**, procedure/backend/revision selectors with
+  **DB** and **Workspace branch**, **Original source: first**, source path,
+  **Shared source: saving changes both Markdown and DB delivery**, catalog
+  dependents, raw Markdown textarea, Preview/Save controls and Saved baseline.
+- **Memory metadata/save controls** — `memory-metadata-controls.png`
+  (148,602 bytes): shows **Acting account: fixture-owner**, record UUID,
+  revision, Body and Metadata areas with **Saved baseline**, metadata JSON,
+  **Preview metadata / diff**, **Save metadata**, body Save, and Close. The
+  metadata textarea visibly holds keyboard focus.
+- **Validation feedback** — `memory-validation-error.png` (143,713 bytes):
+  Metadata shows **Unsaved metadata**, body stays visible, Save controls remain,
+  and the red status reads
+  `Metadata must be valid JSON; fix it and retry. Drafts have not been replaced.`
+- **Conflict feedback** — `memory-conflict-error.png` (130,648 bytes): Body is
+  **Unsaved body**, metadata baseline remains, and the red status reads
+  `edit conflict: acting account changed; reload before saving Drafts have not
+  been replaced.`
+- **Network feedback** — `memory-network-error.png` (130,657 bytes): Body draft
+  remains, metadata baseline remains, and the status reads
+  `munnin: ConnectError: All connection attempts failed Drafts have not been
+  replaced.`
+
+### Reused functional evidence
+
+Duplicate Save had already produced exactly one captured POST; Close cancel
+retained drafts and accept navigated; Inspector query returned 468 bytes/145
+tokens, Replay produced the second call, and History listed only those two
+calls. Native focus reached `source-draft` previously; this run visibly focused
+the metadata textarea during the capture.
+
+### Boundary, evidence and teardown
+
+- Real Chrome browser `chrome-spearhead`, extension 0.0.17 / protocol 3, own
+  `m15-chrome-visual` session with exact `http://127.0.0.1:58076` allowlist.
+  Owned gh shim path asserted before serving; `HELHEIM_HOME` isolated before
+  imports. No real gh/GitHub, issuer, production or normal config.
+- Evidence root:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-m15chrome-8d7b35235c8c`
+  (`source-editor-chrome.png`, `memory-metadata-controls.png`,
+  `memory-validation-error.png`, `memory-conflict-error.png`,
+  `memory-network-error.png`, `visual-evidence-chrome.json`,
+  `teardown-m15chrome.json`).
+- Chrome session deleted and tab closed; app/paged/Git roots absent after
+  shutdown; Munnin stopped and its DB/WAL/SHM and URL/control markers removed.
+  Prior workers/evidence preserved. No code edits, commit/push, release, archive
+  or memory write.
+
+**Run**: 2026-11-19 · software-architect · M15 visible-pane screenshot/visual check
+**Automated**: No product/test code changed; prior **205 passed, 1 deselected** remains current.
+**Manual**: M15 remains **unchecked**; one memory-editor screenshot was captured and inspected, but source/feedback visual sign-off is still outstanding.
+**Sign-off**: NOT SIGNED OFF.
+
+### What was actually seen
+
+- The first screenshot succeeded and was inspected: it visibly shows Helheim
+  navigation, **Memory editor**, **Acting account: fixture-owner**, the record
+  UUID, the revision string, **Body — Saved baseline**, and the mixed-newline
+  body. File: `memory-editor-visible.jpeg` (130,672 bytes).
+- Source-editor rendered DOM was also checked: `Original source: first`, shared
+  warning, source commit, Composer `0.1.0`, preview-not-deployed, and selectors
+  `backend:db`, `revision:branch`. Native click moved focus to the source
+  textarea (`document.activeElement.id == "source-draft"`).
+- The first capture was viewport-only; the metadata/save controls and source page
+  were below the fold.
+
+### Screenshot blocker
+
+After the first successful image, every further screenshot request returned:
+
+`Error: [browser.operation_failed] browser.screenshot failed. Screenshot needs a visible tab. Call browser.tabs.focus and keep its desktop window visible.`
+
+This happened for the same memory editor with full-page capture, after scrolling,
+and for the procedures page after focus. The source/validation/conflict visual
+sign-off was therefore not attempted repeatedly; the affected visual task stopped
+without a hidden-pane retry loop. Functional prior evidence remains valid:
+duplicate Save one POST, Close cancel/accept, validation/conflict/network draft
+retention, Inspector query/Replay/History.
+
+### Evidence and teardown
+
+- Root: `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-m15visible-d27b85174f58`
+  (`memory-editor-visible.jpeg`, `visual-evidence.json`, `teardown-m15visual.json`).
+- App, paged and Git roots were absent after shutdown; Munnin was stopped and its
+  DB/WAL/SHM and URL/control markers removed; the browser tab was closed. Prior
+  evidence and workers were preserved.
+- No real gh/GitHub network, production, normal config, user restart, upgrade,
+  commit/push, release, archive or memory write occurred.
+
+**Follow-up**: after Alvi reopened the pane, a fresh owned runtime was started and
+the source-editor screenshot was attempted with the tab explicitly focused. It
+still returned exactly:
+`Error: [browser.operation_failed] browser.screenshot failed. Screenshot needs a visible tab. Call browser.tabs.focus and keep its desktop window visible.`
+No retry was made; M15 remains unchecked. Evidence:
+`C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-m15visual2-0a14d9847b67/screenshot-blocker.json`.
+
+**Run**: 2026-11-19 · software-architect · Tactic C native M08 full paged faults + M15 feedback/Inspector
+**Automated**: No product or test code changed this run; prior **205 passed, 1 deselected** remains the current suite.
+**Manual**: **M08 and M15 completed locally**; M15 visual sign-off remains pending because the desktop pane was hidden.
+**Sign-off**: NOT SIGNED OFF — M01/M07/M13/M16/M17 remain open.
+
+### M08 — full paged corruption/refusal set
+
+- All 17 available paged modes were driven natively: revision, metadata,
+  tenant, wrong UUID, missing context, missing provenance, bad hash, page hash,
+  bad length, gap, overlap, repeated cursor, 503 interruption, plus
+  pause-revision, pause-metadata, pause-body and pause-tenant with real pause and
+  auto-resume.
+- Every refusal showed `Editor unavailable` with a bounded reason, no
+  `data-editor-init`, no writable controls, and `writes: 0`. Examples:
+  context changes → `account or revision changed while loading; reload the record`;
+  missing provenance → `server lacks exact-body reconstruction metadata`;
+  gap/overlap → `body pages overlap or leave a gap`; interruption → JSON-RPC
+  transport error; pause-body → `complete body hash did not match`.
+- A fresh valid load recovered the exact two-page body hash
+  `dd875932a52eeaa68bf3b81fb37d56d28adc2194e1a4160e88407f52c7840658` with one
+  context and Save disabled before editing.
+- Actual selected-account change used the writable synthetic Munnin copy with
+  its real SQLite tenant resolver/sharing repository and synthetic verified
+  guest actor — not an issuer. The guest loaded under `fixture-owner`, then
+  selected home. Native Save refused with
+  `edit conflict: acting account changed; reload before saving`; both drafts
+  remained and the owner record hash stayed
+  `bc6d7ddd81abc264b07cc577a49af29b54d51a894fd6aeab1a4837e4ac913636`.
+  Reload under the home selection showed `record is unavailable` and no editor.
+  Real-issuer token/expiry proof remains M01/M07.
+
+### M15 — native feedback/Inspector
+
+- Labels and values observed: acting account `fixture-owner`, source
+  `Original source: first`, Shared warning, `Source commit`, Composer `0.1.0`,
+  backend `db`, revision `branch`, and `PREVIEW, NOT DEPLOYED CONTENT`.
+- Memory duplicate Save produced exactly **one** captured POST and saved the
+  named area; the other area's draft stayed. Native Close cancel retained both
+  drafts; accept navigated to `/memory`. A repeated Close while the confirm was
+  open was blocked by that dialog and did not issue a second request.
+- Invalid metadata JSON retained both drafts with the bounded validation
+  message. A real transport loss after opening (Munnin stopped) retained both
+  drafts with `munnin: ConnectError: All connection attempts failed Drafts have
+  not been replaced.` The actual selected-account conflict also retained both.
+- Inspector query returned **468 bytes / 145 returned-text tokens / 18 ms /
+  ok**; Replay produced the second call; History showed exactly those two
+  inspector calls and no memory-body draft. Generic history was not polluted by
+  editor saves.
+- One screenshot attempt after focus refused because the desktop pane was
+  hidden; it was not retried. No pixel/layout/native visual sign-off is claimed.
+
+### Evidence and teardown
+
+- Evidence root:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-m08m15-045beaad851a`
+  (`native-m08m15-evidence.json`, `teardown-m08m15.json`). The fixture driver and
+  Munnin copy are retained; DB/WAL/SHM and URL/control markers were removed.
+- Helheim app, paged and Git roots were absent after shutdown; the Munnin process
+  was stopped; the browser tab was closed. Prior QA workers were preserved.
+- No real gh/GitHub network, production endpoint, real account/issuer change,
+  normal configuration, user app restart, package upgrade, commit/push, release,
+  archive or memory write occurred. Prior local PostgreSQL/image evidence is
+  unchanged.
+
+**Run**: 2026-11-19 · software-architect · Tactic C native M04 oversized paging + M05 full newline/save matrix
+**Automated**: No product or test code changed this run; prior **205 passed, 1 deselected** remains the current suite. Existing A08 browse-is-read-only evidence retained.
+**Manual**: **M04 and M05 completed locally**; all other row statuses unchanged.
+**Sign-off**: NOT SIGNED OFF — real issuer/deployed and the remaining rows are still open.
+
+### M04 — actual oversized episode, exact browser baseline
+
+- Reused the prior writable synthetic Munnin fixture in a fresh owned copy with
+  `max_body_bytes=80` and a 207-character episode (2 pages; page contents 137 and
+  70 characters). It contains a preamble, leading/trailing blank lines, CRLF,
+  LF and CR-only endings, non-adjacent equal `2026-11-17 11.00` timestamps and
+  Unicode.
+- Both pages carried the same `fixture-owner` context/revision, declared body
+  length 207 and SHA-256
+  `bc6d7ddd81abc264b07cc577a49af29b54d51a894fd6aeab1a4837e4ac913636`.
+  Source-position segments reconstructed that exact body; display-page
+  concatenation is not the source order.
+- Native Memory metadata list rendered metadata without fetching a body; the
+  existing A08 `test_old_server_is_read_only_and_browse_does_not_fetch_bodies`
+  remains the service-level no-body assertion. Native opening then loaded both
+  pages, and the editor's exact `data-editor-init` body hash matched the prepared
+  body. Save body/metadata were disabled before any edit.
+
+### M05 — full newline and independent-save matrix
+
+- Memory editor, writable synthetic Munnin: dirty body and metadata, then Save
+  body produced the exact expected body
+  (`22ff53cb0845b5459b4bec946b188e6cabc8e96ae7df6f1b856ae003067c5be1`),
+  left the title and summary unchanged, and retained the metadata draft. Save
+  metadata then changed only the title and retained the body draft; the
+  persisted body hash stayed the same. Save body again persisted the second
+  draft (`3db436a9...`) while the metadata title stayed changed.
+- Memory split/join/insert/delete persisted
+  `\nPreamble second 🌱\r\n\n---\n\n…First\r\nsplit é\nSecond+Third joined\r…`
+  with CRLF, LF and CR-only separators retained (hash `dc4240b2...`). CRLF-only
+  split/insert, delete and join each persisted exact CRLF strings. Empty
+  replacement persisted `""` (SHA-256 `e3b0...`) and a subsequent save from the
+  empty baseline persisted `\nAfter empty body\n`.
+- Source editor, real Git shim: mixed baseline `alpha\r\nbeta\n` saved
+  split/insert `alpha\r\nbe\nta\ngamma\n`, then join/delete
+  `alpha beta joined\r\n`, then empty `""` (heads `…01`, `…02`, `…03`). CRLF
+  baseline `alpha\r\nbeta\r\n` saved split/insert
+  `alpha\r\nbe\r\nta\r\ngamma\r\n`, join `alpha beta joined\r\n`, and one-line
+  change `alpha beta changed\r\n` (heads `…04`, `…05`, `…07`). An empty baseline
+  saved `replacement after empty\n` (head `…06`). Every value came from an
+  independent Git branch file read; the same draft PR was reused.
+- Both dirty-area directions retained the other area's draft and produced no
+  automatic summary update. No global newline normalization was observed.
+
+### Evidence and teardown
+
+- Evidence root:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-m04m05-297b8a5b5d7a`
+  (`native-m04m05-evidence.json`, `munnin-record-initial.json`,
+  `munnin-after-*.json`, `source-*.json`, `teardown-m04m05.json`). The fixture
+  copy, logs and drivers are retained; no token/DB marker remains.
+- Helheim app and Git roots were absent after shutdown; the Munnin process was
+  stopped and its SQLite/WAL/SHM and URL/control markers removed; the browser tab
+  was closed. The older `procedure-qa-chrome-20261118` workers were preserved.
+- No real gh/GitHub network call, production endpoint, real account change,
+  normal configuration, user app restart, package upgrade, commit/push, release,
+  archive or memory write occurred. Local PostgreSQL/image passes are unchanged;
+  only real-issuer/deployed-boundary rows remain for those.
+
+**Run**: 2026-11-19 · software-architect · QA instrument lifecycle repairs (QA1/QA2/QA3)
+**Automated**: Safety red-first 5 failed → 5 passed; targeted set 56 passed; full non-integration suite 205 passed (one live-server test deselected); Ruff clean and 42 Node cases passed.
+**Manual**: No feature row status changed; prior native subsets remain as recorded below.
+**Sign-off**: NOT SIGNED OFF.
+
+### Repairs
+
+- **QA1 — peer lifecycle**: `Peer.start` failures now close the exact owned child
+  and remove only the marker-verified owned root; `Peer.close` is idempotent for a
+  never-started peer and tolerates an already-removed root. Partial `Peer` and
+  `GitHubPeer` constructor failures remove the owned root. Startup exceptions are
+  re-raised unchanged.
+- **QA2 — bench boot handle**: `bench.act` retains the `Popen` handle and, on
+  boot timeout/cancellation, stops that exact process tree and waits for exit;
+  the original boot error is re-raised. It does not rotate ownership or delete an
+  unknown root.
+- **QA3 — inert mock**: removed the unused `bench.request` disconnected patch and
+  its `http.client` import from `tests/test_qa_bench.py`.
+
+### Red/green and teardown
+
+- Red command: `python -m pytest -q tests/test_qa_safety.py` → **5 failed**
+  (never-started close, peer start residue, peer constructor residue, Git
+  constructor residue, bench boot handle cleanup).
+- Green command: same → **5 passed**; targeted bench/safety/paged/Git set →
+  **56 passed**; full non-integration → **205 passed, 1 deselected**.
+- `HELHEIM_HOME` was set to a fresh owned test home before execution, so the
+  suite's import-time app default did not create/use the normal user database.
+- The three red-run owned roots were removed after `bench.owned` verification;
+  the test home was removed after the run. No live peer child remains.
+- Evidence root:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-qa-safety-evidence-b6a40950c4ec`
+  (`red-first.txt`, `safety-targeted.xml`, `helheim-full.xml`, `ruff.txt`,
+  `node-tests.txt`). No product source changed, and no real gh/token/GitHub
+  network call, normal configuration, app restart, commit/push, release or
+  memory write occurred.
+
+**Run**: 2026-11-19 · software-architect · Tactic C native-browser subset (M04/M05/M08/M13/M15)
+**Automated**: 41 targeted paged/Git cases passed after two test-fixture fixes; prior 200-case full suite remains valid on unchanged product and was not rerun. Ruff clean.
+**Manual**: Native subsets advanced for all five rows; none is marked complete.
+**Sign-off**: NOT SIGNED OFF.
+
+### Native runtime and boundaries
+
+- Served actual Helheim pages from an owned loopback app. Memory traffic went to
+  the real paged MCP peer; procedure traffic went through the real `GitHub`
+  adapter and its owned `gh` subprocess shim. `which gh` was asserted to be the
+  owned path before serving, `PATH` contained only that directory, and token
+  environment variables were removed. No real gh login, GitHub repository or
+  external network call was used. Browser actions were native click/press/fill;
+  page evaluation was observation only.
+- Browser screenshot capture refused after focus because the desktop pane was
+  hidden. No native pixel/layout or screenshot claim is made.
+
+### M04 — native paged load (partial)
+
+- Metadata browsing issued only `query`; it did not fetch a body. Opening the
+  record issued exactly the two `get` pages.
+- The editor baseline carried two pages, one context/revision, and the exact
+  101-code-point body with SHA-256
+  `dd875932a52eeaa68bf3b81fb37d56d28adc2194e1a4160e88407f52c7840658`.
+  Display normalisation removed CR, but the exact `data-editor-init` body hash
+  matched. Save body was disabled before editing, and display-page concatenation
+  differs from source order.
+- **Not complete**: the fixture is 101 characters and does not exceed a
+  configured body ceiling; every-page UI inspection and the full native
+  browsing/progress matrix were not walked.
+
+### M05 — native newline and draft (partial)
+
+- Source editor baseline was `alpha\r\nbeta\n`. Native split/insert saved
+  `alpha\r\nbe\nta\ngamma\n` (head `...03`), a successive save persisted
+  `alpha\r\nbe\nta\ndelta\n` (head `...04`), and an empty replacement persisted
+  `""` (head `...05`). Untouched CRLF/LF separators survived; the same draft PR
+  was reused.
+- A native duplicate Save produced exactly one commit. A forced commit
+  precondition failure retained `beta conflict\n` and reported the conflict.
+- Memory editor native split/insert preview produced
+  `First\r\nchanged é\r\n` plus the inserted LF line and reported
+  `Preview only; nothing was saved.` Its read-only capture peer reported
+  `writes: 0`.
+- **Not complete**: no writable memory fixture was improvised, so memory Save
+  persistence, the full split/join/insert/delete matrix and all source/memory
+  success/empty combinations were not walked.
+
+### M08 — native page refusal/recovery (partial)
+
+- Native loads failed closed with no editor for `revision`
+  (`account or revision changed while loading`), `gap`
+  (`body pages overlap or leave a gap`), `interrupt` (JSON-RPC transport error)
+  and `pause-body` (`complete body hash did not match`). The pause path used a
+  real pause after page one and an auto-resume; no write occurred.
+- After restoring `valid`, a fresh native load obtained the exact body hash and
+  one baseline. Every paged mode reported `writes: 0`.
+- **Not complete**: the complete corruption set, repeated cursor, missing
+  context, length/hash variants and a real account-selection change were not all
+  exercised natively.
+
+### M13 — native Git uncertainty/partial recovery (partial)
+
+- Lost branch-creation response: native Save showed uncertainty, retained the
+  draft, exposed Reconcile and hid Retry PR. The shim had created the branch at
+  the base; Reconcile refused with `never adopt or reset`.
+- Lost commit response: Reconcile reported the checked outcome and exposed Retry
+  PR; Retry PR confirmed the draft PR with the same source head and commit count
+  one. The saved source commit was not recommitted.
+- Post-commit PR read failure: native Save reported `saved_pr_pending` with the
+  confirmed head, retained the draft and exposed Retry PR; Retry PR left the head
+  at `...02` and the commit count at two.
+- **Not complete**: the peer is synthetic. No real disposable GitHub remote
+  write/PR, real outside-head/closed/ready remote state, or real remote response
+  capture was exercised. M13 stays unchecked.
+
+### M15 — native feedback/inspector (partial)
+
+- Native invalid metadata JSON retained both drafts and reported
+  `Metadata must be valid JSON; fix it and retry. Drafts have not been replaced.`
+  A forced Git conflict retained the source draft. Duplicate Save produced one
+  commit.
+- Native inspector query returned 468 bytes / 145 returned-text tokens in
+  16 ms; Replay created the second successful call and History listed both.
+  Acting-account, source identity, Shared badge, source commit and composer
+  labels were visible.
+- **Not complete**: no screenshot/layout proof, and the full native
+  feedback/validation/network/Inspector regression matrix was not walked.
+
+### Findings
+
+| # | Finding | Owner | Status |
+|---|---|---|---|
+| 1 | Paged `query` one-row list was flattened by MCPServer, so native metadata browse failed | qa | Fixed: wrapper `{"result": [...]}`; targeted paged tests passed |
+| 2 | Empty Git blob base64 `""` was treated as missing, so empty source reload returned 404 | qa | Fixed: `blob is not None`; targeted Git tests passed |
+| 3 | Browser screenshot/layout proof unavailable: desktop pane hidden | qa | Open — native clicks still worked; no pixel claim |
+| 4 | No product defect observed on the exercised native paths | product-defect | None identified; not full-row sign-off |
+
+### Fixture corrections and evidence
+
+- Two test-fixture compatibility defects were found and fixed: the paged
+  `query` list was flattened by MCPServer (now wrapped as `{"result": [...]}`),
+  and an empty Git blob was treated as missing (now `blob is not None`).
+  Targeted pairs then passed **41**; no product source changed.
+- Evidence root:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-native-evidence-cce8da54`
+  (`control.json`, `native-runtime.json`, `native-evidence.json`,
+  `pages-initial.json`, Git file captures, `teardown.json`). App, paged and Git
+  roots were absent after shutdown; the browser tab was closed. No real
+  gh/GitHub network call, normal configuration, user app restart, product edit,
+  release, commit/push or memory write occurred.
+
+**Run**: 2026-11-19 · software-architect · Git write-outcome boundary pair (test-only QA)
+**Automated**: New Helheim pair 21 passed under both `python -m pytest` and the project's `pytest` console script; full non-integration suite 200 passed (one live-server test deselected); Ruff and the 42-case Node suite clean. Product source is unchanged.
+**Manual**: M13's transport/service subset is proven, but the row stays unchecked because no real disposable GitHub remote or native-browser recovery ran.
+**Sign-off**: NOT SIGNED OFF.
+
+### Git write-outcome subprocess boundary (M13 subset)
+
+- Boundary: `Workspaces` → `helheim.github.GitHub` → real `gh` subprocess →
+  owned [gh shim](../../../helheim/qa/fixtures/gh_shim.py). The fixture places
+  only its interpreter-backed shim on `PATH`, removes token/config environment
+  variables and asserts `which gh` is that owned executable. No `runner` fake,
+  real login, token or socket is used.
+- Lost or unparseable branch-creation responses: the remote branch exists, local
+  state keeps `pending_action=create_branch` and only the save identity/hash, a
+  second save is refused before another call, and `reconcile` refuses to adopt
+  or reset the branch.
+- Lost or unparseable commit responses: the remote commit exists, local state
+  keeps `pending_action=commit`; `reconcile` confirms the expected parent,
+  save identity and source hash, then Retry PR creates the draft PR with the
+  commit count still one.
+- Ambiguous commit identity: `reconcile` refuses rather than adopting a commit
+  whose message/parent/source do not match the pending save.
+- Post-confirmed-commit PR read failure: both the per-PR read and the PR listing
+  return `saved_pr_pending` with the confirmed head/source hash; Retry PR keeps
+  that commit unchanged and does not recommit.
+- Closed, ready, wrong-head and wrong-base PRs are refused before a new save;
+  the same states returned by the PR listing leave the save pending without
+  adopting the PR. Branch collision is refused before any write.
+- Served recovery: after a lost commit, the rendered page exposes Retry PR
+  (Reconcile hidden) and the retry endpoint returns saved without changing the
+  source head. After a lost branch creation, save/reconcile return 409
+  `{"uncertain": true}` and a reload refuses the existing branch; the open-tab
+  JavaScript reveal path was not executed, so native recovery is not claimed.
+- Mutation: disabling the pending-action guard in
+  `src/helheim/workspaces.py` produced 4 failed / 1 passed / 16 deselected. The
+  file was restored to SHA-256
+  `1999510DD3E2C109C3D0E6FE8196FC01155558EEDE258C9754A53D30F71CEAD9`,
+  `git diff` was empty and all 21 passed again.
+- Evidence root:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-qa-git-cce8da54b8c9`
+  (`git-targeted.xml`, `helheim-full.xml`, `helheim-full-console.xml`,
+  `subprocess-evidence.json`, `mutation-red.xml`, `mutation-green.xml`,
+  `node-tests.txt`, `summary.json`).
+- Boundary incident and limits: an early shim-feasibility probe accidentally
+  resolved the system `gh` because a `.cmd` shim is not found by CreateProcess,
+  and made one read-only GET to `api.github.com` (404) with the existing login.
+  No write, token extraction or repository mutation occurred; the final fixture's
+  PATH-only owned shim is asserted by every test. Real disposable GitHub writes,
+  native-browser recovery, native clicks and real remote response captures were
+  not run.
+
+**Run**: 2026-11-19 · software-architect · memory-page boundary pair (test-only QA)
+**Automated**: New Helheim pair 20 passed under both `python -m pytest` and the project's `pytest` console script; full non-integration suite 179 passed (one live-server test deselected); Ruff and the 42-case Node suite clean. Product source is unchanged.
+**Manual**: M08's transport-level corruption subset is now proven, but the row stays unchecked because native/browser error presentation and a real account-selection change did not run.
+**Sign-off**: NOT SIGNED OFF.
+
+### Memory-page transport boundary (M08 subset)
+
+- Boundary: Helheim `MemoryEditor` → actual streamable HTTP/MCP over literal
+  `127.0.0.1` → owned `qa/fixtures/paged_remote.py` peer. The peer serves only the
+  captured synthetic two-page record in `qa/seeds/paged-read.json`; no mock or
+  in-process call replaces the transport.
+- Positive: the two pages reconstructed the exact 101-character original in
+  source order; display-page concatenation deliberately differs. Body SHA-256 was
+  `dd875932a52eeaa68bf3b81fb37d56d28adc2194e1a4160e88407f52c7840658`, and every
+  page carried the same context, metadata, length and hash.
+- Negative: 13 single-request cases (revision, metadata, tenant, wrong UUID,
+  missing context, missing provenance, bad hash, per-page hash, bad length, gap,
+  overlap, repeated cursor, 503 transport interruption) and four pause/resume
+  cases (revision, metadata, tenant, body) failed closed before a writable editor
+  existed. Every case reported `writes: 0`, left no session and made no
+  `edit`/`edit_metadata` call.
+- Recovery: after a failed revision load, a fresh open obtained the exact body and
+  one new baseline rather than joining old and new pages.
+- Draft-fixture defect found and fixed: `pause-body` changed only the revision, so
+  it duplicated `pause-revision`. It now changes same-length page bytes, and the
+  body-hash guard catches it (`complete body hash did not match`).
+- Mutation: disabling the cross-page context/metadata guard in
+  `src/helheim/memory_editor.py` failed 8 of 16 selected paged cases. The file was
+  restored to SHA-256 `532CBD6B3B7FF4ECD7DDF593F02C0CA91B599C109775FFA85538F8D683C8ABBE`,
+  `git diff` was empty, and all 20 passed again.
+- Evidence root:
+  `C:/Users/alvia/AppData/Local/Temp/opencode/helheim-qa-paged-f3ff8c7721b0`
+  (`transport-evidence.json`, `mutation-red.xml`, `mutation-green.xml`,
+  `helheim-full.xml`, `node-tests.txt`, `summary.json`). Teardown: peer exit 0,
+  owned root absent, port refused connections.
+- Fidelity limit: the seed's rung-1 provenance is its recorded 2026-11-19
+  capture; this run proved the peer serves those page objects unchanged and
+  reconstructs their declared body, not a fresh upstream Munnin capture.
+- Remaining for M08: native/browser error presentation and a real
+  account-selection change (this run used a fixture-mutated tenant). M13 Git
+  write-outcome loss and partial-PR recovery still have no boundary fixture.
+  M04, M05 and M15 were not exercised by this pair.
+
+**Run**: 2026-11-19 · software-architect · Close response boundary investigation
+**Automated**: Prior 10/10 groups retained; no product code changed in this investigation.
+**Manual**: No additional broad row marked complete.
+**Sign-off**: NOT SIGNED OFF.
+
+Added only passive outer ASGI send/receive observation to a byte-preserved copy
+of the owned fixture. No body/cookie values were logged and no response changed.
+Single-pointer Close, double-pointer Close and repeated native Enter each made
+one application request and emitted a complete HTTP 200 plus 15 response bytes
+and end-of-body, with no application exception. Single click and repeated Enter
+navigated to Memory. The browser tool's count:2 pointer case still reported an
+empty response after that application boundary. This narrows the failure but
+does not establish its downstream transport cause or justify changing the
+product's response protocol. Evidence: fixture `close-wire.jsonl`.
+
+Completing M08/M13 requires controlled corrupted-page/lost-write-response
+fixtures not available in the opted-in instrument. Helheim's formal bench gate
+is still not set up, and the approved plan explicitly deferred creating it.
+No new fixture/bench was silently built; changing that scope needs a decision.
 
 **Run**: 2026-11-18 · software-architect · Tactic C continuation — live GitHub, default expiry, security and API matrices
 **Automated**: 10/10 groups remain green; additional native-form repair suite 149 passed, one real-server integration test deselected.
