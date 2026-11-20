@@ -183,7 +183,7 @@ class ContentLoader:
     def _catalog(self) -> Catalog | None:
         if self._catalog_snapshot is not None:
             return self._catalog_snapshot
-        if not (self._root / "procedures/assemblies").exists():
+        if not self.available():
             return None
         return Catalog(FileSource(self._root))
 

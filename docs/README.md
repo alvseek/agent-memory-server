@@ -311,19 +311,20 @@ migration_history (version PK, name, checksum, applied_at)              — whic
 
 ### Served content
 
-Awakening, wrap-up and their selected update dependencies use ordered assemblies
-and canonical section files in `control-files`. The independently installable
-`procedure-composer` package selects shared/backend prose in execution order and
-returns stable section identities and source provenance. Munnin installs that
-package from its pinned submodule and calls the same implementation as the framework
-compiler. A malformed converted source fails rather than falling back to a pointer.
-External dependency declarations expose legacy consumers without converting their
-complete flows; templates and scripts remain separately addressed resources.
+Awakening, wrap-up and their selected update dependencies use complete single-file
+Markdown documents in `control-files`, with named backend regions referenced at the
+step that uses them. The independently installable `procedure-composer` package expands
+components and the selected backend's regions in execution order and returns ordered
+provenance spans plus full-document hashes. Munnin installs that package from its
+checked-out submodule and calls the same implementation as the framework compiler. A
+malformed converted source fails rather than falling back to a pointer. External
+dependency declarations expose legacy consumers without converting their complete flows;
+templates and scripts remain separately addressed resources.
 
 Unconverted procedures keep component inlining and the `## Storage Mechanics` seam.
 The bridge imports the framework's existing adapters and injects their source
-provider; neither adapter derives a parent checkout. Migrated backend sections are
-data includes of canonical mechanics, not authored duplicates. The served set remains
+provider; neither adapter derives a parent checkout. Named backend regions are expanded
+for legacy consumers, never delivered as directive lines. The served set remains
 the framework's unified command catalog minus the three memory-sync commands.
 Bodies are read live; a menu/registration pass uses one explicit metadata snapshot,
 not a timed cache or a full source-tree reload for every field.

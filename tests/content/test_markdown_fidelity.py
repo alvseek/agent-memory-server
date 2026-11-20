@@ -13,6 +13,7 @@ text); behavioral preservation via mechanic-token presence is the property that 
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -132,12 +133,17 @@ def test_harness_detects_a_dropped_mechanic() -> None:
     name = "update-episodic"
     case = CASES[name]
     source = FileSource(CF)
-    data = {path: source.read(path) for directory in
-            ("procedures/assemblies", "procedures/sections") for path in source.paths(directory)}
+    data = {path: source.read(path) for path in source.paths("procedures")}
     # Mutate only the backend's actual authored mechanics, not a parallel fake seam.
-    for path in data:
-        if path.startswith("procedures/sections/markdown/update-episodic."):
-            data[path] = b""
+    path = "procedures/memory/storage-backends/markdown.md"
+    text = data[path].decode("utf-8")
+    text = re.sub(
+        r'(@start region id="update-episodic\.[^"]+"[^\n]*\n).*?(@end region\n)',
+        r"\1\2",
+        text,
+        flags=re.S,
+    )
+    data[path] = text.encode("utf-8")
     broken = Catalog(MemorySource(data)).compose(name, "markdown").text
     missing = [t for t in case["tokens"] if t not in broken]
     assert missing, "regression check failed: empty backend should drop mechanics"

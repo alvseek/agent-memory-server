@@ -424,8 +424,7 @@ def test_converted_served_text_is_exactly_the_canonical_composition(loader):
 
 def test_menu_uses_one_metadata_snapshot_instead_of_one_tree_read_per_field(monkeypatch, loader):
     source = FileSource(CF)
-    paths = {p for folder in ("procedures/assemblies", "procedures/sections")
-             for p in source.paths(folder)}
+    paths = set(source.paths("procedures"))
     read = Path.read_bytes
     observed = []
 
@@ -437,18 +436,19 @@ def test_menu_uses_one_metadata_snapshot_instead_of_one_tree_read_per_field(monk
     monkeypatch.setattr(Path, "read_bytes", counted)
     rows = _procedure_rows(loader)
     assert rows
-    # One catalog read in command discovery, one in the metadata snapshot, not
-    # three independent full reads for every procedure in the menu.
-    assert len(observed) == 2 * len(paths)
+    # One catalog snapshot, reused for every procedure's title, description and
+    # argument, instead of one full tree read per field.
+    assert len(observed) == len(paths)
 
 
 def test_converted_calls_cannot_silently_point_at_unserved_procedures(tmp_path):
     root = tmp_path / "source"
     _install_framework_modules(root)
-    _write(root / "procedures/assemblies/sample.toml",
-           'format_version=1\nid="sample"\ntitle="Sample"\ndescription="Call a dependency."\n'
-           'calls=["missing-command"]\n[[sections]]\nid="sample.body"\n'
-           'source="procedures/sections/body.md"\n')
-    _write(root / "procedures/sections/body.md", "Do it.\n")
+    _write(
+        root / "procedures/sample.md",
+        "+++\nformat_version = 2\nid = \"sample\"\nkind = \"procedure\"\n"
+        "title = \"Sample\"\ndescription = \"Call a dependency.\"\n"
+        "calls = [\"missing-command\"]\n+++\nDo it.\n",
+    )
     with pytest.raises(ValueError, match="missing served dependencies"):
         ContentLoader(root).get_prompt("sample")

@@ -10,7 +10,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
-    "procedure-composer",
+    "procedure-composer==0.2.0",
     "fastapi>=0.141.1",
     "fastmcp>=3.4.6",
     "psycopg[binary,pool]>=3.3.6",
