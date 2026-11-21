@@ -48,6 +48,8 @@ class MemoryRepository(Protocol):
         old_string: str,
         new_string: str,
         replace_all: bool = False,
+        *,
+        expected_revision: str | None = None,
     ) -> SharedRecord:
         """Targeted string replace inside a record's ``full_content`` (server-side
         read-replace-write). Per-word/line granularity - token-identical to the Edit tool.
@@ -87,6 +89,7 @@ class MemoryRepository(Protocol):
         project: str | None = None,
         content_summary: str | None = None,
         clearing: Sequence[str] = (),
+        expected_revision: str | None = None,
     ) -> SharedRecord:
         """Change a record's metadata, without touching its ``full_content``.
 

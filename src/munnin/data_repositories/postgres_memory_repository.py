@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 import psycopg
 from psycopg.rows import dict_row
 
+from munnin.data_entities.edit_context import check_revision
 from munnin.data_entities.memory_record import (
     SHARED_RECORD_TYPES,
     Agent,
@@ -239,10 +240,13 @@ class PostgresMemoryRepository:
         old_string: str,
         new_string: str,
         replace_all: bool = False,
+        *,
+        expected_revision: str | None = None,
     ) -> SharedRecord:
         return self._rewrite(
             uuid,
             lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid),
+            expected_revision=expected_revision,
         )
 
     def append(self, uuid: str, text: str) -> SharedRecord:
@@ -270,6 +274,8 @@ class PostgresMemoryRepository:
         self,
         uuid: str,
         transform: Callable[[str], str],
+        *,
+        expected_revision: str | None = None,
     ) -> SharedRecord:
         with self._conn() as conn, conn.cursor() as cur:
             target = self._locate(cur, uuid)
@@ -277,10 +283,15 @@ class PostgresMemoryRepository:
                 raise LookupError(f"record not found: {uuid}")
             table, uuid = target
             cur.execute(
-                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=%s AND user_id=%s",
+                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=%s AND user_id=%s "
+                "AND deleted_date IS NULL FOR UPDATE",
                 (uuid, self._user_id),
             )
-            new_content = transform(cur.fetchone()["full_content"] or "")
+            row = cur.fetchone()
+            if row is None:
+                raise LookupError(f"record not found: {uuid}")
+            check_revision(_row_from(table, row), expected_revision)
+            new_content = transform(row["full_content"] or "")
             columns = ["full_content=%s", "modified_date=%s"]
             params: list[object] = [new_content, _now()]
             params.extend([uuid, self._user_id])
@@ -304,6 +315,7 @@ class PostgresMemoryRepository:
         project: str | None = None,
         content_summary: str | None = None,
         clearing: Sequence[str] = (),
+        expected_revision: str | None = None,
     ) -> SharedRecord:
         """Write metadata columns without reading or rewriting the body: one UPDATE of
         the named columns plus ``modified_date``, on whichever table holds the uuid.
@@ -325,6 +337,15 @@ class PostgresMemoryRepository:
             if target is None:
                 raise LookupError(f"record not found: {uuid}")
             table, uuid = target
+            cur.execute(
+                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=%s AND user_id=%s "
+                "AND deleted_date IS NULL FOR UPDATE",
+                (uuid, self._user_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise LookupError(f"record not found: {uuid}")
+            check_revision(_row_from(table, row), expected_revision)
             assignments.append("modified_date=%s")
             params.append(_now())
             params.extend([uuid, self._user_id])

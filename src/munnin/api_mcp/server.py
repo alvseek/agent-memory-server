@@ -34,6 +34,7 @@ from munnin.business_services.service_factory import ServiceFactory
 from munnin.business_services.sharing_service import SharingError, SharingService
 from munnin.business_services.tenant_resolver import TenantResolver
 from munnin.content.loader import ContentLoader
+from munnin.data_entities.edit_context import EditConflict
 
 #: What a client is told at ``initialize``. claude.ai and Claude Code inject it into the
 #: system prompt, so it is re-sent on every call of every session — which is why it is
@@ -105,6 +106,16 @@ NewString = Annotated[
 ReplaceAll = Annotated[
     bool, Field(description="False requires a unique match; true replaces every exact occurrence.")
 ]
+ExpectedRevision = Annotated[
+    str | None,
+    Field(description="Opaque revision from get(include_edit_context=true). Supply together "
+          "with expected_tenant; stale saves are refused without changes."),
+]
+ExpectedTenant = Annotated[
+    str | None,
+    Field(description="Acting tenant from the same edit_context, a precondition not a selector. "
+          "Supply together with expected_revision."),
+]
 
 
 def _procedure_rows(content: ContentLoader | None) -> list[dict[str, str]]:
@@ -112,6 +123,7 @@ def _procedure_rows(content: ContentLoader | None) -> list[dict[str, str]]:
     ``list_procedures`` both show, empty when no framework content is available."""
     if content is None or not content.available():
         return []
+    content = content.metadata_snapshot()
     return [
         {
             "name": name,
@@ -240,6 +252,11 @@ def build_mcp(
                 "Omit or pass null to read up to the configured body-size ceiling."
             ),
         ] = None,
+        include_edit_context: Annotated[
+            bool,
+            Field(description="True adds full UUID, acting tenant and opaque full-row revision "
+                  "for conflict-safe editing. Compare every page's context before enabling Save."),
+        ] = False,
     ) -> dict[str, Any] | None:
         """Load one record by full ID or unique UUID prefix (at least 6 hex characters).
         Case and hyphens are ignored for UUID matching. Ambiguity errors list full IDs
@@ -254,10 +271,16 @@ def build_mcp(
         remains, so a final page may return fewer than ``blocks_total``. An unknown cursor or a
         nonpositive limit is an error, never a quiet fall back to the first page.
         Returns metadata, content, blocks_returned, blocks_total and next_cursor.
+        Opt in to include_edit_context for the resolved UUID, acting tenant and full-row
+        revision. A multi-page editor must require identical contexts on every page.
+        edit_body supplies original source positions, character length and SHA-256 so
+        non-adjacent equal timestamp groups can be reconstructed and verified exactly.
         Archived records remain readable by ID. Read-only; non-episode bodies are atomic.
         """
         try:
-            return _svc().get(uuid, cursor=cursor, limit=limit)
+            return _svc().get(
+                uuid, cursor=cursor, limit=limit, include_edit_context=include_edit_context
+            )
         except ValueError as exc:
             raise ToolError(str(exc)) from exc
 
@@ -616,14 +639,26 @@ def build_mcp(
         old_string: OldString,
         new_string: NewString,
         replace_all: ReplaceAll = False,
+        expected_revision: ExpectedRevision = None,
+        expected_tenant: ExpectedTenant = None,
     ) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity). The body
         only: metadata, `content_summary` included, is `edit_metadata`'s business, so a
         body edit and the summary describing it are two calls on two named tools.
-        Returns the updated record. Missing/deleted targets or absent/ambiguous matches fail
+        Without preconditions returns the updated record. Supplying both expected_revision
+        and expected_tenant enables a transactional guarded save and returns metadata plus
+        fresh edit_context, without a body. A missing guard partner or a stale context is
+        refused; expected_tenant never selects an account.
+        Missing/deleted targets or absent/ambiguous matches fail
         without an edit; use get to obtain the exact text before replacing it.
         """
-        return _svc().edit(uuid, old_string, new_string, replace_all)
+        try:
+            return _svc().edit(
+                uuid, old_string, new_string, replace_all,
+                expected_revision=expected_revision, expected_tenant=expected_tenant,
+            )
+        except EditConflict as exc:
+            raise ToolError(f"edit conflict: {exc}") from exc
 
     @mcp.tool(title="Append to a record", annotations=_ADDITIVE)
     def append(
@@ -716,6 +751,8 @@ def build_mcp(
                 "Omit/null to clear nothing; do not also supply a replacement for a cleared field."
             ),
         ] = None,
+        expected_revision: ExpectedRevision = None,
+        expected_tenant: ExpectedTenant = None,
     ) -> dict[str, Any]:
         """Change a record's metadata, leaving its body alone.
 
@@ -728,17 +765,24 @@ def build_mcp(
         `tags=[]` is a real value and empties the list. Refuses a call that would change
         nothing.
         Returns updated metadata only, without content; use get to retrieve the body.
+        Supply expected_revision and expected_tenant together for conflict-safe editing;
+        guarded success also returns a fresh edit_context. Neither changes the selected tenant.
         Missing/deleted targets, unsupported clearing fields and
         calls with no effective change are refused.
         """
-        return _svc().edit_metadata(
-            uuid,
-            title=title,
-            tags=tags,
-            project=project,
-            content_summary=content_summary,
-            clearing=clearing,
-        )
+        try:
+            return _svc().edit_metadata(
+                uuid,
+                title=title,
+                tags=tags,
+                project=project,
+                content_summary=content_summary,
+                clearing=clearing,
+                expected_revision=expected_revision,
+                expected_tenant=expected_tenant,
+            )
+        except EditConflict as exc:
+            raise ToolError(f"edit conflict: {exc}") from exc
 
     @mcp.tool(title="Archive a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
     def archive(uuid: RecordRef) -> dict[str, str]:
@@ -854,12 +898,13 @@ def _register_content(
         )
         return fn
 
-    for name in content.list_prompts():
+    metadata = content.metadata_snapshot()
+    for name in metadata.list_prompts():
         mcp.prompt(
             name=name,
-            title=content.title_prompt(name),
-            description=content.describe_prompt(name),
-        )(_make_prompt(name, content.argument_prompt(name)))
+            title=metadata.title_prompt(name),
+            description=metadata.describe_prompt(name),
+        )(_make_prompt(name, metadata.argument_prompt(name)))
 
     def _make_resource(resource: str):
         # Zero-arg so FastMCP registers a static resource, not a URI template.

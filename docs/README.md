@@ -191,7 +191,7 @@ At `initialize` the server returns four sentences of **instructions** — what M
 **31 tools**, in five groups:
 
 - *Orientation* — `help`: the same instructions text plus the served procedure list, for clients that never show instructions. Always present, even with no served content.
-- *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `edit_metadata`, `append`, `prepend`, `multi_edit`, `archive`, `archive_memories`, `unarchive`, `soft_delete`, `coding_reasoning`, `permanent_layer`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically. `edit_metadata` is the one writer of a record's fields — `title`, `tags`, `project`, `content_summary` — which is why `content_summary` no longer rides on a body edit: a field with one owner cannot be updated two ways. It returns updated metadata only, without `content`; use `get` to retrieve the unchanged body. A field left out keeps its stored value, and `clearing` names the ones to remove, because a blank string still reads as a project value. `archive_memories(agent_id, days=30, apply=False)` scans an agent's episodes and returns `auto` (tagged `finished`, unprotected), `ask` (untagged, unmodified within `days`) and `protected` (with the reason); only `apply=True` writes, and only the `auto` set. `unarchive(uuid)` clears an archive so a mistaken retirement, or a reopened theme, returns to the hot index. **Reads are three shapes, not one:** `query` answers *which records match* (metadata plus `blocks_total`, no body), `search` answers *what matched* (metadata plus a plain-text `snippet`, no body), and `get` answers *what the record says* — the whole body by default, or one **page** of timestamp groups when given `cursor`/`limit`, always reported by `blocks_returned` / `blocks_total` / `next_cursor`. Body writes still return the record itself; only reads are paged.
+- *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `edit_metadata`, `append`, `prepend`, `multi_edit`, `archive`, `archive_memories`, `unarchive`, `soft_delete`, `coding_reasoning`, `permanent_layer`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically. `edit_metadata` is the one writer of `title`, `tags`, `project` and `content_summary`, and returns metadata without a body. Omitted fields keep their value; `clearing` names fields to remove. Unguarded body writes retain their body-bearing response; guarded editor saves return metadata and fresh edit context instead. `archive_memories(agent_id, days=30, apply=False)` separates tagged, aging and protected episodes; only `apply=True` writes, and only the tagged unprotected set. `unarchive(uuid)` returns an archived record to the hot index. Reads have distinct shapes: `query` returns metadata and `blocks_total`, `search` returns metadata and a plain-text snippet, and `get` returns body pages with `blocks_returned`, `blocks_total` and `next_cursor`. The opt-in conflict-safe editing and exact-body reconstruction contracts are described with the HTTP twins below.
 - *Agent lifecycle* — `create_agent`, `list_agents`. An agent exists when it has a row; every memory record names one under a foreign key, so `create_agent` is the strict twin of the first write.
 - *Tenancy* — `list_tenants`, `use_tenant`, `list_members`, `create_invite`, `redeem_invite`, `revoke_invite`, `revoke_member`. Working inside an account somebody else owns, or letting somebody work inside yours.
 - *Served content* — `list_procedures`, `read_procedure(name, argument?)`, `list_resources`, `read_resource(name)`. The same procedures, templates and scripts are also served as MCP **prompts** and **resources**, but a prompt is user-invoked and a resource client-attached; a tool is the one primitive the agent may call itself, which is what lets a served procedure that says *execute `/wrap-up`* resolve to `read_procedure("wrap-up")`.
@@ -213,11 +213,32 @@ Every endpoint is a REST twin of an MCP primitive over the same core; only the n
 
 An exact stored ID takes precedence, including legacy identifiers shorter than six characters. Otherwise, a UUID prefix is resolved across agent-owned and shared records in the **selected tenant only**, preserving each operation's archive/deletion visibility. No matches retain the existing not-found response; malformed or too-short abbreviations return HTTP `400` or an MCP tool error. Multiple matches return HTTP `409` (`detail.error = "ambiguous_uuid"`, plus `candidates` containing full `uuid` and `title`) or an MCP tool error listing those choices; no write is performed. Supply more characters or an exact full ID. UUIDs passed to `insert` or `create_agent` are literal creation identifiers, never prefixes.
 
+For an editor, request `get(uuid, include_edit_context=True)` or the same HTTP query
+flag. The default response is unchanged. The opt-in response adds `edit_context`
+with the resolved full `uuid`, acting `tenant` and opaque whole-row `revision`, plus
+`edit_body` reconstruction data described below. Load every body page and require
+the same context on all of them before enabling Save.
+
+Pass both `expected_revision` and `expected_tenant` to `edit` or `edit_metadata`.
+One without the other is invalid. The tenant is a precondition against the
+authenticated current account, never an account selector. Current invitation access
+is resolved on each request, so a revoked guest cannot save through an old editor.
+Revision comparison and the write share one transaction: SQLite reserves its write
+transaction before reading; PostgreSQL locks the current row before comparing or
+transforming it. The revision covers body, metadata, ownership and lifecycle rather
+than relying on second-resolution timestamps. No revision column or backfill is
+needed. Conflict writes nothing: HTTP returns `409`, and MCP returns a bounded
+actionable tool error without another record's body.
+
+Guarded success returns updated metadata and fresh `edit_context`, without `content`
+or `full_content`. Save body and Save metadata remain separate operations; a body
+save never updates its summary. Existing unguarded callers retain their defaults.
+
 | Method | Endpoint | MCP twin | Description |
 |---|---|---|---|
 | GET | `/health` | `ping` | Liveness — open in both modes (`{"status":"ok",…}`; the tool answers `"pong"`) |
 | GET | `/api/awaken?agent_id=` | `awaken` | The agent's 4-layer memory payload; `latest_episode` is a page of up to 3 timestamp groups with `blocks_returned`/`blocks_total`/`next_cursor` |
-| GET | `/api/record/{uuid}?cursor=&limit=` | `get` | Whole body by default, or one page of timestamp groups (`400` on a bad cursor/limit; `404` ↔ MCP `null`) |
+| GET | `/api/record/{uuid}?cursor=&limit=&include_edit_context=` | `get` | Body page; optional guarded editor context/reconstruction data (`400` on a bad cursor/limit; `404` ↔ MCP `null`) |
 | GET | `/api/query` | `query` | Browse the index — metadata plus `blocks_total`, **no body**; `agent_id`, `record_type`, `project`, `include_archived` |
 | GET | `/api/search?text=` | `search` | Full-text search over body + title + tags — metadata plus a plain-text `snippet`, **no body** |
 | GET · POST | `/api/agents` | `list_agents` · `create_agent` | The tenant's agents / create one |
@@ -231,9 +252,18 @@ An exact stored ID takes precedence, including legacy identifiers shorter than s
 | GET | `/api/prompts` · `/api/prompts/{name}` | `list_procedures` · `read_procedure` | Names as JSON · one procedure as raw `text/markdown` |
 | GET | `/api/resources` · `/api/resources/{name}` | `list_resources` · `read_resource` | Names as JSON · one resource as raw text |
 
-A *list* is data and arrives as JSON; a *single* procedure or template is a document and arrives as raw markdown with no enclosing object, so `curl -o wrap-up.md` writes exactly the bytes an installed slash command carries. Errors stay JSON: validation errors → `400`, a missing record → `404`, an ambiguous UUID reference → `409`, and in token mode a missing or invalid token → `401` with a `WWW-Authenticate` challenge.
+A *list* is data and arrives as JSON; a *single* procedure or template is a document and arrives as raw markdown with no enclosing object, so `curl -o wrap-up.md` writes exactly the bytes an installed slash command carries. Errors stay JSON: validation errors → `400`, a missing record → `404`, an ambiguous UUID or stale edit context → `409`, and in token mode a missing or invalid token → `401` with a `WWW-Authenticate` challenge. Revoked tenant access retains `403`.
 
 **Paging a record body.** An episode is a rolling document — every append prepends a sub-episode — so a body read is a page of **timestamp groups**. A group is every sub-episode block sharing one `###` H3 timestamp; it is indivisible and counts once, so `blocks_total: 5` means five distinct moments and no block is ever split. `next_cursor` names the first group **not** returned, verbatim, and passing it back (`GET /api/record/{uuid}?cursor=…`, `get(uuid, cursor=…)`) resumes exactly there — an unrelated block prepended in between moves nothing, and grouping may reorder non-adjacent equal timestamps on a partial page while a complete read returns the stored body byte for byte. `MUNNIN_MAX_BODY_BYTES` (default **32 000**) caps the UTF-8 content of one page: the first selected group is always emitted whole, then groups are added only while they fit. The ceiling bounds one record's content, not the whole response — the fixed layers, the indexes and the JSON envelope sit outside it. An unknown or malformed cursor, or a non-positive `limit`, is an error rather than a quiet fall back to page one, and an absent record is still `404`/`null`.
+
+Consequently, an editor must not reconstruct a baseline by blindly concatenating
+partial pages. Opt-in `edit_body` carries the complete body's SHA-256 and character
+length, and a page's ordered `segments`: each has `source_start` and `characters`,
+measured in **Unicode code points**, not bytes or UTF-16 units. Consume each segment's
+characters from the page text in order, place them at their original source offsets,
+then require gap-free, non-overlapping coverage and a matching full-body hash. The
+same tenant/revision/hash/length must hold across pages. This preserves non-adjacent
+equal timestamps and exact newlines without repeating the body in a second field.
 
 Beside the API, three anonymous HTML pages answer in both modes: `GET /` (a landing page — what this instance is and how to connect), `GET /privacy` and `GET /terms`. They are open by design: a stranger reads them to decide whether to sign in, and a Google consent screen published to production must link a homepage, privacy policy and terms hosted on the app's own domain.
 
@@ -281,7 +311,23 @@ migration_history (version PK, name, checksum, applied_at)              — whic
 
 ### Served content
 
-The procedures are storage-agnostic: a semantic core plus a `## Storage Mechanics` seam. `content/loader.py` composes them live from the submodule in the framework's two stages — shared **components** inlined at their reference point, then the core and the `db` backend substituted in — through `content/seam_bridge.py`, which imports `components/inline.py` and `storage-backends/seam.py` from their single homes in `control-files`. Munnin keeps no copy of either, which is what makes a served procedure byte-identical to the slash command the framework installs. The served *set* is the framework's own `command_set` minus the three memory-sync commands; add a procedure to `control-files` and it is served on the next request. The `db` backend also opens every composed procedure with its `## all-procedures` section — one sentence saying what `<domain>` in the ops means (the agent you awakened as, or the one `create-agent` made; `list_agents()` when there was no awakening) — so no served procedure leaves that placeholder to be guessed, and the markdown commands, whose backend defines no such section, are untouched.
+Awakening, wrap-up and their selected update dependencies use complete single-file
+Markdown documents in `control-files`, with named backend regions referenced at the
+step that uses them. The independently installable `procedure-composer` package expands
+components and the selected backend's regions in execution order and returns ordered
+provenance spans plus full-document hashes. Munnin installs that package from its
+checked-out submodule and calls the same implementation as the framework compiler. A
+malformed converted source fails rather than falling back to a pointer. External
+dependency declarations expose legacy consumers without converting their complete flows;
+templates and scripts remain separately addressed resources.
+
+Unconverted procedures keep component inlining and the `## Storage Mechanics` seam.
+The bridge imports the framework's existing adapters and injects their source
+provider; neither adapter derives a parent checkout. Named backend regions are expanded
+for legacy consumers, never delivered as directive lines. The served set remains
+the framework's unified command catalog minus the three memory-sync commands.
+Bodies are read live; a menu/registration pass uses one explicit metadata snapshot,
+not a timed cache or a full source-tree reload for every field.
 
 ### Importer
 
