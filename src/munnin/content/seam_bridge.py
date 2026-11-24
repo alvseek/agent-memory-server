@@ -23,6 +23,8 @@ from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
 
+from procedure_composer import FileSource
+
 _SEAM_REL = "procedures/memory/storage-backends/seam.py"
 _INLINE_REL = "procedures/components/inline.py"
 _COMMAND_SET_REL = "procedures/command_set.py"
@@ -42,6 +44,9 @@ def _load(module_name: str, rel: str, content_root: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(module_name, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    configure = getattr(module, "configure_source_provider", None)
+    if configure is not None:
+        configure(lambda: FileSource(Path(content_root)))
     return module
 
 

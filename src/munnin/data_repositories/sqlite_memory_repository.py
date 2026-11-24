@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from munnin.data_entities.edit_context import check_revision
 from munnin.data_entities.memory_record import (
     SHARED_RECORD_TYPES,
     Agent,
@@ -308,6 +309,8 @@ class SqliteMemoryRepository:
         old_string: str,
         new_string: str,
         replace_all: bool = False,
+        *,
+        expected_revision: str | None = None,
     ) -> SharedRecord:
         """Edit-tool-parity content edit. Unique-replace by default (raises if the
         substring is absent or ambiguous); ``replace_all=True`` replaces every
@@ -321,6 +324,7 @@ class SqliteMemoryRepository:
         return self._rewrite(
             uuid,
             lambda c: _apply_edit(c, old_string, new_string, replace_all, uuid),
+            expected_revision=expected_revision,
         )
 
     def append(self, uuid: str, text: str) -> SharedRecord:
@@ -358,6 +362,8 @@ class SqliteMemoryRepository:
         self,
         uuid: str,
         transform: Callable[[str], str],
+        *,
+        expected_revision: str | None = None,
     ) -> SharedRecord:
         """Read-modify-write one record's ``full_content`` under a single connection.
         ``transform`` maps the current body to the new body and may raise ``ValueError``
@@ -365,6 +371,9 @@ class SqliteMemoryRepository:
         ``modified_date``; FTS re-syncs via the AFTER UPDATE trigger. Raises
         ``LookupError`` if the record is missing/deleted."""
         with self._conn() as conn:
+            # Reserve the write transaction before resolution or any body read.
+            # A deferred snapshot cannot be safely upgraded after another writer.
+            conn.execute("BEGIN IMMEDIATE")
             target = self._locate(conn, uuid)
             if target is None:
                 raise LookupError(f"record not found: {uuid}")
@@ -373,6 +382,7 @@ class SqliteMemoryRepository:
                 f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
             ).fetchone()
+            check_revision(_row_from(table, row), expected_revision)
             new_content = transform(row["full_content"] or "")
             columns = ["full_content=?", "modified_date=?"]
             params: list[object] = [new_content, _now()]
@@ -396,6 +406,7 @@ class SqliteMemoryRepository:
         project: str | None = None,
         content_summary: str | None = None,
         clearing: Sequence[str] = (),
+        expected_revision: str | None = None,
     ) -> SharedRecord:
         """Write metadata columns without reading or rewriting the body: one UPDATE of
         the named columns plus ``modified_date``, on whichever table holds the uuid.
@@ -412,10 +423,16 @@ class SqliteMemoryRepository:
             clearing=clearing,
         )
         with self._conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             target = self._locate(conn, uuid)
             if target is None:
                 raise LookupError(f"record not found: {uuid}")
             table, uuid = target
+            row = conn.execute(
+                f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
+                (uuid, self._user_id),
+            ).fetchone()
+            check_revision(_row_from(table, row), expected_revision)
             assignments.append("modified_date=?")
             params.append(_now())
             params.extend([uuid, self._user_id])

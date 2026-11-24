@@ -103,6 +103,7 @@ class PageBody:
     blocks_returned: int
     blocks_total: int
     next_cursor: str | None
+    source_segments: tuple[tuple[int, int], ...] = ()
 
     def fields(self) -> dict[str, object]:
         """The page fields as they appear beside ``content`` in a public response."""
@@ -126,6 +127,7 @@ class _Group:
     cursor: str | None
     key: _Key | None
     text: str
+    source_segments: tuple[tuple[int, int], ...]
 
 
 def _stamp_key(match: re.Match[str]) -> tuple[int, int, int, int, int] | None:
@@ -185,9 +187,13 @@ def _groups(content: str, *, splittable: bool) -> list[_Group]:
     nowhere else to go.
     """
     if not splittable:
-        return [_Group(cursor=None, key=None, text=content)]
+        return [_Group(cursor=None, key=None, text=content,
+                       source_segments=((0, len(content)),))]
 
     lines = content.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
     # (line index, key, verbatim stamp) for every boundary outside a fence.
     boundaries: list[tuple[int, _Key, str]] = []
     fence: str | None = None
@@ -212,7 +218,8 @@ def _groups(content: str, *, splittable: bool) -> list[_Group]:
                 fence = None
 
     if not boundaries:
-        return [_Group(cursor=None, key=None, text=content)]
+        return [_Group(cursor=None, key=None, text=content,
+                       source_segments=((0, len(content)),))]
 
     # Block slices: each boundary owns its lines up to the next boundary. The first boundary
     # also carries the preamble, which is why the slice starts at 0 rather than at its line.
@@ -226,14 +233,18 @@ def _groups(content: str, *, splittable: bool) -> list[_Group]:
     order: list[_Key] = []
     parts: dict[_Key, list[str]] = {}
     stamps: dict[_Key, str] = {}
+    segments: dict[_Key, list[tuple[int, int]]] = {}
     for key, stamp, start, end in slices:
         if key not in parts:
             order.append(key)
             parts[key] = []
             stamps[key] = stamp
+            segments[key] = []
         parts[key].append("".join(lines[start:end]))
+        segments[key].append((offsets[start], offsets[end]))
     return [
-        _Group(cursor=stamps[key], key=key, text="".join(parts[key])) for key in order
+        _Group(cursor=stamps[key], key=key, text="".join(parts[key]),
+               source_segments=tuple(segments[key])) for key in order
     ]
 
 
@@ -317,4 +328,8 @@ def page_body(
         blocks_returned=len(emitted),
         blocks_total=len(groups),
         next_cursor=following.cursor if following is not None else None,
+        source_segments=(
+            ((0, len(content or "")),) if whole else
+            tuple(segment for group in emitted for segment in group.source_segments)
+        ),
     )

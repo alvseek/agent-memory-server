@@ -6,7 +6,9 @@ import shutil
 from pathlib import Path
 
 import pytest
+from procedure_composer import Catalog, FileSource
 
+from munnin.api_mcp.server import _procedure_rows
 from munnin.content.loader import ContentLoader
 
 REPO = Path(__file__).resolve().parents[2]
@@ -409,3 +411,44 @@ def test_unresolvable_component_leaves_its_reference_visible(tmp_path: Path) -> 
     assert "components/shared-fragment.md" in text
     assert "insert(" in text  # the procedure's own section still substitutes
     assert "query(" not in text  # the component contributed nothing
+
+
+def test_converted_served_text_is_exactly_the_canonical_composition(loader):
+    catalog = Catalog(FileSource(CF))
+    for name in catalog.procedures:
+        expected = catalog.compose(name, "db")
+        assert loader.get_prompt(name).encode("utf-8") == expected.text.encode("utf-8")
+        assert loader.title_prompt(name) == expected.title
+        assert loader.argument_prompt(name)[0] == expected.argument_name
+
+
+def test_menu_uses_one_metadata_snapshot_instead_of_one_tree_read_per_field(monkeypatch, loader):
+    source = FileSource(CF)
+    paths = set(source.paths("procedures"))
+    read = Path.read_bytes
+    observed = []
+
+    def counted(path):
+        if path.is_relative_to(CF) and path.relative_to(CF).as_posix() in paths:
+            observed.append(path)
+        return read(path)
+
+    monkeypatch.setattr(Path, "read_bytes", counted)
+    rows = _procedure_rows(loader)
+    assert rows
+    # One catalog snapshot, reused for every procedure's title, description and
+    # argument, instead of one full tree read per field.
+    assert len(observed) == len(paths)
+
+
+def test_converted_calls_cannot_silently_point_at_unserved_procedures(tmp_path):
+    root = tmp_path / "source"
+    _install_framework_modules(root)
+    _write(
+        root / "procedures/sample.md",
+        "+++\nformat_version = 2\nid = \"sample\"\nkind = \"procedure\"\n"
+        "title = \"Sample\"\ndescription = \"Call a dependency.\"\n"
+        "calls = [\"missing-command\"]\n+++\nDo it.\n",
+    )
+    with pytest.raises(ValueError, match="missing served dependencies"):
+        ContentLoader(root).get_prompt("sample")

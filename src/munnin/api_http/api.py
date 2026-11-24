@@ -54,6 +54,7 @@ from munnin.business_services.sharing_service import (
     SharingService,
 )
 from munnin.content.loader import ContentLoader
+from munnin.data_entities.edit_context import EditConflict
 from munnin.data_entities.record_reference import (
     AmbiguousRecordReference,
     InvalidRecordReference,
@@ -75,6 +76,8 @@ class _RecordReferenceRoute(APIRoute):
                 raise HTTPException(status_code=409, detail=exc.detail()) from exc
             except InvalidRecordReference as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except EditConflict as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
 
         return handle
 
@@ -132,6 +135,8 @@ class EditBody(_WriteBody):
     old_string: str
     new_string: str
     replace_all: bool = False
+    expected_revision: str | None = None
+    expected_tenant: str | None = None
 
 
 class EditMetadataBody(_WriteBody):
@@ -146,6 +151,8 @@ class EditMetadataBody(_WriteBody):
         "longer input is rejected, never truncated. Aim for 300-500 characters.",
     )
     clearing: list[str] | None = None
+    expected_revision: str | None = None
+    expected_tenant: str | None = None
 
 
 class AppendBody(_WriteBody):
@@ -317,6 +324,7 @@ def build_router(
         uuid: str,
         cursor: str | None = None,
         limit: int | None = None,
+        include_edit_context: bool = False,
         svc: MemoryService = Depends(_tenant_service),
     ) -> dict[str, Any]:
         """Load one record's body by id — whole by default, or one page of it.
@@ -324,9 +332,13 @@ def build_router(
         ``cursor`` is a ``next_cursor`` from a previous read and resumes *at* that timestamp
         group; ``limit`` counts timestamp groups. Every response carries
         ``blocks_returned`` / ``blocks_total`` / ``next_cursor``; a non-null cursor is the only
-        signal that more remains. An unknown cursor or a nonpositive limit is a 400."""
+        signal that more remains. An unknown cursor or a nonpositive limit is a 400.
+        include_edit_context adds the resolved UUID, acting tenant and opaque revision;
+        require the same context on every page before enabling an editor's Save."""
         try:
-            record = svc.get(uuid, cursor=cursor, limit=limit)
+            record = svc.get(
+                uuid, cursor=cursor, limit=limit, include_edit_context=include_edit_context
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if record is None:
@@ -410,13 +422,17 @@ def build_router(
     @api.post("/api/edit")
     def edit(body: EditBody, svc: MemoryService = Depends(_tenant_service)) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity). The body
-        only; a summary change goes to ``/api/edit-metadata``."""
+        only; a summary change goes to ``/api/edit-metadata``. Both expected_revision and
+        expected_tenant enable a transactional guarded save returning metadata/edit_context
+        without a body. Omit both for the existing response. Conflict is HTTP 409."""
         try:
             return svc.edit(
                 body.uuid,
                 body.old_string,
                 body.new_string,
                 body.replace_all,
+                expected_revision=body.expected_revision,
+                expected_tenant=body.expected_tenant,
             )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -438,6 +454,8 @@ def build_router(
                 project=body.project,
                 content_summary=body.content_summary,
                 clearing=body.clearing,
+                expected_revision=body.expected_revision,
+                expected_tenant=body.expected_tenant,
             )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -20,6 +20,7 @@ from munnin.business_services.episode_page import (
     count_groups,
     page_body,
 )
+from munnin.data_entities.edit_context import TenantConflict, record_revision
 from munnin.data_entities.memory_record import (
     Agent,
     EpisodeMetadata,
@@ -291,6 +292,28 @@ class MemoryService:
     def version(self) -> str:
         return __version__
 
+    def _edit_context(self, record: SharedRecord) -> dict[str, str]:
+        return {
+            "uuid": record.uuid,
+            "tenant": self._user_id,
+            "revision": record_revision(record),
+        }
+
+    def _check_edit_context(
+        self, expected_revision: str | None, expected_tenant: str | None
+    ) -> bool:
+        if expected_revision is None and expected_tenant is None:
+            return False
+        if not expected_revision or not expected_tenant:
+            raise ValueError("expected_revision and expected_tenant must be supplied together")
+        # This is a precondition against the authenticated tenant, never a selector.
+        if expected_tenant != self._user_id:
+            raise TenantConflict("acting account changed; reload before saving")
+        return True
+
+    def _guarded_result(self, record: SharedRecord) -> dict[str, Any]:
+        return {**_record_metadata(record), "edit_context": self._edit_context(record)}
+
     def _page_of(
         self,
         record: SharedRecord,
@@ -416,6 +439,7 @@ class MemoryService:
         *,
         cursor: str | None = None,
         limit: int | None = None,
+        include_edit_context: bool = False,
     ) -> dict[str, Any] | None:
         """Load one record by id — the whole body by default, or one page of it.
 
@@ -429,7 +453,20 @@ class MemoryService:
         r = self._repo.get(uuid)
         if r is None:
             return None
-        return _paged_record(r, self._page_of(r, cursor=cursor, limit=limit))
+        page = self._page_of(r, cursor=cursor, limit=limit)
+        result = _paged_record(r, page)
+        if include_edit_context:
+            result["edit_context"] = self._edit_context(r)
+            body = r.full_content or ""
+            result["edit_body"] = {
+                "sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+                "characters": len(body),
+                "segments": [
+                    {"source_start": start, "characters": end - start}
+                    for start, end in page.source_segments
+                ],
+            }
+        return result
 
     def coding_reasoning(self) -> list[dict[str, Any]]:
         """The coding-reasoning lane, loaded whole.
@@ -630,6 +667,9 @@ class MemoryService:
         old_string: str,
         new_string: str,
         replace_all: bool = False,
+        *,
+        expected_revision: str | None = None,
+        expected_tenant: str | None = None,
     ) -> dict[str, Any]:
         """Targeted string replace inside a record's body (Edit-tool parity). Raises
         ``LookupError`` if missing/deleted, ``ValueError`` if ``old_string`` is absent or
@@ -638,9 +678,12 @@ class MemoryService:
         The body only. Every metadata field is ``edit_metadata``'s business, so a body
         edit and the summary that describes it are two calls: the summary is a claim about
         the body, and the op that owns it is named for that."""
-        return _record(
-            self._repo.edit(uuid, old_string, new_string, replace_all)
+        guarded = self._check_edit_context(expected_revision, expected_tenant)
+        record = self._repo.edit(
+            uuid, old_string, new_string, replace_all,
+            **({"expected_revision": expected_revision} if guarded else {}),
         )
+        return self._guarded_result(record) if guarded else _record(record)
 
     def edit_metadata(
         self,
@@ -651,6 +694,8 @@ class MemoryService:
         project: str | None = None,
         content_summary: str | None = None,
         clearing: list[str] | None = None,
+        expected_revision: str | None = None,
+        expected_tenant: str | None = None,
     ) -> dict[str, Any]:
         """Change a record's metadata, leaving its body alone.
 
@@ -673,6 +718,7 @@ class MemoryService:
         nothing would change or ``clearing`` names something that is not one of the four.
         Returns updated metadata only; use ``get`` to retrieve the unchanged body.
         """
+        guarded = self._check_edit_context(expected_revision, expected_tenant)
         _validate_summary_length(content_summary)
         for name, value in (
             ("title", title),
@@ -683,16 +729,16 @@ class MemoryService:
                 raise ValueError(
                     f"blank {name} is not a value: name it in `clearing` to remove it"
                 )
-        return _record_metadata(
-            self._repo.set_fields(
+        record = self._repo.set_fields(
                 uuid,
                 title=title,
                 tags=tags,
                 project=project,
                 content_summary=content_summary,
                 clearing=tuple(clearing or ()),
+                **({"expected_revision": expected_revision} if guarded else {}),
             )
-        )
+        return self._guarded_result(record) if guarded else _record_metadata(record)
 
     def append(self, uuid: str, text: str) -> dict[str, Any]:
         """Add ``text`` verbatim to the end of a record's body (caller controls
