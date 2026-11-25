@@ -387,18 +387,35 @@ def test_component_is_inlined_and_brings_its_own_backend_ops(tmp_path: Path) -> 
     assert "unsubstituted-placeholder" not in text
 
 
-def test_backend_preamble_reaches_every_seam_procedure() -> None:
-    """The db backend opens every composed procedure with the one sentence none of them
-    carried: what `<domain>` in its ops means. It arrives through the framework's own
-    composer, so it reaches the served prompt, the tool and the HTTP face alike — and
-    not `wait-options`, which has no seam to compose."""
-    loader = ContentLoader(CF)
-    marker = "`<domain>` in the ops below is the agent you are acting as"
-    for name in ("update-episodic", "wrap-up", "awaken-agent"):
+def test_no_served_procedure_contains_the_shared_caller_preamble(loader: ContentLoader) -> None:
+    for name in loader.list_prompts():
         text = loader.get_prompt(name)
-        assert marker in text, name
-        assert text.index(marker) < text.index("### §"), name  # ahead of the mechanics
-    assert marker not in loader.get_prompt("wait-options")
+        assert "`<domain>` in the ops below" not in text, name
+        assert "A body read is a page, and a listing or a search is not a body" not in text, name
+
+
+def test_reasoning_gets_agent_context_without_episode_paging(loader: ContentLoader) -> None:
+    text = loader.get_prompt("add-reasoning")
+    # The caller supplies the pattern; its owner is resolved at the read operation.
+    arguments = text.split("## Arguments\n", 1)[1].split("\n---", 1)[0]
+    assert "$ARGUMENTS" in arguments and "pattern" in arguments
+    read_store = text.split("### § read-reasoning-store\n", 1)[1].split("\n### ", 1)[0]
+    assert "awakened agent" in read_store and "domain" in read_store
+    assert "list_agents()" in read_store and "confirm" in read_store
+    assert 'query(agent_id="<domain>", record_type="reasoning")' in read_store
+    assert "get(uuid)" in read_store
+    assert "next_cursor" not in text
+
+
+def test_episode_reads_distinguish_carry_forward_from_a_full_read(loader: ContentLoader) -> None:
+    update = loader.get_prompt("update-episodic")
+    candidates = update.split("### § list-candidate-episodes\n", 1)[1].split("\n### ", 1)[0]
+    assert "get(uuid, limit=1)" in candidates and "carry-forward" in candidates
+
+    load = loader.get_prompt("load-episodic").split("### § load-episode-body\n", 1)[1]
+    assert "snippet" in load and "get(uuid)" in load
+    assert "non-null `next_cursor`" in load and "same `uuid`" in load
+    assert "until the cursor is null" in load
 
 
 def test_unresolvable_component_leaves_its_reference_visible(tmp_path: Path) -> None:
