@@ -1,5 +1,7 @@
 # Episodic Block Pagination — QA Checklist
 
+**Procedure-text check (2026-11-25):** For the procedure-specific context change, read `load-episodic` for full-episode continuation and `update-episodic` for the bounded carry-forward read. `db.md` is backend source, not a served procedure. The pagination behaviour and the original run status below are unchanged.
+
 **Source**: High Wizard plan `plans/2026-11-09-munnin-episodic-block-pagination.md` in the deployment repository, executed 2026-11-10.
 **Purpose**: Catch a page that silently drops, splits or miscounts a block — on Munnin's two engines, on Hermod's independent pager, and in the consumer's rendering — and prove the byte ceiling never cuts a timestamp group in half.
 **Apps under test**: Munnin over MCP and HTTP against SQLite and PostgreSQL; Hermod's direct-store awakening; universal-chat-agent's prompt renderer; the served `db.md` / `load-episodic.md` / `awaken-coder.md` text.

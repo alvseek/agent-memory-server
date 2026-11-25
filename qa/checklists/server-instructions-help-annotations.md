@@ -1,5 +1,7 @@
 # Server instructions, `help`, tool annotations, and the `<domain>` preamble — QA Checklist
 
+**Status (2026-11-25):** The preamble checks below describe the September pin. For the procedure-specific context change, the expected result is reversed: no served procedure contains the shared preamble. `add-reasoning` still identifies the owner at its reasoning read; episode procedures explain when to stop or continue reading. See the [current consumer tests](../../tests/content/test_content_loader.py). The original steps and run status are preserved.
+
 **Source**: Quick Wizard plan *Server instructions, `help`, tool annotations, and the `<domain>` sentence (launch-map step 4)*, 2026-09-01 — `agent-memory-server` (this commit) pinning `agent-memory-system@475c3be` (`28a5a34` + a review fix).
 **Purpose**: confirm that a stranger who connects to Munnin is told what it is and what to call first *by the client they actually use*, that the client treats each tool the way its hints say, and that the one sentence now opening every served procedure reaches every door without moving a byte of the installed markdown commands or of anything the hosted deploy already serves.
 **Apps under test**: the MCP face (`initialize`, `tools/list`, the `help` tool, `read_procedure`), the framework's seam composer (`seam.py`) and the `db` backend. **Not touched**: the data tools' behaviour, the HTTP `/api` routes, tenancy, auth, the store schema, the markdown backend, the hosted box (pin only — it still runs `e52dd8d`).
