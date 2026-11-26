@@ -51,12 +51,12 @@ CASES: dict[str, dict] = {
             "procedures/memory/resources/episodic-entry-template.md",
         ],
     },
-    "add-reasoning": {
+    "update-reasoning": {
         "templates": ["procedures/memory/resources/reasoning-pattern-template.md"],
         "tokens": [
             "agent-core-memory.md",
             "uuidgen",
-            "/proc/sys/kernel/random/uuid",
+            "edit that block in place",
             "NewGuid",
             "procedures/memory/resources/reasoning-pattern-template.md",
         ],
@@ -64,7 +64,7 @@ CASES: dict[str, dict] = {
     "update-emotional": {
         "templates": ["procedures/memory/resources/emotional-moment-template.md"],
         "tokens": [
-            "date '+%Y-%m-%d %H:%M'",
+            "current UTC time once",
             "agent-core-memory.md",
             "DOMAIN EMOTIONAL MEMORY",
             "NEWEST FIRST",
@@ -102,7 +102,7 @@ CASES: dict[str, dict] = {
     },
     "update-memory": {
         "templates": [],
-        "tokens": ["/update-episodic", "/update-knowledge", "/add-reasoning", "/update-emotional"],
+        "tokens": ["/update-episodic", "/update-knowledge", "/update-reasoning", "/update-emotional"],
     },
 }
 

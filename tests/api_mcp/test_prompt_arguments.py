@@ -82,7 +82,7 @@ async def test_a_parameterless_source_does_not_advertise_a_stale_named_slot(tmp_
 def test_existing_named_slots_keep_their_names() -> None:
     expected = {
         "update-episodic": "mode",
-        "add-reasoning": "context",
+        "update-reasoning": "context",
         "update-emotional": "moment_type",
         "update-knowledge": "context",
         "load-episodic": "keyword",

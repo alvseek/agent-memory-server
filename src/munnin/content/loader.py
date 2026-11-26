@@ -76,7 +76,7 @@ _PROCEDURES_DIR = "procedures"
 # with that token get a generic optional slot. Prose argument sections are not parsed.
 _PROMPT_ARGUMENTS: dict[str, tuple[str, str]] = {
     "update-episodic": ("mode", "`new` to force a new episode instead of appending"),
-    "add-reasoning": ("context", "the reasoning pattern to document; asks if omitted"),
+    "update-reasoning": ("context", "the proposed decision rule and a concrete example"),
     "update-emotional": ("moment_type", "happy, sad, frustrated or bonding; asks if omitted"),
     "update-knowledge": ("context", "the knowledge to document; asks if omitted"),
     "load-episodic": ("keyword", "match episodes by keyword; lists the most recent if omitted"),

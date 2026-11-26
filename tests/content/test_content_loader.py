@@ -398,16 +398,18 @@ def test_no_served_procedure_contains_the_shared_caller_preamble(loader: Content
 
 
 def test_reasoning_gets_agent_context_without_episode_paging(loader: ContentLoader) -> None:
-    text = loader.get_prompt("add-reasoning").replace("\r\n", "\n")
+    assert "add-reasoning" not in loader.list_prompts()
+    text = loader.get_prompt("update-reasoning").replace("\r\n", "\n")
     # The caller supplies the pattern; its owner is resolved at the read operation.
-    arguments = text.split("## Arguments\n", 1)[1].split("\n---", 1)[0]
-    assert "$ARGUMENTS" in arguments and "pattern" in arguments
+    arguments = text.split("## Arguments\n", 1)[1].split("\n## ", 1)[0]
+    assert "$ARGUMENTS" in arguments and "proposed rule" in arguments
     read_store = text.split("### § read-reasoning-store\n", 1)[1].split("\n### ", 1)[0]
     assert "awakened agent" in read_store and "domain" in read_store
     assert "list_agents()" in read_store and "confirm" in read_store
-    assert 'query(agent_id="<domain>", record_type="reasoning")' in read_store
+    assert 'query(record_type="reasoning")' in read_store and "agent_id` is null" in read_store
     assert "get(uuid)" in read_store
     assert "next_cursor" not in text
+    assert "expected_revision" in text and "explicit agreement before editing" in text
 
 
 def test_episode_reads_distinguish_carry_forward_from_a_full_read(loader: ContentLoader) -> None:

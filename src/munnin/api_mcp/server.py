@@ -2,7 +2,7 @@
 
 Exposes the full memory data-primitive surface as tools (twin of the HTTP face)
 over the shared MemoryService core. The memory *procedures* (update-episodic,
-add-reasoning, ...) are served as MCP Prompts and the templates as Resources — and both
+update-reasoning, ...) are served as MCP Prompts and the templates as Resources — and both
 again as tools (``read_procedure`` / ``read_resource``), because a Prompt is user-invoked
 and a Resource client-attached, while a tool is the one primitive the protocol lets the
 agent itself call. The data tools are the operations those procedures instruct the agent
