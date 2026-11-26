@@ -53,6 +53,7 @@ from munnin.business_services.sharing_service import (
     SharingError,
     SharingService,
 )
+from munnin.content.discovery import CatalogKind, EmptyCatalogQuery, catalog_rows
 from munnin.content.loader import ContentLoader
 from munnin.data_entities.edit_context import EditConflict
 from munnin.data_entities.record_reference import (
@@ -580,6 +581,22 @@ def build_router(
     # These take no service: framework content is identical for every tenant. They are
     # still guarded, by the router, because who may *read* the framework is a separate
     # question from whose memory it is (decision 13).
+
+    def _search_catalog(kind: CatalogKind, query: str) -> list[dict[str, str]]:
+        try:
+            return catalog_rows(content, kind, query)
+        except EmptyCatalogQuery as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.get("/api/search/procedures")
+    def search_procedure(query: str) -> list[dict[str, str]]:
+        """Match a phrase in served procedure names or titles and return catalog metadata."""
+        return _search_catalog("procedures", query)
+
+    @api.get("/api/search/resources")
+    def search_resources(query: str) -> list[dict[str, str]]:
+        """Match a phrase in served resource names or titles and return catalog metadata."""
+        return _search_catalog("resources", query)
 
     @api.get("/api/prompts")
     def list_prompts() -> dict[str, list[str]]:

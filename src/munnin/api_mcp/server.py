@@ -33,6 +33,7 @@ from munnin.business_services.memory_service import (
 from munnin.business_services.service_factory import ServiceFactory
 from munnin.business_services.sharing_service import SharingError, SharingService
 from munnin.business_services.tenant_resolver import TenantResolver
+from munnin.content.discovery import catalog_rows
 from munnin.content.loader import ContentLoader
 from munnin.data_entities.edit_context import EditConflict
 
@@ -123,20 +124,10 @@ ExpectedTenant = Annotated[
 ]
 
 
-def _procedure_rows(content: ContentLoader | None) -> list[dict[str, str]]:
-    """Name, title and one-line purpose of every served procedure — the menu ``help`` and
-    ``list_procedures`` both show, empty when no framework content is available."""
-    if content is None or not content.available():
-        return []
-    content = content.metadata_snapshot()
-    return [
-        {
-            "name": name,
-            "title": content.title_prompt(name),
-            "description": content.describe_prompt(name),
-        }
-        for name in content.list_prompts()
-    ]
+CatalogQuery = Annotated[
+    str, Field(description="Nonblank phrase in the name or title. Case is ignored; "
+                           "spaces, hyphens and underscores are equivalent.")
+]
 
 
 def build_mcp(
@@ -203,7 +194,7 @@ def build_mcp(
         # the client's instruction file.
         return {
             "instructions": INSTRUCTIONS,
-            "procedures": _procedure_rows(content),
+            "procedures": catalog_rows(content, "procedures"),
             "access": "mcp",
             "endpoint": endpoint,
         }
@@ -990,7 +981,13 @@ def _register_content(
         tools. Pass a returned name to read_procedure. Read-only discovery: does not execute
         instructions or load an agent's memory.
         """
-        return _procedure_rows(content)
+        return catalog_rows(content, "procedures")
+
+    @mcp.tool(title="Search served procedures", annotations=_READ)
+    def search_procedure(query: CatalogQuery) -> list[dict[str, str]]:
+        """Find procedures by name or title. Returns name, title and description in catalog
+        order, or an empty list. Pass a returned name to read_procedure for its instructions."""
+        return catalog_rows(content, "procedures", query)
 
     @mcp.tool(title="Read a served procedure", annotations=_READ)
     def read_procedure(
@@ -1029,14 +1026,13 @@ def _register_content(
         entry is written) or an agent-facing script (a helper you fetch and run). Read one with
         read_resource(name). Read-only discovery: does not write a file or run a script.
         """
-        return [
-            {
-                "name": name,
-                "title": content.title_resource(name),
-                "description": content.describe_resource(name),
-            }
-            for name in content.list_resources()
-        ]
+        return catalog_rows(content, "resources")
+
+    @mcp.tool(title="Search served resources", annotations=_READ)
+    def search_resources(query: CatalogQuery) -> list[dict[str, str]]:
+        """Find resources by name or title. Returns name, title and description in catalog
+        order, or an empty list. Pass a returned name to read_resource for its contents."""
+        return catalog_rows(content, "resources", query)
 
     @mcp.tool(title="Read a served resource", annotations=_READ)
     def read_resource(

@@ -348,13 +348,15 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # a second way - through the one primitive an agent may invoke itself
     async with Client(_mcp_content(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())
-    assert len(names) == 33
+    assert len(names) == 35
     assert names == sorted(
         data_tools
         + [
             "list_procedures",
+            "search_procedure",
             "read_procedure",
             "list_resources",
+            "search_resources",
             "read_resource",
             "permanent_layer",
         ]
