@@ -99,48 +99,48 @@ async def test_mcp_schema_guards_and_guest_authorization(tmp_path):
     app, repo, identity = fixture(tmp_path)
     async with running(app), mcp_client_for(app, token_for("alvi")) as owner:
         tools = {tool.name: tool for tool in await owner.list_tools()}
-        assert "include_edit_context" in tools["get"].inputSchema["properties"]
-        for name in ("edit", "edit_metadata"):
+        assert "include_edit_context" in tools["get_memory"].inputSchema["properties"]
+        for name in ("edit_memory_body", "edit_memory_metadata"):
             assert {"expected_revision", "expected_tenant"} <= set(
                 tools[name].inputSchema["properties"]
             )
-        loaded = (await owner.call_tool("get", {
+        loaded = (await owner.call_tool("get_memory", {
             "uuid": identity, "include_edit_context": True,
         })).data
-        bare = (await owner.call_tool("get", {"uuid": identity})).data
+        bare = (await owner.call_tool("get_memory", {"uuid": identity})).data
         assert "edit_context" not in bare
-        saved = (await owner.call_tool("edit", {
+        saved = (await owner.call_tool("edit_memory_body", {
             "uuid": identity, "old_string": "private body", "new_string": "edited body",
             **guards(loaded["edit_context"]),
         })).data
         assert "content" not in saved and "edit_context" in saved
         with pytest.raises(ToolError, match="together"):
-            await owner.call_tool("edit", {
+            await owner.call_tool("edit_memory_body", {
                 "uuid": identity, "old_string": "edited body", "new_string": "lost",
                 "expected_revision": saved["edit_context"]["revision"],
             })
         with pytest.raises(ToolError, match="record changed"):
-            await owner.call_tool("edit_metadata", {
+            await owner.call_tool("edit_memory_metadata", {
                 "uuid": identity, "title": "lost", **guards(loaded["edit_context"]),
             })
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                     base_url="http://test") as http:
             await invite_guest(http)
         async with mcp_client_for(app, token_for("roy")) as guest:
-            fresh = (await guest.call_tool("get", {
+            fresh = (await guest.call_tool("get_memory", {
                 "uuid": identity, "include_edit_context": True,
             })).data
-            saved = (await guest.call_tool("edit_metadata", {
+            saved = (await guest.call_tool("edit_memory_metadata", {
                 "uuid": identity, "title": "Guest", **guards(fresh["edit_context"]),
             })).data
             await owner.call_tool("revoke_member", {"member": "roy"})
             with pytest.raises(ToolError, match="revoked"):
-                await guest.call_tool("edit_metadata", {
+                await guest.call_tool("edit_memory_metadata", {
                     "uuid": identity, "title": "lost", **guards(saved["edit_context"]),
                 })
             await guest.call_tool("use_tenant", {"tenant": None})
             with pytest.raises(ToolError, match="account changed"):
-                await guest.call_tool("edit_metadata", {
+                await guest.call_tool("edit_memory_metadata", {
                     "uuid": identity, "title": "wrong account", **guards(saved["edit_context"]),
                 })
         assert repo.get(identity).title == "Guest"

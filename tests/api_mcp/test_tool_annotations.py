@@ -22,9 +22,9 @@ READ_ONLY = {
     "help",
     "awaken",
     "coding_reasoning",
-    "get",
-    "query",
-    "search",
+    "get_memory",
+    "list_memories",
+    "search_memories",
     "list_agents",
     "list_procedures",
     "search_procedure",
@@ -39,26 +39,31 @@ READ_ONLY = {
 ADDITIVE = {
     "create_episode",
     "prepend_episode_entry",
-    "insert",
+    "insert_memory",
     "create_agent",
-    "append",
-    "prepend",
+    "append_memory_body",
+    "prepend_memory_body",
     "use_tenant",
     "create_invite",
     "redeem_invite",
 }
 DESTRUCTIVE = {
-    "edit",
-    "edit_metadata",
-    "multi_edit",
-    "archive",
-    "soft_delete",
+    "edit_memory_body",
+    "edit_memory_metadata",
+    "multi_edit_memory_body",
+    "archive_memory",
+    "soft_delete_memory",
     "revoke_invite",
     "revoke_member",
     "archive_memories",
-    "unarchive",
+    "unarchive_memory",
 }
-IDEMPOTENT_DESTRUCTIVE = {"archive", "soft_delete", "archive_memories", "unarchive"}
+IDEMPOTENT_DESTRUCTIVE = {
+    "archive_memory",
+    "soft_delete_memory",
+    "archive_memories",
+    "unarchive_memory",
+}
 
 
 async def _tools(tmp_path: Path):
@@ -103,16 +108,16 @@ async def test_every_tool_and_parameter_explains_its_contract(tmp_path: Path) ->
         for parameter, schema in tool.inputSchema.get("properties", {}).items():
             assert schema.get("description"), (name, parameter)
 
-    get_schema = tools["get"].inputSchema
+    get_schema = tools["get_memory"].inputSchema
     assert get_schema["required"] == ["uuid"]
     assert get_schema["properties"]["cursor"]["default"] is None
     assert get_schema["properties"]["limit"]["default"] is None
     assert "same record" in get_schema["properties"]["cursor"]["description"]
     assert "6 hex" in get_schema["properties"]["uuid"]["description"]
-    assert tools["query"].inputSchema["properties"]["include_archived"]["default"] is False
-    assert tools["search"].inputSchema["properties"]["include_archived"]["default"] is True
+    assert tools["list_memories"].inputSchema["properties"]["include_archived"]["default"] is False
+    assert tools["search_memories"].inputSchema["properties"]["include_archived"]["default"] is True
     assert tools["archive_memories"].inputSchema["properties"]["apply"]["default"] is False
     assert "whole-tenant access" in tools["create_invite"].description
     assert "every client" in tools["use_tenant"].description
-    assert "no undelete tool" in tools["soft_delete"].description
-    assert "upsert key" in tools["insert"].description
+    assert "no undelete tool" in tools["soft_delete_memory"].description
+    assert "upsert key" in tools["insert_memory"].description

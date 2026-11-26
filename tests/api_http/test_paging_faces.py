@@ -74,7 +74,7 @@ async def test_both_faces_return_the_same_page(tmp_path: Path) -> None:
         ).json()
     async with Client(mcp_for(db)) as mcp:
         mcp_page = (
-            await mcp.call_tool("get", {"uuid": EPISODE_UUID, "limit": 2})
+            await mcp.call_tool("get_memory", {"uuid": EPISODE_UUID, "limit": 2})
         ).data
     assert http_page == mcp_page
     assert http_page["content"] == BLOCKS[0] + BLOCKS[1]
@@ -88,7 +88,7 @@ async def test_continuation_round_trips_across_the_faces(tmp_path: Path) -> None
     _seed(db)
     seed_login(db)
     async with Client(mcp_for(db)) as mcp:
-        first = (await mcp.call_tool("get", {"uuid": EPISODE_UUID, "limit": 2})).data
+        first = (await mcp.call_tool("get_memory", {"uuid": EPISODE_UUID, "limit": 2})).data
     async with await _http_client(_app(db)) as http:
         second = (
             await http.get(
@@ -150,7 +150,7 @@ async def test_mcp_reports_a_bad_paging_argument_as_a_tool_error(
     _seed(db)
     async with Client(mcp_for(db)) as mcp:
         with pytest.raises(ToolError) as caught:
-            await mcp.call_tool("get", {"uuid": EPISODE_UUID, **arguments})
+            await mcp.call_tool("get_memory", {"uuid": EPISODE_UUID, **arguments})
     message = str(caught.value)
     assert "cursor" in message or "limit" in message
 
@@ -180,8 +180,8 @@ async def test_neither_listing_nor_search_hands_out_a_body(tmp_path: Path) -> No
     assert hits[0]["snippet"]
 
     async with Client(mcp_for(db)) as mcp:
-        mcp_browse = (await mcp.call_tool("query", {"agent_id": "meta"})).data
-        mcp_hits = (await mcp.call_tool("search", {"text": "five"})).data
+        mcp_browse = (await mcp.call_tool("list_memories", {"agent_id": "meta"})).data
+        mcp_hits = (await mcp.call_tool("search_memories", {"text": "five"})).data
     assert mcp_browse == browse
     assert mcp_hits == hits
 

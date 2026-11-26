@@ -113,12 +113,12 @@ async def test_a_paged_read_continues_across_faces_over_real_postgres() -> None:
         async with mcp_client_for(app, "test-token-alvi") as mcp:
             second = (
                 await mcp.call_tool(
-                    "get", {"uuid": EPISODE_UUID, "cursor": first["next_cursor"], "limit": 2}
+                    "get_memory", {"uuid": EPISODE_UUID, "cursor": first["next_cursor"], "limit": 2}
                 )
             ).data
             third = (
                 await mcp.call_tool(
-                    "get", {"uuid": EPISODE_UUID, "cursor": second["next_cursor"]}
+                    "get_memory", {"uuid": EPISODE_UUID, "cursor": second["next_cursor"]}
                 )
             ).data
         assert second["content"] == BLOCKS[2] + BLOCKS[3]
