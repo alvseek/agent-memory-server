@@ -324,7 +324,7 @@ def test_awaken_agent_prompt_stands_alone(loader: ContentLoader) -> None:
     # markdown-path mechanics must not reach the wire: there are no files to Read here,
     # while the rule the sentence carries (never delegate the load) still must
     assert "Read tool" not in text
-    assert "delegate it to a sub-agent" in text
+    assert "Do not delegate these reads" in text
 
 
 # --- component inlining (the pre-seam stage) ---
