@@ -21,6 +21,7 @@ from munnin.business_services.episode_page import (
     page_body,
 )
 from munnin.data_entities.edit_context import TenantConflict, record_revision
+from munnin.data_entities.episode_entry import stamped_entry
 from munnin.data_entities.memory_record import (
     Agent,
     EpisodeMetadata,
@@ -660,6 +661,21 @@ class MemoryService:
                 MemoryRecord(agent_id=validate_domain(agent_id), **common)
             )
         )
+
+    def create_episode(
+        self, *, agent_id: str, title: str, entry_title: str, body: str,
+        content_summary: str, project: str | None = None, tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if not title.strip():
+            raise ValueError("episode title must not be blank")
+        return self.insert(
+            record_type="episode", agent_id=agent_id, title=title,
+            content=stamped_entry(agent_id, entry_title, body), content_summary=content_summary,
+            project=project, tags=tags,
+        )
+
+    def prepend_episode_entry(self, uuid: str, entry_title: str, body: str) -> dict[str, Any]:
+        return _record(self._repo.prepend_episode_entry(uuid, entry_title, body))
 
     def edit(
         self,

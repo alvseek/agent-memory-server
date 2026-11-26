@@ -92,6 +92,22 @@ def test_edit_append_prepend_multi_edit(memory_repo: Any) -> None:
     assert memory_repo.get(rec.uuid).full_content == "gamma beta gamma"
 
 
+def test_stamped_prepend_preserves_legacy_episode_and_refuses_other_types(memory_repo):
+    legacy = "### 2026-11-26 12.01 - Local heading\n\nhistorical body\n"
+    episode = memory_repo.insert(_mem(content=legacy))
+    stored = memory_repo.prepend_episode_entry(episode.uuid, "New subject", "new body")
+    suffix = " UTC - New subject (agent: meta)\n\nnew body\n\n---\n\n" + legacy
+    assert stored.full_content.endswith(suffix)
+    for record in (memory_repo.insert(_mem(record_type=RecordType.knowledge)),
+                   memory_repo.insert_shared(_shared(RecordType.knowledge, "shared"))):
+        with pytest.raises(ValueError, match="agent-owned episode"):
+            memory_repo.prepend_episode_entry(record.uuid, "Wrong type", "body")
+        assert memory_repo.get(record.uuid).full_content == record.full_content
+    with pytest.raises(ValueError, match="single line"):
+        memory_repo.prepend_episode_entry(episode.uuid, "two\nlines", "body")
+    assert memory_repo.get(episode.uuid).full_content == stored.full_content
+
+
 def test_archive_then_soft_delete(memory_repo: Any) -> None:
     rec = _mem(title="gone")
     memory_repo.insert(rec)

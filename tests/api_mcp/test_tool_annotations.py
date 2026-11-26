@@ -35,6 +35,8 @@ READ_ONLY = {
     "list_members",
 }
 ADDITIVE = {
+    "create_episode",
+    "prepend_episode_entry",
     "insert",
     "create_agent",
     "append",

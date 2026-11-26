@@ -4,7 +4,9 @@ so the same op over the same DB yields equivalent serialized records.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -46,6 +48,48 @@ def _http(db: Path) -> httpx.AsyncClient:
 def _ver(resource: str) -> str:
     """The live stamp of a template — what a well-behaved writer declares."""
     return ContentLoader(CF).template_version(resource)
+
+
+@pytest.mark.parametrize("create_over_http", [True, False])
+async def test_episode_writes_stamp_each_entry_and_page_it(
+    tmp_path: Path, monkeypatch, create_over_http: bool
+) -> None:
+    db = tmp_path / "stamps.db"
+    seed_agent(db, "meta")
+    clock = Mock()
+    clock.now.return_value = datetime(2026, 11, 26, 23, 59, tzinfo=timezone.utc)
+    monkeypatch.setattr("munnin.data_entities.episode_entry.datetime", clock)
+    version = _ver("episodic-entry-template")
+    first = dict(agent_id="meta", title="Rolling", entry_title="First", body="body one",
+                 content_summary="first summary", template_version=version)
+    async with _http(db) as http, Client(_mcp_content(db)) as mcp:
+        async def write(tool, args, via_http):
+            if via_http:
+                response = await http.post("/api/" + tool.replace("_", "-"), json=args)
+                response.raise_for_status()
+                return response.json()
+            return (await mcp.call_tool(tool, args)).data
+
+        created = await write("create_episode", first, create_over_http)
+        old = "### 2026-11-26 23.59 UTC - First (agent: meta)\n\nbody one"
+        assert created["content"] == old
+        clock.now.assert_called_once_with(timezone.utc)
+        clock.now.return_value = datetime(2026, 11, 27, 0, 1, tzinfo=timezone.utc)
+        uid = created["uuid"]
+        second = dict(uuid=uid, entry_title="Second", body="body two", template_version=version)
+        updated = await write("prepend_episode_entry", second, not create_over_http)
+        head = "### 2026-11-27 00.01 UTC - Second (agent: meta)\n\nbody two"
+        assert updated["content"] == head + "\n\n---\n\n" + old
+        assert updated["content_summary"] == "first summary"
+        page = (await mcp.call_tool("get", {"uuid": uid, "limit": 1})).data
+        assert page["blocks_total"] == 2 and page["next_cursor"] == "2026-11-26 23.59"
+        assert (await mcp.call_tool("get", {"uuid": uid, "cursor": page["next_cursor"]})).data[
+            "content"
+        ] == old
+        bad = await http.post(
+            "/api/prepend-episode-entry", json={**second, "template_version": "old"}
+        )
+        assert bad.status_code == 400 and "stale" in bad.json()["detail"]
 
 
 async def test_insert_http_get_mcp(tmp_path: Path) -> None:
@@ -280,8 +324,9 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # that never shows `instructions`, so it exists whether or not content is served.
     data_tools = [
         "append", "archive", "archive_memories", "awaken", "coding_reasoning", "create_agent",
-        "create_invite", "edit", "edit_metadata", "get", "help", "insert", "list_agents",
-        "list_members", "list_tenants", "multi_edit", "ping", "prepend", "query",
+        "create_episode", "create_invite", "edit", "edit_metadata", "get", "help", "insert",
+        "list_agents", "list_members", "list_tenants", "multi_edit", "ping", "prepend",
+        "prepend_episode_entry", "query",
         "redeem_invite", "revoke_invite", "revoke_member", "search", "soft_delete",
         "unarchive", "use_tenant",
     ]
@@ -292,7 +337,7 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # a second way - through the one primitive an agent may invoke itself
     async with Client(_mcp_content(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())
-    assert len(names) == 31
+    assert len(names) == 33
     assert names == sorted(
         data_tools
         + [

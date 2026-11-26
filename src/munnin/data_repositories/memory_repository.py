@@ -80,6 +80,10 @@ class MemoryRepository(Protocol):
         any edit's ``old_string`` is absent/ambiguous."""
         ...
 
+    def prepend_episode_entry(self, uuid: str, entry_title: str, body: str) -> SharedRecord:
+        """Stamp and prepend one entry to the selected tenant's episode under its write lock."""
+        ...
+
     def set_fields(
         self,
         uuid: str,

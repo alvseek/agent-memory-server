@@ -188,7 +188,7 @@ In a session, `ping` → `pong` is the connectivity check; `list_procedures` sho
 
 At `initialize` the server returns four sentences of **instructions** — what Munnin is, what to call first whether you are new or returning, and that procedures come from `read_procedure`, never slash commands; clients that show instructions inject them into the system prompt. Every tool carries a **title** and the MCP hints a client reads before letting it run: `readOnlyHint` on all, `destructiveHint` explicit on every write (additive: `insert`, `create_agent`, `append`, `prepend`; destructive: `edit`, `edit_metadata`, `multi_edit`, `archive`, `archive_memories`, `unarchive`, `soft_delete`), `openWorldHint=false` throughout. `archive_memories` is annotated destructive even though its default call is a dry run, so a client that gates destructive tools gates this one too.
 
-**31 tools**, in five groups:
+**33 tools**, in five groups:
 
 - *Orientation* — `help`: the same instructions text plus the served procedure list, for clients that never show instructions. Always present, even with no served content.
 - *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `edit_metadata`, `append`, `prepend`, `multi_edit`, `archive`, `archive_memories`, `unarchive`, `soft_delete`, `coding_reasoning`, `permanent_layer`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically. `edit_metadata` is the one writer of `title`, `tags`, `project` and `content_summary`, and returns metadata without a body. Omitted fields keep their value; `clearing` names fields to remove. Unguarded body writes retain their body-bearing response; guarded editor saves return metadata and fresh edit context instead. `archive_memories(agent_id, days=30, apply=False)` separates tagged, aging and protected episodes; only `apply=True` writes, and only the tagged unprotected set. `unarchive(uuid)` returns an archived record to the hot index. Reads have distinct shapes: `query` returns metadata and `blocks_total`, `search` returns metadata and a plain-text snippet, and `get` returns body pages with `blocks_returned`, `blocks_total` and `next_cursor`. The opt-in conflict-safe editing and exact-body reconstruction contracts are described with the HTTP twins below.
@@ -200,7 +200,14 @@ At `initialize` the server returns four sentences of **instructions** — what M
 
 **4 templates + 1 script** — the framework's block templates, served as `resource://templates/<name>`, and the agent-facing helper `copy-lines`, served as `resource://scripts/<name>`; all are addressed by their bare stem at `read_resource`: `episodic-entry-template`, `reasoning-pattern-template`, `emotional-moment-template`, `knowledge-file-template`, `copy-lines`. Only scripts a served instruction tells an agent to run are served — the harness hooks, the CI guard and the setup installers are installed locally, never fetched.
 
-Summaries supplied to `insert` or `edit_metadata` must be at most **1,000 Unicode
+For a new episode, `create_episode` takes the rolling episode title, entry title,
+body below the H3 heading, and its summary. For another entry, `prepend_episode_entry`
+takes the episode UUID, entry title and body. Both accept the current episode template
+version and generate `### YYYY-MM-DD HH.MM UTC - Title (agent: domain)` at write time.
+Older entries retain their original text. A prepend does not update the summary; use
+`edit_metadata` for that. Generic `insert` and `prepend` still accept verbatim content.
+
+Summaries supplied to `insert`, `create_episode` or `edit_metadata` must be at most **1,000 Unicode
 characters** (Python `len()`, not bytes or tokens); aim for 300–500. Both MCP and HTTP
 reject longer input before writing anything, with the maximum and submitted length in
 the error. Nothing is truncated. This is an input rule, not a database migration:
@@ -243,6 +250,7 @@ save never updates its summary. Existing unguarded callers retain their defaults
 | GET | `/api/search?text=` | `search` | Full-text search over body + title + tags — metadata plus a plain-text `snippet`, **no body** |
 | GET · POST | `/api/agents` | `list_agents` · `create_agent` | The tenant's agents / create one |
 | POST | `/api/insert` | `insert` | New item, record assembled server-side |
+| POST | `/api/create-episode` · `/api/prepend-episode-entry` | `create_episode` · `prepend_episode_entry` | Write a new episode or add a newest entry with a server-generated UTC heading |
 | POST | `/api/edit` · `/api/append` · `/api/prepend` · `/api/multi-edit` | the same names | Body edits with Edit-tool parity |
 | POST | `/api/edit-metadata` | `edit_metadata` | Update metadata and return metadata only (no `content`); omitted fields keep their values, `clearing` removes one |
 | POST | `/api/archive` · `/api/soft-delete` | `archive` · `soft_delete` | Out of the hot index but searchable · tombstoned |

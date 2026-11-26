@@ -27,6 +27,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from munnin.data_entities.edit_context import check_revision
+from munnin.data_entities.episode_entry import prepend_entry
 from munnin.data_entities.memory_record import (
     SHARED_RECORD_TYPES,
     Agent,
@@ -277,6 +278,17 @@ class PostgresMemoryRepository:
         *,
         expected_revision: str | None = None,
     ) -> SharedRecord:
+        return self._rewrite_record(
+            uuid, lambda r: transform(r.full_content or ""), expected_revision=expected_revision
+        )
+
+    def prepend_episode_entry(self, uuid: str, entry_title: str, body: str) -> SharedRecord:
+        return self._rewrite_record(uuid, lambda r: prepend_entry(r, entry_title, body))
+
+    def _rewrite_record(
+        self, uuid: str, transform: Callable[[SharedRecord], str], *,
+        expected_revision: str | None = None,
+    ) -> SharedRecord:
         with self._conn() as conn, conn.cursor() as cur:
             target = self._locate(cur, uuid)
             if target is None:
@@ -290,8 +302,9 @@ class PostgresMemoryRepository:
             row = cur.fetchone()
             if row is None:
                 raise LookupError(f"record not found: {uuid}")
-            check_revision(_row_from(table, row), expected_revision)
-            new_content = transform(row["full_content"] or "")
+            record = _row_from(table, row)
+            check_revision(record, expected_revision)
+            new_content = transform(record)
             columns = ["full_content=%s", "modified_date=%s"]
             params: list[object] = [new_content, _now()]
             params.extend([uuid, self._user_id])

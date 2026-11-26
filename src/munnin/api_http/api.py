@@ -130,6 +130,24 @@ class InsertBody(_WriteBody):
     template_version: str | None = None
 
 
+class EpisodeEntryBody(_WriteBody):
+    entry_title: str
+    body: str
+    template_version: str | None = None
+
+
+class CreateEpisodeBody(EpisodeEntryBody):
+    agent_id: str
+    title: str
+    content_summary: str
+    project: str | None = None
+    tags: list[str] | None = None
+
+
+class PrependEpisodeEntryBody(EpisodeEntryBody):
+    uuid: str
+
+
 class EditBody(_WriteBody):
     uuid: str
     old_string: str
@@ -416,6 +434,32 @@ def build_router(
                 project=body.project,
                 uuid=body.uuid,
             )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/api/create-episode")
+    def create_episode(
+        body: CreateEpisodeBody, svc: MemoryService = Depends(_tenant_service),
+    ) -> dict[str, Any]:
+        """Create an episode with a server-stamped UTC heading above its first entry body."""
+        try:
+            if content is not None and content.available():
+                content.check_template_version("episode", body.template_version)
+            return svc.create_episode(**body.model_dump(exclude={"template_version"}))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @api.post("/api/prepend-episode-entry")
+    def prepend_episode_entry(
+        body: PrependEpisodeEntryBody, svc: MemoryService = Depends(_tenant_service),
+    ) -> dict[str, Any]:
+        """Prepend a UTC-stamped entry, preserving older content and metadata."""
+        try:
+            if content is not None and content.available():
+                content.check_template_version("episode", body.template_version)
+            return svc.prepend_episode_entry(body.uuid, body.entry_title, body.body)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
