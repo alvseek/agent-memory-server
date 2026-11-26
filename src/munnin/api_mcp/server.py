@@ -2,7 +2,7 @@
 
 Exposes the full memory data-primitive surface as tools (twin of the HTTP face)
 over the shared MemoryService core. The memory *procedures* (update-episodic,
-add-reasoning, ...) are served as MCP Prompts and the templates as Resources — and both
+update-reasoning, ...) are served as MCP Prompts and the templates as Resources — and both
 again as tools (``read_procedure`` / ``read_resource``), because a Prompt is user-invoked
 and a Resource client-attached, while a tool is the one primitive the protocol lets the
 agent itself call. The data tools are the operations those procedures instruct the agent
@@ -72,6 +72,11 @@ RecordRef = Annotated[
 ]
 ExistingAgent = Annotated[
     str, Field(description="Existing agent's kebab-case domain from list_agents, e.g. meta.")
+]
+EntryTitle = Annotated[str, Field(description="Single-line subject, without a date or H3 prefix.")]
+EntryBody = Annotated[str, Field(description="Entry template rows below the heading, verbatim.")]
+EpisodeVersion = Annotated[
+    str | None, Field(description="Current episodic-entry-template version when served.")
 ]
 OptionalAgent = Annotated[
     str | None,
@@ -632,6 +637,39 @@ def build_mcp(
             project=project,
             uuid=uuid,
         )
+
+    @mcp.tool(title="Create an episode with its first entry", annotations=_ADDITIVE)
+    def create_episode(
+        agent_id: ExistingAgent,
+        title: Annotated[str, Field(description="Name of the rolling episode.")],
+        entry_title: EntryTitle, body: EntryBody,
+        content_summary: Annotated[str, Field(description="The entry's authored Summary row.")],
+        project: Annotated[str | None, Field(description="Project, or null if unassigned.")] = None,
+        tags: Annotated[list[str] | None, Field(description="Searchable episode tags.")] = None,
+        template_version: EpisodeVersion = None,
+    ) -> dict[str, Any]:
+        """Create a rolling episode named title. Provide the first entry's single-line
+        subject in entry_title and its body without the H3 heading. Munnin adds the UTC
+        timestamp and agent to the heading. Pass the entry's Summary as content_summary
+        and the episodic-entry-template version separately. Returns the stored record."""
+        _check_template("episode", template_version)
+        return _svc().create_episode(
+            agent_id=agent_id, title=title, entry_title=entry_title, body=body,
+            content_summary=content_summary, project=project, tags=tags,
+        )
+
+    @mcp.tool(title="Add a dated entry to an episode", annotations=_ADDITIVE)
+    def prepend_episode_entry(
+        uuid: RecordRef, entry_title: EntryTitle, body: EntryBody,
+        content_summary: Annotated[str, Field(description="The new entry's authored Summary row.")],
+        template_version: EpisodeVersion = None,
+    ) -> dict[str, Any]:
+        """Add one newest entry. Supply its single-line subject and body without a heading
+        or separator; Munnin adds the UTC timestamp and the episode owner's domain.
+        Pass the episodic-entry-template version and the new entry's Summary. The stamped
+        entry and listing summary are saved together. Retrying adds another entry."""
+        _check_template("episode", template_version)
+        return _svc().prepend_episode_entry(uuid, entry_title, body, content_summary)
 
     @mcp.tool(title="Edit a record's body", annotations=_DESTRUCTIVE)
     def edit(

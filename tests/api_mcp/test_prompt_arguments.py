@@ -82,14 +82,13 @@ async def test_a_parameterless_source_does_not_advertise_a_stale_named_slot(tmp_
 def test_existing_named_slots_keep_their_names() -> None:
     expected = {
         "update-episodic": "mode",
-        "add-reasoning": "context",
+        "update-reasoning": "context",
         "update-emotional": "moment_type",
         "update-knowledge": "context",
         "load-episodic": "keyword",
         "load-knowledge": "keyword",
         "archive-old-memories": "scope",
         "update-memory": "mode",
-        "wrap-up": "mode",
         "create-agent": "domain",
         "list-agents": "keyword",
         "awaken-agent": "domain",
@@ -99,3 +98,4 @@ def test_existing_named_slots_keep_their_names() -> None:
     }
     for name, argument in expected.items():
         assert LOADER.argument_prompt(name)[0] == argument
+    assert LOADER.argument_prompt("wrap-up") is None

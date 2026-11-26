@@ -21,6 +21,7 @@ from munnin.business_services.episode_page import (
     page_body,
 )
 from munnin.data_entities.edit_context import TenantConflict, record_revision
+from munnin.data_entities.episode_entry import stamped_entry
 from munnin.data_entities.memory_record import (
     Agent,
     EpisodeMetadata,
@@ -661,6 +662,26 @@ class MemoryService:
             )
         )
 
+    def create_episode(
+        self, *, agent_id: str, title: str, entry_title: str, body: str,
+        content_summary: str, project: str | None = None, tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        if not title.strip():
+            raise ValueError("episode title must not be blank")
+        return self.insert(
+            record_type="episode", agent_id=agent_id, title=title,
+            content=stamped_entry(agent_id, entry_title, body), content_summary=content_summary,
+            project=project, tags=tags,
+        )
+
+    def prepend_episode_entry(
+        self, uuid: str, entry_title: str, body: str, content_summary: str,
+    ) -> dict[str, Any]:
+        _validate_summary_length(content_summary)
+        if not content_summary or not content_summary.strip():
+            raise ValueError("content_summary is required for an episode entry")
+        return _record(self._repo.prepend_episode_entry(uuid, entry_title, body, content_summary))
+
     def edit(
         self,
         uuid: str,
@@ -699,9 +720,8 @@ class MemoryService:
     ) -> dict[str, Any]:
         """Change a record's metadata, leaving its body alone.
 
-        The one writer for the four fields a record owns besides its body — ``title``,
-        ``tags``, ``project`` and ``content_summary`` — and the only writer of
-        ``content_summary``, because a field with one owner cannot be updated two ways.
+        Edit ``title``, ``tags``, ``project`` or ``content_summary`` independently of
+        body changes. An episode-entry write installs its own summary with its body.
 
         A field that is not passed keeps its stored value, so this is not a replace and
         never reads the body first. ``clearing`` names fields to remove, written as SQL

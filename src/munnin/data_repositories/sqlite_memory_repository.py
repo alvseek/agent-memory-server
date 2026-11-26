@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from munnin.data_entities.edit_context import check_revision
+from munnin.data_entities.episode_entry import prepend_entry
 from munnin.data_entities.memory_record import (
     SHARED_RECORD_TYPES,
     Agent,
@@ -365,6 +366,22 @@ class SqliteMemoryRepository:
         *,
         expected_revision: str | None = None,
     ) -> SharedRecord:
+        return self._rewrite_record(
+            uuid, lambda r: transform(r.full_content or ""), expected_revision=expected_revision
+        )
+
+    def prepend_episode_entry(
+        self, uuid: str, entry_title: str, body: str, content_summary: str,
+    ) -> SharedRecord:
+        return self._rewrite_record(
+            uuid, lambda r: prepend_entry(r, entry_title, body), entry_summary=content_summary
+        )
+
+    def _rewrite_record(
+        self, uuid: str, transform: Callable[[SharedRecord], str], *,
+        expected_revision: str | None = None,
+        entry_summary: str | None = None,
+    ) -> SharedRecord:
         """Read-modify-write one record's ``full_content`` under a single connection.
         ``transform`` maps the current body to the new body and may raise ``ValueError``
         to abort with nothing written (the UPDATE runs only after it returns). Bumps
@@ -382,10 +399,14 @@ class SqliteMemoryRepository:
                 f"SELECT {_TABLES[table]} FROM {table} WHERE uuid=? AND user_id=?",
                 (uuid, self._user_id),
             ).fetchone()
-            check_revision(_row_from(table, row), expected_revision)
-            new_content = transform(row["full_content"] or "")
+            record = _row_from(table, row)
+            check_revision(record, expected_revision)
+            new_content = transform(record)
             columns = ["full_content=?", "modified_date=?"]
             params: list[object] = [new_content, _now()]
+            if entry_summary is not None:
+                columns.append("content_summary=?")
+                params.append(entry_summary)
             params.extend([uuid, self._user_id])
             conn.execute(
                 f"UPDATE {table} SET {', '.join(columns)} WHERE uuid=? AND user_id=?",

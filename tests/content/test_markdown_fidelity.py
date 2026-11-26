@@ -37,7 +37,7 @@ CASES: dict[str, dict] = {
     "update-episodic": {
         "templates": ["procedures/memory/resources/episodic-entry-template.md"],
         "tokens": [
-            "date '+%Y-%m-%d %H:%M'",
+            "date -u '+%Y-%m-%d %H.%M UTC'",
             "agent-memory-index.md",
             "# Recent Context Episodes",
             "MOVE-TO-TODAY",
@@ -51,12 +51,12 @@ CASES: dict[str, dict] = {
             "procedures/memory/resources/episodic-entry-template.md",
         ],
     },
-    "add-reasoning": {
+    "update-reasoning": {
         "templates": ["procedures/memory/resources/reasoning-pattern-template.md"],
         "tokens": [
             "agent-core-memory.md",
             "uuidgen",
-            "/proc/sys/kernel/random/uuid",
+            "edit that block in place",
             "NewGuid",
             "procedures/memory/resources/reasoning-pattern-template.md",
         ],
@@ -64,7 +64,7 @@ CASES: dict[str, dict] = {
     "update-emotional": {
         "templates": ["procedures/memory/resources/emotional-moment-template.md"],
         "tokens": [
-            "date '+%Y-%m-%d %H:%M'",
+            "current UTC time once",
             "agent-core-memory.md",
             "DOMAIN EMOTIONAL MEMORY",
             "NEWEST FIRST",
@@ -76,8 +76,8 @@ CASES: dict[str, dict] = {
         "tokens": [
             "knowledge-base/research/",
             "agent-memory-index.md",
-            "2025-09-11-nestjs-patterns.md",
-            "typescript-best-practices.md",
+            "shared-memory/core-knowledge-memory.md",
+            "existing index line",
             "procedures/memory/resources/knowledge-file-template.md",
         ],
     },
@@ -102,8 +102,9 @@ CASES: dict[str, dict] = {
     },
     "update-memory": {
         "templates": [],
-        "tokens": ["agent-memory-index.md", "shared-memory/", "core-reasoning-memory.md",
-                   "knowledge-base/"],
+        "tokens": [
+            "/update-episodic", "/update-knowledge", "/update-reasoning", "/update-emotional",
+        ],
     },
 }
 
@@ -138,7 +139,7 @@ def test_harness_detects_a_dropped_mechanic() -> None:
     path = "procedures/memory/storage-backends/markdown.md"
     text = data[path].decode("utf-8")
     text = re.sub(
-        r'(@start region id="update-episodic\.[^"]+"[^\n]*\n).*?(@end region\n)',
+        r'(@start region id="update-episodic\.[^"]+"[^\n]*\n).*?(@end region\r?\n)',
         r"\1\2",
         text,
         flags=re.S,
