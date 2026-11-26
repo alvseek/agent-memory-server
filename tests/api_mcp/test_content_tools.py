@@ -50,7 +50,7 @@ async def test_initialize_carries_the_instructions(tmp_path: Path) -> None:
     assert result is not None
     assert result.instructions == INSTRUCTIONS
     # permanent-layer text, re-sent on every call of every session: a budget, not a manual
-    assert len(result.instructions) <= 600
+    assert len(result.instructions) <= 1_000
 
 
 async def test_help_is_the_instructions_plus_the_menu(tmp_path: Path) -> None:

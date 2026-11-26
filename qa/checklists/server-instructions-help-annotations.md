@@ -12,7 +12,7 @@ Three new things, three different carriers:
 
 | Thing | Carrier | Who sees it | When |
 |---|---|---|---|
-| **instructions** (4 sentences, 466 chars) | the `initialize` result | a client that injects it into the system prompt (Claude Code, claude.ai) | once per session, then re-sent on every call as part of the prompt |
+| **instructions** | the `initialize` result | a client that injects it into the system prompt (Claude Code, claude.ai) | once per session, then re-sent on every call as part of the prompt |
 | **`help` tool** | `tools/list` + `tools/call` | every client, including ones that show no instructions | on demand |
 | **title + hints** (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) | `tools/list` | the client, before it lets a tool run | on demand (tool definitions arrive deferred — names first, schemas on demand) |
 | **`<domain>` preamble** | the body of every seam procedure, ahead of its `### §` ops | whoever reads a procedure: `read_procedure`, the MCP prompt, HTTP `/api/prompts/{name}` | composed live at serve time |
@@ -57,9 +57,9 @@ The preamble is a **backend-level** section (`## all-procedures` in `db.md`): it
 ## Checks
 
 ### Client sees the instructions
-- [ ] Fresh Claude Code session, no prior tool call: asking what the server is yields agent identity + `list_agents()` + `read_procedure("create-agent")` (step 2). If the agent instead calls `help` first, note it — that is the fallback working, not the instructions.
+- [ ] Fresh Claude Code session, no prior tool call: ask what the server is and how to start without a stored agent. Expect agent identity and the `create-agent` procedure. If the agent calls `help` first, note that it used the fallback.
 - [ ] claude.ai (hosted, **after the next deploy**): a new conversation with the connector enabled answers the same question the same way.
-- [ ] `initialize` result over raw HTTP (`curl` with the JSON-RPC `initialize` body) carries `"instructions"` whose length is 466 and whose first word is `Munnin`.
+- [ ] The raw HTTP `initialize` response includes the server's current `instructions` text.
 
 ### Titles and hints reach the client
 - [ ] Claude Code's `/mcp` tool listing shows titles for all 22 tools; no entry falls back to the bare name.
