@@ -30,8 +30,10 @@ async def test_content_tools_present_only_with_content(tmp_path: Path) -> None:
         full = {t.name for t in await client.list_tools()}
     content_tools = {
         "list_procedures",
+        "search_procedure",
         "read_procedure",
         "list_resources",
+        "search_resources",
         "read_resource",
         "permanent_layer",
     }

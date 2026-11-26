@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from procedure_composer import Catalog, FileSource
 
-from munnin.api_mcp.server import _procedure_rows
+from munnin.content.discovery import catalog_rows
 from munnin.content.loader import ContentLoader
 
 REPO = Path(__file__).resolve().parents[2]
@@ -467,7 +467,7 @@ def test_menu_uses_one_metadata_snapshot_instead_of_one_tree_read_per_field(monk
         return read(path)
 
     monkeypatch.setattr(Path, "read_bytes", counted)
-    rows = _procedure_rows(loader)
+    rows = catalog_rows(loader, "procedures")
     assert rows
     # One catalog snapshot, reused for every procedure's title, description and
     # argument, instead of one full tree read per field.
