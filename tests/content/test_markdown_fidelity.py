@@ -76,8 +76,8 @@ CASES: dict[str, dict] = {
         "tokens": [
             "knowledge-base/research/",
             "agent-memory-index.md",
-            "2025-09-11-nestjs-patterns.md",
-            "typescript-best-practices.md",
+            "shared-memory/core-knowledge-memory.md",
+            "existing index line",
             "procedures/memory/resources/knowledge-file-template.md",
         ],
     },

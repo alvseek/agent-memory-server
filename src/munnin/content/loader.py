@@ -78,7 +78,10 @@ _PROMPT_ARGUMENTS: dict[str, tuple[str, str]] = {
     "update-episodic": ("mode", "`new` to force a new episode instead of appending"),
     "update-reasoning": ("context", "the proposed decision rule and a concrete example"),
     "update-emotional": ("moment_type", "happy, sad, frustrated or bonding; asks if omitted"),
-    "update-knowledge": ("context", "the knowledge to document; asks if omitted"),
+    "update-knowledge": (
+        "context",
+        "the finding and its supporting evidence; asks for the finding if omitted",
+    ),
     "load-episodic": ("keyword", "match episodes by keyword; lists the most recent if omitted"),
     "load-knowledge": ("keyword", "match entries by keyword; lists all if omitted"),
     "archive-old-memories": ("scope", "episodic, emotional or all; asks if omitted"),

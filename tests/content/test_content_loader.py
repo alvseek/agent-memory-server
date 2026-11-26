@@ -412,6 +412,14 @@ def test_reasoning_gets_agent_context_without_episode_paging(loader: ContentLoad
     assert "expected_revision" in text and "explicit agreement before editing" in text
 
 
+def test_knowledge_compares_general_entries_and_updates_their_listing(loader: ContentLoader) -> None:
+    text = loader.get_prompt("update-knowledge")
+    assert "shared.knowledge_index" in text and "`project` null" in text
+    assert "`agent_id` equal to the acting domain or null" in text
+    assert "get(uuid, include_edit_context=true)" in text
+    assert "edit_metadata(uuid, content_summary=" in text and "partial write" in text
+
+
 def test_episode_reads_distinguish_carry_forward_from_a_full_read(loader: ContentLoader) -> None:
     update = loader.get_prompt("update-episodic").replace("\r\n", "\n")
     candidates = update.split("### § list-candidate-episodes\n", 1)[1].split("\n### ", 1)[0]
