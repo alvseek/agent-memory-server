@@ -69,28 +69,40 @@ RecordRef = Annotated[
     str,
     Field(
         description="Existing record's full ID or unique UUID prefix of at least 6 hex "
-        "characters, from query/search/get. UUID matching ignores case and hyphens; "
+        "characters, from list_memories or search_memories. "
+        "UUID matching ignores case and hyphens; "
         "ambiguous prefixes are refused. Not an agent domain or project name."
     ),
 ]
 ExistingAgent = Annotated[
     str, Field(description="Existing agent's kebab-case domain from list_agents, e.g. meta.")
 ]
-EntryTitle = Annotated[str, Field(description="Single-line subject, without a date or H3 prefix.")]
-EntryBody = Annotated[str, Field(description="Entry template rows below the heading, verbatim.")]
+EntryTitle = Annotated[
+    str, Field(description="Subject, e.g. 'Catalog released'; omit the date and heading prefix.")
+]
+EntryBody = Annotated[
+    str, Field(description="Filled episodic-entry-template rows, without the heading or separator.")
+]
 EpisodeVersion = Annotated[
-    str | None, Field(description="Current episodic-entry-template version when served.")
+    str | None,
+    Field(
+        description="Copy template_version from "
+        "read_resource('episodic-entry-template') when served."
+    ),
 ]
 OptionalAgent = Annotated[
     str | None,
     Field(
-        description="Agent domain to filter by. Omit or pass null for all agents plus "
+        description="Agent domain from list_agents, e.g. "
+        "'software-architect'. Omit/null for all agents plus "
         "fleet-shared records; naming an agent excludes fleet-shared records."
     ),
 ]
 OptionalProject = Annotated[
     str | None,
-    Field(description="Exact project name filter. Omit or pass null for all projects."),
+    Field(
+        description="Exact repository name, e.g. 'invintiry'. Omit or pass null for all projects."
+    ),
 ]
 RecordKind = Annotated[
     str,
@@ -103,7 +115,7 @@ RecordKind = Annotated[
 OldString = Annotated[
     str,
     Field(
-        description="Exact body text to replace, including whitespace. Must occur once "
+        description="Copy exact text from get_memory, including whitespace. Must occur once "
         "unless replace_all is true; absent or ambiguous matches are refused."
     ),
 ]
@@ -116,19 +128,27 @@ ReplaceAll = Annotated[
 ]
 ExpectedRevision = Annotated[
     str | None,
-    Field(description="Opaque revision from get(include_edit_context=true). Supply together "
-          "with expected_tenant; stale saves are refused without changes."),
+    Field(
+        description="Opaque revision from get_memory(include_edit_context=true). Supply together "
+        "with expected_tenant; stale saves are refused without changes."
+    ),
 ]
 ExpectedTenant = Annotated[
     str | None,
-    Field(description="Acting tenant from the same edit_context, a precondition not a selector. "
-          "Supply together with expected_revision."),
+    Field(
+        description="Copy edit_context.tenant from that same read, a "
+        "precondition not a selector. "
+        "Supply together with expected_revision."
+    ),
 ]
 
 
 CatalogQuery = Annotated[
-    str, Field(description="Nonblank phrase in the name or title. Case is ignored; "
-                           "spaces, hyphens and underscores are equivalent.")
+    str,
+    Field(
+        description="Name or title phrase, e.g. 'update memory'. Case is ignored; "
+        "spaces, hyphens and underscores are equivalent."
+    ),
 ]
 
 
@@ -206,7 +226,7 @@ def build_mcp(
     # --- reads ---
 
     @mcp.tool(title="Read one record", annotations=_READ)
-    def get(
+    def get_memory(
         uuid: RecordRef,
         cursor: Annotated[
             str | None,
@@ -228,7 +248,7 @@ def build_mcp(
                   "for conflict-safe editing. Compare every page's context before enabling Save."),
         ] = False,
     ) -> dict[str, Any] | None:
-        """Read a record by ID, including archived records. For paged reads, limit counts
+        """Read a memory record by ID, including archived records. For paged reads, limit counts
         timestamp groups; continue with next_cursor on the same record until null. For edits
         across pages, require matching edit_context on every page and use edit_body source
         positions and digest to reconstruct the original text."""
@@ -240,7 +260,7 @@ def build_mcp(
             raise ToolError(str(exc)) from exc
 
     @mcp.tool(title="Browse records by field", annotations=_READ)
-    def query(
+    def list_memories(
         agent_id: OptionalAgent = None,
         record_type: Annotated[
             str | None,
@@ -255,8 +275,8 @@ def build_mcp(
             Field(description="Include archived records when true; deleted records never appear."),
         ] = False,
     ) -> list[dict[str, Any]]:
-        """Browse metadata by exact filters combined with AND. An agent_id restricts results to
-        that agent; omit it to include shared records. Use get for bodies."""
+        """List memory records matching all supplied filters. Results include UUID, type, title,
+        summary and tags. Read a body with get_memory."""
         try:
             return _svc().query(
                 agent_id=agent_id,
@@ -268,11 +288,11 @@ def build_mcp(
             raise ToolError(str(exc)) from exc
 
     @mcp.tool(title="Full-text search", annotations=_READ)
-    def search(
+    def search_memories(
         text: Annotated[
             str,
             Field(
-                description="Full-text keyword query across titles, bodies and tags; "
+                description="Words to find in memory, e.g. 'catalog release'; "
                 "not a UUID lookup."
             ),
         ],
@@ -285,7 +305,7 @@ def build_mcp(
         ] = True,
     ) -> list[dict[str, Any]]:
         """Search titles, bodies and tags across agent and shared memory. Hits contain snippets;
-        use get for bodies. Includes archived records by default, never deleted ones. Ranking
+        use get_memory for bodies. Includes archived records by default, never deleted ones. Ranking
         is separate per corpus."""
         return _svc().search(text, include_archived=include_archived)
 
@@ -420,11 +440,13 @@ def build_mcp(
             ),
         ],
         name: Annotated[
-            str | None, Field(description="Agent's display name; omit/null if not yet assigned.")
+            str | None, Field(description="Display name, e.g. 'Software Architect'; omit/null if "
+                "not yet assigned.")
         ] = None,
         role: Annotated[
             str | None,
-            Field(description="One-line specialty for list_agents; omit/null if not yet assigned."),
+            Field(description="Specialty, e.g. 'Reviews system designs'; omit/null if "
+                "not yet assigned."),
         ] = None,
         uuid: Annotated[
             str | None,
@@ -441,7 +463,7 @@ def build_mcp(
     # --- writes (Edit-tool parity; record assembled server-side) ---
 
     @mcp.tool(title="Insert a memory record", annotations=_ADDITIVE)
-    def insert(
+    def insert_memory(
         record_type: RecordKind,
         content: Annotated[
             str,
@@ -462,7 +484,7 @@ def build_mcp(
         agent_id: Annotated[
             str | None,
             Field(
-                description="Existing owner domain, required for scope=agent; "
+                description="Owner domain from list_agents, e.g. 'meta', required for scope=agent; "
                 "must be omitted/null for scope=shared."
             ),
         ] = None,
@@ -475,16 +497,16 @@ def build_mcp(
         ] = "agent",
         title: Annotated[
             str | None,
-            Field(description="Display title for this record; omit/null if not supplied."),
+            Field(description="Title, e.g. 'Release checks'; omit/null if not supplied."),
         ] = None,
         tags: Annotated[
             list[str] | None,
-            Field(description="Searchable tag strings; omit/null for an empty list."),
+            Field(description="Tag strings, e.g. ['release', 'qa']; omit/null for an empty list."),
         ] = None,
         project: Annotated[
             str | None,
             Field(
-                description="Project to file the record under; "
+                description="Repository name, e.g. 'invintiry'; "
                 "omit/null for memory without a project."
             ),
         ] = None,
@@ -504,7 +526,8 @@ def build_mcp(
             ),
         ] = None,
     ) -> dict[str, Any]:
-        """Store a memory record. A supplied UUID is an upsert key and may update an existing
+        """Store an agent or shared memory record. A supplied UUID is an upsert key and may
+        update an existing
         row. Shared records can be reasoning, coding_reasoning, knowledge, ras or
         user_profile."""
         _check_template(record_type, template_version)
@@ -523,11 +546,18 @@ def build_mcp(
     @mcp.tool(title="Create an episode with its first entry", annotations=_ADDITIVE)
     def create_episode(
         agent_id: ExistingAgent,
-        title: Annotated[str, Field(description="Name of the rolling episode.")],
-        entry_title: EntryTitle, body: EntryBody,
+        title: Annotated[str, Field(description="Episode name, e.g. 'invintiry-auth'.")],
+        entry_title: EntryTitle,
+        body: EntryBody,
         content_summary: Annotated[str, Field(description="The entry's authored Summary row.")],
-        project: Annotated[str | None, Field(description="Project, or null if unassigned.")] = None,
-        tags: Annotated[list[str] | None, Field(description="Searchable episode tags.")] = None,
+        project: Annotated[
+            str | None,
+            Field(description="Repository name, e.g. 'invintiry'; omit/null if unassigned."),
+        ] = None,
+        tags: Annotated[
+            list[str] | None,
+            Field(description="Episode tags, e.g. ['release']; omit/null for none."),
+        ] = None,
         template_version: EpisodeVersion = None,
     ) -> dict[str, Any]:
         """Create a rolling episode with its first entry. Munnin adds the dated heading and saves
@@ -550,7 +580,7 @@ def build_mcp(
         return _svc().prepend_episode_entry(uuid, entry_title, body, content_summary)
 
     @mcp.tool(title="Edit a record's body", annotations=_DESTRUCTIVE)
-    def edit(
+    def edit_memory_body(
         uuid: RecordRef,
         old_string: OldString,
         new_string: NewString,
@@ -558,7 +588,8 @@ def build_mcp(
         expected_revision: ExpectedRevision = None,
         expected_tenant: ExpectedTenant = None,
     ) -> dict[str, Any]:
-        """Replace matching body text without changing metadata. Returns the updated record. For
+        """Replace matching text in a memory body; its title, summary and tags stay unchanged.
+        Returns the updated record. For
         conflict-safe edits supply both expected_revision and expected_tenant; success returns
         metadata and fresh edit_context instead."""
         try:
@@ -570,7 +601,7 @@ def build_mcp(
             raise ToolError(f"edit conflict: {exc}") from exc
 
     @mcp.tool(title="Append to a record", annotations=_ADDITIVE)
-    def append(
+    def append_memory_body(
         uuid: RecordRef,
         text: Annotated[
             str,
@@ -581,7 +612,7 @@ def build_mcp(
         return _svc().append(uuid, text)
 
     @mcp.tool(title="Prepend to a record", annotations=_ADDITIVE)
-    def prepend(
+    def prepend_memory_body(
         uuid: RecordRef,
         text: Annotated[
             str,
@@ -594,28 +625,29 @@ def build_mcp(
         return _svc().prepend(uuid, text)
 
     @mcp.tool(title="Apply several edits atomically", annotations=_DESTRUCTIVE)
-    def multi_edit(
+    def multi_edit_memory_body(
         uuid: RecordRef,
         edits: Annotated[
             list[dict[str, Any]],
             Field(
-                description="Nonempty ordered list of objects with old_string and new_string "
-                "string values, plus optional replace_all (default false). Each matches the "
+                description="Ordered replacements, e.g. [{'old_string': 'draft', "
+                    "'new_string': 'ready'}]. Use "
+                "optional replace_all for repeated matches. Each matches the "
                 "body resulting from the previous edit; all edits succeed or none are written."
             ),
         ],
     ) -> dict[str, Any]:
         """Apply ordered body replacements to one record atomically. If any fails, none are
-        saved. Update the summary separately with edit_metadata."""
+        saved. Update the summary separately with edit_memory_metadata."""
         return _svc().multi_edit(uuid, edits)
 
     @mcp.tool(title="Edit a record's metadata", annotations=_DESTRUCTIVE)
-    def edit_metadata(
+    def edit_memory_metadata(
         uuid: RecordRef,
         title: Annotated[
             str | None,
             Field(
-                description="New nonblank display title; omit/null to keep it. "
+                description="New title, e.g. 'Release checks'; omit/null to keep it. "
                 "Use clearing to remove it."
             ),
         ] = None,
@@ -628,7 +660,7 @@ def build_mcp(
         project: Annotated[
             str | None,
             Field(
-                description="New nonblank project name; omit/null to keep it. "
+                description="Repository name, e.g. 'invintiry'; omit/null to keep it. "
                 "Use clearing to remove it."
             ),
         ] = None,
@@ -651,7 +683,8 @@ def build_mcp(
         expected_revision: ExpectedRevision = None,
         expected_tenant: ExpectedTenant = None,
     ) -> dict[str, Any]:
-        """Update metadata without changing the body. Omitted fields are kept; use clearing to
+        """Change a memory record's title, summary, tags or project without changing its body.
+        Omitted fields are kept; use clearing to
         remove them. Returns metadata only. Supply both expected_revision and expected_tenant
         for a guarded save and fresh edit_context."""
         try:
@@ -669,9 +702,9 @@ def build_mcp(
             raise ToolError(f"edit conflict: {exc}") from exc
 
     @mcp.tool(title="Archive a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
-    def archive(uuid: RecordRef) -> dict[str, str]:
+    def archive_memory(uuid: RecordRef) -> dict[str, str]:
         """Hide a record from awakening and default queries. It remains readable by ID and
-        searchable; use unarchive to restore it."""
+        searchable; use unarchive_memory to restore it."""
         return _svc().archive(uuid)
 
     @mcp.tool(title="Scan for archivable episodes", annotations=_DESTRUCTIVE_IDEMPOTENT)
@@ -697,14 +730,14 @@ def build_mcp(
         return _svc().archive_memories(agent_id, days=days, apply=apply)
 
     @mcp.tool(title="Unarchive a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
-    def unarchive(uuid: RecordRef) -> dict[str, str]:
+    def unarchive_memory(uuid: RecordRef) -> dict[str, str]:
         """Restore an archived record to awakening and default queries. Cannot restore deleted
         records."""
         return _svc().unarchive(uuid)
 
     @mcp.tool(title="Soft-delete a record", annotations=_DESTRUCTIVE_IDEMPOTENT)
-    def soft_delete(uuid: RecordRef) -> dict[str, str]:
-        """Hide a record from get, query, search and awakening without physically erasing it.
+    def soft_delete_memory(uuid: RecordRef) -> dict[str, str]:
+        """Hide a memory from reads, listings, searches and awakening without physically erasing it.
         There is no undelete tool."""
         return _svc().soft_delete(uuid)
 
@@ -824,13 +857,14 @@ def _register_content(
     @mcp.tool(title="Read a served procedure", annotations=_READ)
     def read_procedure(
         name: Annotated[
-            str, Field(description="Exact procedure name from list_procedures, without / or .md.")
+            str, Field(description="Name from list_procedures, e.g. 'awaken-agent', "
+                "without / or .md.")
         ],
         argument: Annotated[
             str | None,
             Field(
                 description="Optional text for $ARGUMENTS, using the procedure's documented "
-                "format (e.g. a domain for awaken-agent). Omit/null/empty leaves authored text."
+                "format (e.g. 'meta' for awaken-agent). Omit/null/empty leaves authored text."
             ),
         ] = None,
     ) -> dict[str, Any]:
@@ -859,7 +893,7 @@ def _register_content(
         name: Annotated[
             str,
             Field(
-                description="Exact resource stem from list_resources, "
+                description="Name from list_resources, e.g. 'copy-lines', "
                 "without directory, extension or resource URI."
             ),
         ],

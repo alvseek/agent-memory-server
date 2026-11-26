@@ -46,7 +46,7 @@ def test_prompt_composes_db_mechanics(loader: ContentLoader) -> None:
     text = loader.get_prompt("update-episodic")
     # db tools present (from the substituted db backend section)
     assert "create_episode(" in text and "prepend_episode_entry(" in text
-    assert "query(" in text
+    assert "list_memories(" in text
     # markdown-only mechanics must NOT reach the wire
     assert "MOVE-TO-TODAY" not in text
     assert "episodic-memory-template.md" not in text
@@ -406,8 +406,10 @@ def test_reasoning_gets_agent_context_without_episode_paging(loader: ContentLoad
     read_store = text.split("### § read-reasoning-store\n", 1)[1].split("\n### ", 1)[0]
     assert "awakened agent" in read_store and "domain" in read_store
     assert "list_agents()" in read_store and "confirm" in read_store
-    assert 'query(record_type="reasoning")' in read_store and "agent_id` is null" in read_store
-    assert "get(uuid)" in read_store
+    assert (
+        'list_memories(record_type="reasoning")' in read_store and "agent_id` is null" in read_store
+    )
+    assert "get_memory(uuid)" in read_store
     assert "next_cursor" not in text
     assert "expected_revision" in text and "explicit agreement before editing" in text
 
@@ -418,17 +420,17 @@ def test_knowledge_compares_general_entries_and_updates_their_listing(
     text = loader.get_prompt("update-knowledge")
     assert "shared.knowledge_index" in text and "`project` null" in text
     assert "`agent_id` equal to the acting domain or null" in text
-    assert "get(uuid, include_edit_context=true)" in text
-    assert "edit_metadata(uuid, content_summary=" in text and "partial write" in text
+    assert "get_memory(uuid, include_edit_context=true)" in text
+    assert "edit_memory_metadata(uuid, content_summary=" in text and "partial write" in text
 
 
 def test_episode_reads_distinguish_carry_forward_from_a_full_read(loader: ContentLoader) -> None:
     update = loader.get_prompt("update-episodic").replace("\r\n", "\n")
     candidates = update.split("### § list-candidate-episodes\n", 1)[1].split("\n### ", 1)[0]
-    assert "get(uuid, limit=1)" in candidates and "open items" in candidates
+    assert "get_memory(uuid, limit=1)" in candidates and "open items" in candidates
 
     load = loader.get_prompt("load-episodic").split("### § load-episode-body\n", 1)[1]
-    assert "snippet" in load and "get(uuid)" in load
+    assert "snippet" in load and "get_memory(uuid)" in load
     assert "non-null `next_cursor`" in load and "same `uuid`" in load
     assert "until the cursor is null" in load
 

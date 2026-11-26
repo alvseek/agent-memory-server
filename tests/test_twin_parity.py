@@ -83,13 +83,13 @@ async def test_episode_writes_stamp_each_entry_and_page_it(
         assert updated["content"] == head + "\n\n---\n\n" + old
         assert updated["content_summary"] == "second summary"
         filters = {"agent_id": "meta", "record_type": "episode"}
-        row, = (await mcp.call_tool("query", filters)).data
+        row, = (await mcp.call_tool("list_memories", filters)).data
         assert (row["uuid"], row["content_summary"]) == (uid, "second summary")
-        page = (await mcp.call_tool("get", {"uuid": uid, "limit": 1})).data
+        page = (await mcp.call_tool("get_memory", {"uuid": uid, "limit": 1})).data
         assert page["blocks_total"] == 2 and page["next_cursor"] == "2026-11-26 23.59"
-        assert (await mcp.call_tool("get", {"uuid": uid, "cursor": page["next_cursor"]})).data[
-            "content"
-        ] == old
+        assert (
+            await mcp.call_tool("get_memory", {"uuid": uid, "cursor": page["next_cursor"]})
+        ).data["content"] == old
         bad = await http.post(
             "/api/prepend-episode-entry", json={**second, "template_version": "old"}
         )
@@ -98,7 +98,7 @@ async def test_episode_writes_stamp_each_entry_and_page_it(
             with pytest.raises((httpx.HTTPStatusError, ToolError)):
                 await write("prepend_episode_entry", {**second, "content_summary": invalid},
                             not create_over_http)
-        after = (await mcp.call_tool("get", {"uuid": uid})).data
+        after = (await mcp.call_tool("get_memory", {"uuid": uid})).data
         assert after["content"] == updated["content"]
         assert after["content_summary"] == "second summary"
 
@@ -113,7 +113,7 @@ async def test_insert_http_get_mcp(tmp_path: Path) -> None:
             "template_version": _ver("episodic-entry-template"),
         })).json()
     async with Client(_mcp(db)) as mcp:
-        mcp_rec = (await mcp.call_tool("get", {"uuid": "p1"})).data
+        mcp_rec = (await mcp.call_tool("get_memory", {"uuid": "p1"})).data
     # A write result keeps the shape it had; a deliberate read now carries the page fields.
     assert mcp_rec["content"] == http_rec["content"] == "twin body"
     assert set(mcp_rec) - set(http_rec) == {
@@ -127,11 +127,11 @@ async def test_insert_mcp_get_http(tmp_path: Path) -> None:
     db = tmp_path / "m.db"
     seed_agent(db, "meta")
     async with Client(_mcp(db)) as mcp:
-        mcp_insert = (await mcp.call_tool("insert", {
+        mcp_insert = (await mcp.call_tool("insert_memory", {
             "content_summary": "a one-line summary of this record",
             "agent_id": "meta", "record_type": "knowledge", "content": "twin2", "uuid": "p2",
         })).data
-        mcp_rec = (await mcp.call_tool("get", {"uuid": "p2"})).data
+        mcp_rec = (await mcp.call_tool("get_memory", {"uuid": "p2"})).data
     async with _http(db) as http:
         http_rec = (await http.get("/api/record/p2")).json()
     assert mcp_rec == http_rec
@@ -150,7 +150,7 @@ async def test_append_http_then_multi_edit_mcp_parity(tmp_path: Path) -> None:
         })
         http_rec = (await http.post("/api/append", json={"uuid": "p1", "text": " two"})).json()
     async with Client(_mcp(db)) as mcp:
-        mcp_rec = (await mcp.call_tool("multi_edit", {"uuid": "p1", "edits": [
+        mcp_rec = (await mcp.call_tool("multi_edit_memory_body", {"uuid": "p1", "edits": [
             {"old_string": "one", "new_string": "1"},
         ]})).data
     # both ops went through the same core over the same DB; final read is consistent
@@ -189,7 +189,7 @@ async def test_shared_insert_parity(tmp_path: Path) -> None:
         http_rec = (await http.post("/api/insert", json=payload)).json()
         http_page = (await http.get("/api/record/s1")).json()
     async with Client(_mcp(db)) as mcp:
-        mcp_rec = (await mcp.call_tool("get", {"uuid": "s1"})).data
+        mcp_rec = (await mcp.call_tool("get_memory", {"uuid": "s1"})).data
     assert http_page == mcp_rec
     assert http_rec["content"] == http_page["content"] == "fleet pattern"
     assert "agent_id" not in http_rec and "agent_id" not in http_page
@@ -211,7 +211,7 @@ async def test_shared_insert_contradiction_parity(tmp_path: Path) -> None:
     assert "no agent_id" in r.json()["detail"]
     async with Client(_mcp(db)) as mcp:
         with pytest.raises(ToolError, match="no agent_id"):
-            await mcp.call_tool("insert", {
+            await mcp.call_tool("insert_memory", {
                 "content_summary": "a one-line summary of this record",
                 "scope": "shared", "agent_id": "meta",
                 "record_type": "reasoning", "content": "x",
@@ -334,12 +334,34 @@ async def test_tool_surface_is_the_documented_size(tmp_path: Path) -> None:
     # `help` is not a data tool but it is always present: it is the fallback for a client
     # that never shows `instructions`, so it exists whether or not content is served.
     data_tools = [
-        "append", "archive", "archive_memories", "awaken", "coding_reasoning", "create_agent",
-        "create_episode", "create_invite", "edit", "edit_metadata", "get", "help", "insert",
-        "list_agents", "list_members", "list_tenants", "multi_edit", "ping", "prepend",
-        "prepend_episode_entry", "query",
-        "redeem_invite", "revoke_invite", "revoke_member", "search", "soft_delete",
-        "unarchive", "use_tenant",
+        "append_memory_body",
+        "archive_memories",
+        "archive_memory",
+        "awaken",
+        "coding_reasoning",
+        "create_agent",
+        "create_episode",
+        "create_invite",
+        "edit_memory_body",
+        "edit_memory_metadata",
+        "get_memory",
+        "help",
+        "insert_memory",
+        "list_agents",
+        "list_members",
+        "list_memories",
+        "list_tenants",
+        "multi_edit_memory_body",
+        "ping",
+        "prepend_episode_entry",
+        "prepend_memory_body",
+        "redeem_invite",
+        "revoke_invite",
+        "revoke_member",
+        "search_memories",
+        "soft_delete_memory",
+        "unarchive_memory",
+        "use_tenant",
     ]
     async with Client(_mcp(tmp_path / "m.db")) as mcp:
         names = sorted(t.name for t in await mcp.list_tools())

@@ -36,7 +36,9 @@ async def test_both_faces_send_index_and_can_read_the_body(tmp_path):
         assert (await client.get(f"/api/record/{uid}")).json()["content"] == "original body"
     async with Client(mcp_for(db)) as client:
         mcp_payload = (await client.call_tool("awaken", {"domain": "meta"})).data
-        assert (await client.call_tool("get", {"uuid": uid})).data["content"] == "original body"
+        assert (await client.call_tool("get_memory", {"uuid": uid})).data[
+            "content"
+        ] == "original body"
     assert http_payload["shared"] == mcp_payload["shared"]
     assert "knowledge" not in http_payload["shared"]
     entry, = http_payload["shared"]["knowledge_index"]

@@ -16,6 +16,17 @@ from tests.conftest import auth_for, bearer, mcp_for, seed_agent, seed_login
 from tests.data_repositories.test_record_prefix import A, B, seed
 
 CF = Path(__file__).resolve().parents[2] / "control-files"
+MCP_NAMES = {
+    "get": "get_memory",
+    "edit": "edit_memory_body",
+    "edit_metadata": "edit_memory_metadata",
+    "append": "append_memory_body",
+    "prepend": "prepend_memory_body",
+    "multi_edit": "multi_edit_memory_body",
+    "archive": "archive_memory",
+    "unarchive": "unarchive_memory",
+    "soft_delete": "soft_delete_memory",
+}
 REQUESTS = [
     ("get", None),
     ("edit", {"old_string": "original", "new_string": "changed"}),
@@ -58,7 +69,9 @@ async def test_unique_prefix_success(tmp_path, operation, body, face):
             result = response.json()
     else:
         async with Client(mcp_for(db)) as client:
-            result = (await client.call_tool(operation, {"uuid": "AB-CD-EF", **(body or {})})).data
+            result = (
+                await client.call_tool(MCP_NAMES[operation], {"uuid": "AB-CD-EF", **(body or {})})
+            ).data
     assert result["uuid"] == A
 
 
@@ -80,7 +93,7 @@ async def test_ambiguity_error_and_no_write(tmp_path, operation, body, face):
     else:
         async with Client(mcp_for(db)) as client:
             with pytest.raises(ToolError) as caught:
-                await client.call_tool(operation, {"uuid": "abcdef", **(body or {})})
+                await client.call_tool(MCP_NAMES[operation], {"uuid": "abcdef", **(body or {})})
             assert "ambiguous UUID" in str(caught.value)
             assert A in str(caught.value) and B in str(caught.value)
     assert [asdict(repo.get(uid)) for uid in (A, B)] == before

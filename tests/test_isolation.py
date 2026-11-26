@@ -160,8 +160,8 @@ async def test_isolation_holds_on_the_mcp_face_too(tmp_path: Path) -> None:
     uuid = await _write_as_alice(app)
 
     async with running(app), mcp_client_for(app, token_for(BOB)) as bob:
-        got = await bob.call_tool("get", {"uuid": uuid})
-        found = await bob.call_tool("search", {"text": SECRET})
+        got = await bob.call_tool("get_memory", {"uuid": uuid})
+        found = await bob.call_tool("search_memories", {"text": SECRET})
         agents = await bob.call_tool("list_agents", {})
 
     assert not got.data
