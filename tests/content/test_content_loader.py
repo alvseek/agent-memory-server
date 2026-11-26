@@ -53,7 +53,10 @@ def test_prompt_composes_db_mechanics(loader: ContentLoader) -> None:
     assert "date -u" not in text
     # semantic core retained
     assert "carry-forward" in text.lower()
-    assert "Append Sub-Episode" in text
+    paths = text.split("## Phase 2 — Save the entry", 1)[1].split("## Phase 3 —", 1)[0]
+    append, create = paths.split("### Path B — Create a new episode", 1)
+    assert "prepend_episode_entry(" in append and "create_episode(" not in append
+    assert "create_episode(" in create and "prepend_episode_entry(" not in create
     # the entry-block template is served as a separate Resource, NOT inlined in the prompt
     # (§ template seam) — its body must not leak onto the wire
     assert "Detailed Entry Template" not in text
