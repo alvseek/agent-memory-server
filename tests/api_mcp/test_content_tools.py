@@ -136,9 +136,9 @@ async def test_awakening_carries_the_resolution_rule(tmp_path: Path) -> None:
     markdown-side command ever carries it."""
     async with Client(_mcp(tmp_path)) as client:
         out = (await client.call_tool("read_procedure", {"name": "awaken-agent"})).data
-    assert 'read_procedure("<name>")' in out["content"]
-    assert 'read_resource("<stem>")' in out["content"]
-    assert "list_procedures()" in out["content"]
+    assert "read_procedure(name, argument)" in out["content"]
+    assert "read_resource(stem)" in out["content"]
+    assert "isn't served, report that" in out["content"]
 
 
 async def test_unserved_procedure_is_an_answer_not_an_error(tmp_path: Path) -> None:
