@@ -102,7 +102,9 @@ CASES: dict[str, dict] = {
     },
     "update-memory": {
         "templates": [],
-        "tokens": ["/update-episodic", "/update-knowledge", "/update-reasoning", "/update-emotional"],
+        "tokens": [
+            "/update-episodic", "/update-knowledge", "/update-reasoning", "/update-emotional",
+        ],
     },
 }
 
