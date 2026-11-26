@@ -45,12 +45,12 @@ def test_lists_served_prompts(loader: ContentLoader) -> None:
 def test_prompt_composes_db_mechanics(loader: ContentLoader) -> None:
     text = loader.get_prompt("update-episodic")
     # db tools present (from the substituted db backend section)
-    assert "insert(" in text
+    assert "create_episode(" in text and "prepend_episode_entry(" in text
     assert "query(" in text
     # markdown-only mechanics must NOT reach the wire
     assert "MOVE-TO-TODAY" not in text
     assert "episodic-memory-template.md" not in text
-    assert "date '+%Y-%m-%d %H:%M'" not in text
+    assert "date -u" not in text
     # semantic core retained
     assert "carry-forward" in text.lower()
     assert "Append Sub-Episode" in text
@@ -59,16 +59,15 @@ def test_prompt_composes_db_mechanics(loader: ContentLoader) -> None:
     assert "Detailed Entry Template" not in text
 
 
-def test_orchestrator_prompt_composes_and_keeps_footer(loader: ContentLoader) -> None:
+def test_orchestrator_prompt_reports_database_write_outcomes(loader: ContentLoader) -> None:
     text = loader.get_prompt("wrap-up")
     # db persistence op substituted in: a DB write is durable the moment it lands,
     # so the served prompt reports an outcome rather than performing a save
-    assert "already durable" in text
+    assert "If every required write succeeded" in text
     # markdown-only mechanics must NOT reach the wire — a Munnin client has no
     # git store to push, and the markdown backend resolves this op to /push-memory
     assert "/push-memory" not in text
-    # the trailing footer note after the seam must survive the substitution
-    assert "Working in a repo as well?" in text
+    assert "what remains unsaved" in text
 
 
 def test_unknown_prompt_raises(loader: ContentLoader) -> None:
@@ -88,7 +87,7 @@ def test_prompt_descriptions_are_distinct_and_read_from_the_procedures(
         "Load agent memory and activate a domain-specific agent."
     )
     assert described["update-episodic"].startswith(
-        "Capture session context as rolling per-theme episodes."
+        "Save a dated session entry in a new or existing episode"
     )
     assert all(
         "fetching the instructions does not execute them" in text for text in described.values()
@@ -146,6 +145,7 @@ def test_every_procedure_declares_its_optional_argument(loader: ContentLoader) -
     declared = {name: loader.argument_prompt(name) for name in loader.list_prompts()}
     # a format reference is read, never invoked with a subject — it takes nothing
     assert declared.pop("wait-options") is None
+    assert declared.pop("wrap-up") is None
     for name, argument in declared.items():
         assert argument is not None, f"{name} declares no argument"
         arg_name, arg_help = argument
@@ -395,7 +395,7 @@ def test_no_served_procedure_contains_the_shared_caller_preamble(loader: Content
 
 
 def test_reasoning_gets_agent_context_without_episode_paging(loader: ContentLoader) -> None:
-    text = loader.get_prompt("add-reasoning")
+    text = loader.get_prompt("add-reasoning").replace("\r\n", "\n")
     # The caller supplies the pattern; its owner is resolved at the read operation.
     arguments = text.split("## Arguments\n", 1)[1].split("\n---", 1)[0]
     assert "$ARGUMENTS" in arguments and "pattern" in arguments
@@ -408,9 +408,9 @@ def test_reasoning_gets_agent_context_without_episode_paging(loader: ContentLoad
 
 
 def test_episode_reads_distinguish_carry_forward_from_a_full_read(loader: ContentLoader) -> None:
-    update = loader.get_prompt("update-episodic")
+    update = loader.get_prompt("update-episodic").replace("\r\n", "\n")
     candidates = update.split("### § list-candidate-episodes\n", 1)[1].split("\n### ", 1)[0]
-    assert "get(uuid, limit=1)" in candidates and "carry-forward" in candidates
+    assert "get(uuid, limit=1)" in candidates and "open items" in candidates
 
     load = loader.get_prompt("load-episodic").split("### § load-episode-body\n", 1)[1]
     assert "snippet" in load and "get(uuid)" in load
@@ -436,7 +436,8 @@ def test_converted_served_text_is_exactly_the_canonical_composition(loader):
         expected = catalog.compose(name, "db")
         assert loader.get_prompt(name).encode("utf-8") == expected.text.encode("utf-8")
         assert loader.title_prompt(name) == expected.title
-        assert loader.argument_prompt(name)[0] == expected.argument_name
+        slot = loader.argument_prompt(name)
+        assert (slot[0] if slot else None) == expected.argument_name
 
 
 def test_menu_uses_one_metadata_snapshot_instead_of_one_tree_read_per_field(monkeypatch, loader):

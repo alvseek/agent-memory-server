@@ -89,7 +89,6 @@ def test_existing_named_slots_keep_their_names() -> None:
         "load-knowledge": "keyword",
         "archive-old-memories": "scope",
         "update-memory": "mode",
-        "wrap-up": "mode",
         "create-agent": "domain",
         "list-agents": "keyword",
         "awaken-agent": "domain",
@@ -99,3 +98,4 @@ def test_existing_named_slots_keep_their_names() -> None:
     }
     for name, argument in expected.items():
         assert LOADER.argument_prompt(name)[0] == argument
+    assert LOADER.argument_prompt("wrap-up") is None

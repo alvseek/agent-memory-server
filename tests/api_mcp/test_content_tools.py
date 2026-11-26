@@ -113,7 +113,7 @@ async def test_read_procedure_composes_for_the_db_backend(tmp_path: Path) -> Non
         out = (await client.call_tool("read_procedure", {"name": "update-episodic"})).data
     assert out["served"] is True
     assert out["name"] == "update-episodic"
-    assert "insert(" in out["content"]
+    assert "create_episode(" in out["content"] and "prepend_episode_entry(" in out["content"]
     assert "MOVE-TO-TODAY" not in out["content"]  # markdown mechanics never reach the wire
 
 

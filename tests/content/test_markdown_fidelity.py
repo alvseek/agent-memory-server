@@ -37,7 +37,7 @@ CASES: dict[str, dict] = {
     "update-episodic": {
         "templates": ["procedures/memory/resources/episodic-entry-template.md"],
         "tokens": [
-            "date '+%Y-%m-%d %H:%M'",
+            "date -u '+%Y-%m-%d %H.%M UTC'",
             "agent-memory-index.md",
             "# Recent Context Episodes",
             "MOVE-TO-TODAY",
@@ -102,8 +102,7 @@ CASES: dict[str, dict] = {
     },
     "update-memory": {
         "templates": [],
-        "tokens": ["agent-memory-index.md", "shared-memory/", "core-reasoning-memory.md",
-                   "knowledge-base/"],
+        "tokens": ["/update-episodic", "/update-knowledge", "/add-reasoning", "/update-emotional"],
     },
 }
 
@@ -138,7 +137,7 @@ def test_harness_detects_a_dropped_mechanic() -> None:
     path = "procedures/memory/storage-backends/markdown.md"
     text = data[path].decode("utf-8")
     text = re.sub(
-        r'(@start region id="update-episodic\.[^"]+"[^\n]*\n).*?(@end region\n)',
+        r'(@start region id="update-episodic\.[^"]+"[^\n]*\n).*?(@end region\r?\n)',
         r"\1\2",
         text,
         flags=re.S,
