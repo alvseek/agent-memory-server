@@ -191,7 +191,7 @@ At `initialize` the server returns four sentences of **instructions** — what M
 **33 tools**, in five groups:
 
 - *Orientation* — `help`: the same instructions text plus the served procedure list, for clients that never show instructions. Always present, even with no served content.
-- *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `edit_metadata`, `append`, `prepend`, `multi_edit`, `archive`, `archive_memories`, `unarchive`, `soft_delete`, `coding_reasoning`, `permanent_layer`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically. `edit_metadata` is the one writer of `title`, `tags`, `project` and `content_summary`, and returns metadata without a body. Omitted fields keep their value; `clearing` names fields to remove. Unguarded body writes retain their body-bearing response; guarded editor saves return metadata and fresh edit context instead. `archive_memories(agent_id, days=30, apply=False)` separates tagged, aging and protected episodes; only `apply=True` writes, and only the tagged unprotected set. `unarchive(uuid)` returns an archived record to the hot index. Reads have distinct shapes: `query` returns metadata and `blocks_total`, `search` returns metadata and a plain-text snippet, and `get` returns body pages with `blocks_returned`, `blocks_total` and `next_cursor`. The opt-in conflict-safe editing and exact-body reconstruction contracts are described with the HTTP twins below.
+- *Data* — `awaken`, `get`, `query`, `search`, `insert`, `edit`, `edit_metadata`, `append`, `prepend`, `multi_edit`, `create_episode`, `prepend_episode_entry`, `archive`, `archive_memories`, `unarchive`, `soft_delete`, `coding_reasoning`, `permanent_layer`, plus `ping`. Writes have Edit-tool parity: `edit` is a targeted string replace, `append`/`prepend` add text verbatim, `multi_edit` applies a sequence atomically. Use `edit_metadata` to change `title`, `tags`, `project` or `content_summary` independently of the body. Omitted fields keep their value; `clearing` names fields to remove. Unguarded body writes retain their body-bearing response; guarded editor saves return metadata and fresh edit context instead. `archive_memories(agent_id, days=30, apply=False)` separates tagged, aging and protected episodes; only `apply=True` writes, and only the tagged unprotected set. `unarchive(uuid)` returns an archived record to the hot index. Reads have distinct shapes: `query` returns metadata and `blocks_total`, `search` returns metadata and a plain-text snippet, and `get` returns body pages with `blocks_returned`, `blocks_total` and `next_cursor`. The opt-in conflict-safe editing and exact-body reconstruction contracts are described with the HTTP twins below.
 - *Agent lifecycle* — `create_agent`, `list_agents`. An agent exists when it has a row; every memory record names one under a foreign key, so `create_agent` is the strict twin of the first write.
 - *Tenancy* — `list_tenants`, `use_tenant`, `list_members`, `create_invite`, `redeem_invite`, `revoke_invite`, `revoke_member`. Working inside an account somebody else owns, or letting somebody work inside yours.
 - *Served content* — `list_procedures`, `read_procedure(name, argument?)`, `list_resources`, `read_resource(name)`. The same procedures, templates and scripts are also served as MCP **prompts** and **resources**, but a prompt is user-invoked and a resource client-attached; a tool is the one primitive the agent may call itself, which is what lets a served procedure that says *execute `/wrap-up`* resolve to `read_procedure("wrap-up")`.
@@ -202,12 +202,13 @@ At `initialize` the server returns four sentences of **instructions** — what M
 
 For a new episode, `create_episode` takes the rolling episode title, entry title,
 body below the H3 heading, and its summary. For another entry, `prepend_episode_entry`
-takes the episode UUID, entry title and body. Both accept the current episode template
+takes the episode UUID, entry title, body and summary. Both accept the current episode template
 version and generate `### YYYY-MM-DD HH.MM UTC - Title (agent: domain)` at write time.
-Older entries retain their original text. A prepend does not update the summary; use
-`edit_metadata` for that. Generic `insert` and `prepend` still accept verbatim content.
+Older entries retain their original text. Each episode write saves the new entry and
+its listing summary in one transaction. Generic `prepend` still adds text verbatim
+without changing the summary.
 
-Summaries supplied to `insert`, `create_episode` or `edit_metadata` must be at most **1,000 Unicode
+Summaries supplied to `insert`, `create_episode`, `prepend_episode_entry` or `edit_metadata` must be at most **1,000 Unicode
 characters** (Python `len()`, not bytes or tokens); aim for 300–500. Both MCP and HTTP
 reject longer input before writing anything, with the maximum and submitted length in
 the error. Nothing is truncated. This is an input rule, not a database migration:

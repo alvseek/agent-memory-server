@@ -95,17 +95,22 @@ def test_edit_append_prepend_multi_edit(memory_repo: Any) -> None:
 def test_stamped_prepend_preserves_legacy_episode_and_refuses_other_types(memory_repo):
     legacy = "### 2026-11-26 12.01 - Local heading\n\nhistorical body\n"
     episode = memory_repo.insert(_mem(content=legacy))
-    stored = memory_repo.prepend_episode_entry(episode.uuid, "New subject", "new body")
+    stored = memory_repo.prepend_episode_entry(episode.uuid, "New subject", "new body", "summary")
     suffix = " UTC - New subject (agent: meta)\n\nnew body\n\n---\n\n" + legacy
     assert stored.full_content.endswith(suffix)
+    listing = memory_repo.query(agent_id="meta", record_type=RecordType.episode)
+    assert [(r.uuid, r.content_summary) for r in listing] == [(episode.uuid, "summary")]
     for record in (memory_repo.insert(_mem(record_type=RecordType.knowledge)),
                    memory_repo.insert_shared(_shared(RecordType.knowledge, "shared"))):
         with pytest.raises(ValueError, match="agent-owned episode"):
-            memory_repo.prepend_episode_entry(record.uuid, "Wrong type", "body")
+            memory_repo.prepend_episode_entry(record.uuid, "Wrong type", "body", "wrong summary")
         assert memory_repo.get(record.uuid).full_content == record.full_content
     with pytest.raises(ValueError, match="single line"):
-        memory_repo.prepend_episode_entry(episode.uuid, "two\nlines", "body")
-    assert memory_repo.get(episode.uuid).full_content == stored.full_content
+        memory_repo.prepend_episode_entry(episode.uuid, "two\nlines", "body", "wrong summary")
+    after = memory_repo.get(episode.uuid)
+    assert (after.full_content, after.content_summary) == (stored.full_content, "summary")
+    memory_repo.prepend(episode.uuid, "verbatim ")
+    assert memory_repo.get(episode.uuid).content_summary == "summary"
 
 
 def test_archive_then_soft_delete(memory_repo: Any) -> None:

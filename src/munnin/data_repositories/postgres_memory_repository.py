@@ -282,12 +282,17 @@ class PostgresMemoryRepository:
             uuid, lambda r: transform(r.full_content or ""), expected_revision=expected_revision
         )
 
-    def prepend_episode_entry(self, uuid: str, entry_title: str, body: str) -> SharedRecord:
-        return self._rewrite_record(uuid, lambda r: prepend_entry(r, entry_title, body))
+    def prepend_episode_entry(
+        self, uuid: str, entry_title: str, body: str, content_summary: str,
+    ) -> SharedRecord:
+        return self._rewrite_record(
+            uuid, lambda r: prepend_entry(r, entry_title, body), entry_summary=content_summary
+        )
 
     def _rewrite_record(
         self, uuid: str, transform: Callable[[SharedRecord], str], *,
         expected_revision: str | None = None,
+        entry_summary: str | None = None,
     ) -> SharedRecord:
         with self._conn() as conn, conn.cursor() as cur:
             target = self._locate(cur, uuid)
@@ -307,6 +312,9 @@ class PostgresMemoryRepository:
             new_content = transform(record)
             columns = ["full_content=%s", "modified_date=%s"]
             params: list[object] = [new_content, _now()]
+            if entry_summary is not None:
+                columns.append("content_summary=%s")
+                params.append(entry_summary)
             params.extend([uuid, self._user_id])
             cur.execute(
                 f"UPDATE {table} SET {', '.join(columns)} WHERE uuid=%s AND user_id=%s",

@@ -661,14 +661,15 @@ def build_mcp(
     @mcp.tool(title="Add a dated entry to an episode", annotations=_ADDITIVE)
     def prepend_episode_entry(
         uuid: RecordRef, entry_title: EntryTitle, body: EntryBody,
+        content_summary: Annotated[str, Field(description="The new entry's authored Summary row.")],
         template_version: EpisodeVersion = None,
     ) -> dict[str, Any]:
         """Add one newest entry. Supply its single-line subject and body without a heading
         or separator; Munnin adds the UTC timestamp and the episode owner's domain.
-        Pass the episodic-entry-template version. Older entries and metadata are preserved;
-        use edit_metadata for the summary. Retrying adds another entry."""
+        Pass the episodic-entry-template version and the new entry's Summary. The stamped
+        entry and listing summary are saved together. Retrying adds another entry."""
         _check_template("episode", template_version)
-        return _svc().prepend_episode_entry(uuid, entry_title, body)
+        return _svc().prepend_episode_entry(uuid, entry_title, body, content_summary)
 
     @mcp.tool(title="Edit a record's body", annotations=_DESTRUCTIVE)
     def edit(

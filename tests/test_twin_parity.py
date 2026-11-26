@@ -76,11 +76,15 @@ async def test_episode_writes_stamp_each_entry_and_page_it(
         clock.now.assert_called_once_with(timezone.utc)
         clock.now.return_value = datetime(2026, 11, 27, 0, 1, tzinfo=timezone.utc)
         uid = created["uuid"]
-        second = dict(uuid=uid, entry_title="Second", body="body two", template_version=version)
+        second = dict(uuid=uid, entry_title="Second", body="body two",
+                      content_summary="second summary", template_version=version)
         updated = await write("prepend_episode_entry", second, not create_over_http)
         head = "### 2026-11-27 00.01 UTC - Second (agent: meta)\n\nbody two"
         assert updated["content"] == head + "\n\n---\n\n" + old
-        assert updated["content_summary"] == "first summary"
+        assert updated["content_summary"] == "second summary"
+        filters = {"agent_id": "meta", "record_type": "episode"}
+        row, = (await mcp.call_tool("query", filters)).data
+        assert (row["uuid"], row["content_summary"]) == (uid, "second summary")
         page = (await mcp.call_tool("get", {"uuid": uid, "limit": 1})).data
         assert page["blocks_total"] == 2 and page["next_cursor"] == "2026-11-26 23.59"
         assert (await mcp.call_tool("get", {"uuid": uid, "cursor": page["next_cursor"]})).data[
@@ -90,6 +94,13 @@ async def test_episode_writes_stamp_each_entry_and_page_it(
             "/api/prepend-episode-entry", json={**second, "template_version": "old"}
         )
         assert bad.status_code == 400 and "stale" in bad.json()["detail"]
+        for invalid in ("  ", "x" * 1001):
+            with pytest.raises((httpx.HTTPStatusError, ToolError)):
+                await write("prepend_episode_entry", {**second, "content_summary": invalid},
+                            not create_over_http)
+        after = (await mcp.call_tool("get", {"uuid": uid})).data
+        assert after["content"] == updated["content"]
+        assert after["content_summary"] == "second summary"
 
 
 async def test_insert_http_get_mcp(tmp_path: Path) -> None:

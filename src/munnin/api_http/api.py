@@ -133,13 +133,13 @@ class InsertBody(_WriteBody):
 class EpisodeEntryBody(_WriteBody):
     entry_title: str
     body: str
+    content_summary: str
     template_version: str | None = None
 
 
 class CreateEpisodeBody(EpisodeEntryBody):
     agent_id: str
     title: str
-    content_summary: str
     project: str | None = None
     tags: list[str] | None = None
 
@@ -453,11 +453,12 @@ def build_router(
     def prepend_episode_entry(
         body: PrependEpisodeEntryBody, svc: MemoryService = Depends(_tenant_service),
     ) -> dict[str, Any]:
-        """Prepend a UTC-stamped entry, preserving older content and metadata."""
+        """Save the UTC-stamped entry and its listing summary in one transaction."""
         try:
             if content is not None and content.available():
                 content.check_template_version("episode", body.template_version)
-            return svc.prepend_episode_entry(body.uuid, body.entry_title, body.body)
+            return svc.prepend_episode_entry(body.uuid, body.entry_title, body.body,
+                                             body.content_summary)
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:
