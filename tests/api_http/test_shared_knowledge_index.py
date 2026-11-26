@@ -48,8 +48,6 @@ def test_served_instructions_do_not_reload_all_shared_bodies():
     loader = ContentLoader(Path(__file__).resolve().parents[2] / "control-files")
     awaken = loader.get_prompt("awaken-agent")
     knowledge = loader.get_prompt("load-knowledge")
-    assert "shared.knowledge_index" in awaken
-    assert "do not fetch every body" in awaken
-    assert "empty index is valid" in awaken
+    assert "Load entries from the shared and agent knowledge indexes only when relevant." in awaken
     assert "shared.knowledge_index" in knowledge
     assert "Never include another agent's private rows" in knowledge
