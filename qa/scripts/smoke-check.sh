@@ -28,7 +28,7 @@ probe() { # name url [needle]
 probe health    "$BASE/health"
 probe awaken    "$BASE/api/awaken?agent_id=meta"
 probe prompts   "$BASE/api/prompts"                     update-episodic
-probe prompt1   "$BASE/api/prompts/update-episodic"     'insert('
+probe prompt1   "$BASE/api/prompts/update-episodic"     'create_episode('
 probe resources "$BASE/api/resources"                   episodic-entry-template
 
 [ "$fail" -eq 0 ] && echo "SMOKE OK" || echo "SMOKE FAILED"
