@@ -61,6 +61,7 @@ class SqliteIdentityRepository:
     def __init__(self, db_path: Path) -> None:
         self._db_path = Path(db_path)
         self._ensured = False
+        self._access = SqliteWorkspaceAccess(self._db_path)
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -81,20 +82,22 @@ class SqliteIdentityRepository:
 
     # --- reads ---
 
+    def _workspace_access(self) -> SqliteWorkspaceAccess:
+        if not self._ensured:
+            with self._conn():
+                pass
+        return self._access
+
     def get_or_create_home(
         self, iss: str, sub: str, *, email: str | None = None, display_name: str | None = None
     ) -> HomeAccount:
-        with self._conn():
-            pass
-        return SqliteWorkspaceAccess(self._db_path).get_or_create_home(
+        return self._workspace_access().get_or_create_home(
             iss, sub, email=email, display_name=display_name
         )
 
     def find_user_id(self, iss: str, sub: str) -> str | None:
         """The tenant this issuer-and-subject pair resolves to, or ``None``."""
-        with self._conn():
-            pass
-        return SqliteWorkspaceAccess(self._db_path).lookup_home(iss, sub)
+        return self._workspace_access().lookup_home(iss, sub)
 
     def get_account(self, user_id: str) -> Account | None:
         with self._conn() as conn:

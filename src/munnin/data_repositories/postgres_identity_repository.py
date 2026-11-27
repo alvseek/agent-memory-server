@@ -29,6 +29,7 @@ class PostgresIdentityRepository:
     def __init__(self, dsn: str) -> None:
         self._dsn = dsn
         self._ensured = False
+        self._access = PostgresWorkspaceAccess(dsn)
 
     @contextmanager
     def _conn(self) -> Iterator[psycopg.Connection]:
@@ -44,19 +45,22 @@ class PostgresIdentityRepository:
 
     # --- reads ---
 
+    def _workspace_access(self) -> PostgresWorkspaceAccess:
+        # This repository owns lazy schema initialization; the shared adapter does not.
+        if not self._ensured:
+            with self._conn():
+                pass
+        return self._access
+
     def get_or_create_home(
         self, iss: str, sub: str, *, email: str | None = None, display_name: str | None = None
     ) -> HomeAccount:
-        with self._conn():
-            pass
-        return PostgresWorkspaceAccess(self._dsn).get_or_create_home(
+        return self._workspace_access().get_or_create_home(
             iss, sub, email=email, display_name=display_name
         )
 
     def find_user_id(self, iss: str, sub: str) -> str | None:
-        with self._conn():
-            pass
-        return PostgresWorkspaceAccess(self._dsn).lookup_home(iss, sub)
+        return self._workspace_access().lookup_home(iss, sub)
 
     def get_account(self, user_id: str) -> Account | None:
         with self._conn() as conn, conn.cursor() as cur:
