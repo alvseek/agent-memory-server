@@ -23,9 +23,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from valaskjalf_workspace_access import WorkspaceAccess, WorkspaceAccessDenied
+
 from munnin.business_services.episode_page import DEFAULT_MAX_BODY_BYTES
 from munnin.business_services.memory_service import MemoryService
-from munnin.business_services.sharing_service import SharingService
+from munnin.business_services.sharing_service import SharingService, TenantAccessRevoked
 from munnin.data_repositories.memory_repository import MemoryRepository
 from munnin.data_repositories.postgres_memory_repository import PostgresMemoryRepository
 from munnin.data_repositories.sharing_repository import SharingRepository
@@ -42,6 +44,7 @@ class ServiceFactory:
         backend: str = "sqlite",
         db_url: str | None = None,
         sharing: SharingRepository | None = None,
+        workspace_access: WorkspaceAccess | None = None,
         max_body_bytes: int = DEFAULT_MAX_BODY_BYTES,
     ) -> None:
         if isinstance(max_body_bytes, bool) or not isinstance(max_body_bytes, int):
@@ -52,6 +55,7 @@ class ServiceFactory:
         self._backend = backend
         self._db_url = db_url
         self._sharing = sharing
+        self._workspace_access = workspace_access
         self._max_body_bytes = max_body_bytes
         self._services: dict[str, MemoryService] = {}
 
@@ -63,13 +67,25 @@ class ServiceFactory:
         return SqliteMemoryRepository(self._db_path, user_id=user_id)
 
     def for_user(self, user_id: str) -> MemoryService:
-        """The service acting as ``user_id``. Every query it runs is scoped to that tenant.
+        """Authorize the home account and bind a service to its selected workspace.
 
+        When workspace access is configured, it is consulted on every call, even when
+        the resulting workspace service is already cached. Fixed/local callers can omit it.
         Services are kept per tenant rather than rebuilt per request, for one concrete
         reason: the repository runs the schema migrations on its first connection and then
         remembers, so a fresh instance per request would re-check the migration history on
         every single call. The cached objects hold a path/dsn and a string, so the cost of
         keeping one per tenant is nothing next to that."""
+        if self._workspace_access is not None:
+            try:
+                user_id = self._workspace_access.resolve_workspace(user_id).workspace_user_id
+            except WorkspaceAccessDenied as exc:
+                label = self._sharing.account_label(exc.selected_user_id) if self._sharing else None
+                raise TenantAccessRevoked(exc.selected_user_id, label) from exc
+        return self._for_workspace(user_id)
+
+    def _for_workspace(self, user_id: str) -> MemoryService:
+        """Bind an already-authorized workspace, or a newly-created home for profile seeding."""
         service = self._services.get(user_id)
         if service is None:
             service = MemoryService(

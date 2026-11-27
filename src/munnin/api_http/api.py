@@ -274,15 +274,15 @@ def build_router(
             display_name=access.claims.get("name"),
         )
 
-    def _caller(home: str = Depends(_home_caller)) -> str:
+    def _caller(home: str = Depends(_home_caller)) -> MemoryService:
         """The tenant this request acts on: the caller's own, or a selection still permitted.
 
-        The check is the sharing service's, deliberately, so this face and the MCP one
-        cannot drift. A revoked selection answers 403 naming the tenant rather than quietly
+        The factory authorizes the home account for both faces. A revoked selection answers
+        403 naming the tenant rather than quietly
         serving the caller's own memory, which would look like a successful request.
         """
         try:
-            return factory.sharing_for(home).resolved_user_id()
+            return factory.for_user(home)
         except NotPermitted as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
@@ -294,9 +294,9 @@ def build_router(
         """
         return factory.sharing_for(home)
 
-    def _tenant_service(user_id: str = Depends(_caller)) -> MemoryService:
+    def _tenant_service(service: MemoryService = Depends(_caller)) -> MemoryService:
         """A service that can reach this caller's records and no others."""
-        return factory.for_user(user_id)
+        return service
 
     router = APIRouter()
     # Every route below this line is guarded, including the served-content ones: one rule
@@ -440,7 +440,8 @@ def build_router(
 
     @api.post("/api/create-episode")
     def create_episode(
-        body: CreateEpisodeBody, svc: MemoryService = Depends(_tenant_service),
+        body: CreateEpisodeBody,
+        svc: MemoryService = Depends(_tenant_service),
     ) -> dict[str, Any]:
         """Create an episode with a server-stamped UTC heading above its first entry body."""
         try:
@@ -452,14 +453,16 @@ def build_router(
 
     @api.post("/api/prepend-episode-entry")
     def prepend_episode_entry(
-        body: PrependEpisodeEntryBody, svc: MemoryService = Depends(_tenant_service),
+        body: PrependEpisodeEntryBody,
+        svc: MemoryService = Depends(_tenant_service),
     ) -> dict[str, Any]:
         """Save the UTC-stamped entry and its listing summary in one transaction."""
         try:
             if content is not None and content.available():
                 content.check_template_version("episode", body.template_version)
-            return svc.prepend_episode_entry(body.uuid, body.entry_title, body.body,
-                                             body.content_summary)
+            return svc.prepend_episode_entry(
+                body.uuid, body.entry_title, body.body, body.content_summary
+            )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValueError as exc:

@@ -23,6 +23,7 @@ from fastmcp.server.auth import AuthProvider, MultiAuth, RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.auth.providers.workos import AuthKitProvider
 from pydantic import AnyHttpUrl
+from valaskjalf_workspace_access import PostgresWorkspaceAccess, SqliteWorkspaceAccess
 
 from munnin import __version__
 from munnin.api_http.api import build_router
@@ -418,6 +419,13 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
         backend=config.db_backend,
         db_url=config.db_url,
         sharing=sharing_repo,
+        workspace_access=(
+            None
+            if local
+            else PostgresWorkspaceAccess(config.db_url)
+            if config.db_backend == "postgres"
+            else SqliteWorkspaceAccess(config.db_path)
+        ),
         # The page ceiling reaches every public body read through here. Validated at startup
         # (``_validate_body_ceiling``) so a bad value fails the boot, not a request.
         max_body_bytes=config.max_body_bytes,
@@ -439,7 +447,7 @@ def build_app(config: Config | None = None, auth: AuthProvider | None = None) ->
         records are these", and a service that reached across would have to import the
         other's repository.
         """
-        seed_profile(factory.for_user(user_id), display_name)
+        seed_profile(factory._for_workspace(user_id), display_name)
 
     identity = IdentityService(identity_repo, on_created=_seed_new_tenant)
     resolver: TenantResolver

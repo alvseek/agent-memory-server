@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+from valaskjalf_workspace_access import HomeAccount, SqliteWorkspaceAccess
+
 from munnin.data_entities.identity import Account, UserIdentity
 from munnin.data_entities.schema_migrations import apply_migrations
 
@@ -35,6 +37,10 @@ class IdentityRepository(Protocol):
     def find_user_id(self, iss: str, sub: str) -> str | None:
         """The tenant this issuer-and-subject pair resolves to, or ``None``."""
         ...
+
+    def get_or_create_home(
+        self, iss: str, sub: str, *, email: str | None = None, display_name: str | None = None
+    ) -> HomeAccount: ...
 
     def get_account(self, user_id: str) -> Account | None:
         """The tenant row, or ``None``."""
@@ -75,19 +81,25 @@ class SqliteIdentityRepository:
 
     # --- reads ---
 
+    def get_or_create_home(
+        self, iss: str, sub: str, *, email: str | None = None, display_name: str | None = None
+    ) -> HomeAccount:
+        with self._conn():
+            pass
+        return SqliteWorkspaceAccess(self._db_path).get_or_create_home(
+            iss, sub, email=email, display_name=display_name
+        )
+
     def find_user_id(self, iss: str, sub: str) -> str | None:
         """The tenant this issuer-and-subject pair resolves to, or ``None``."""
-        with self._conn() as conn:
-            row = conn.execute(
-                "SELECT user_id FROM user_identity WHERE iss = ? AND sub = ?", (iss, sub)
-            ).fetchone()
-        return None if row is None else str(row["user_id"])
+        with self._conn():
+            pass
+        return SqliteWorkspaceAccess(self._db_path).lookup_home(iss, sub)
 
     def get_account(self, user_id: str) -> Account | None:
         with self._conn() as conn:
             row = conn.execute(
-                "SELECT user_id, display_name, email, created_date FROM account"
-                " WHERE user_id = ?",
+                "SELECT user_id, display_name, email, created_date FROM account WHERE user_id = ?",
                 (user_id,),
             ).fetchone()
         if row is None:

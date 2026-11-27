@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 import psycopg
 from psycopg.rows import dict_row
+from valaskjalf_workspace_access import HomeAccount, PostgresWorkspaceAccess
 
 from munnin.data_entities.identity import Account, UserIdentity
 from munnin.data_entities.postgres_migrations import ensure_schema
@@ -43,19 +44,24 @@ class PostgresIdentityRepository:
 
     # --- reads ---
 
+    def get_or_create_home(
+        self, iss: str, sub: str, *, email: str | None = None, display_name: str | None = None
+    ) -> HomeAccount:
+        with self._conn():
+            pass
+        return PostgresWorkspaceAccess(self._dsn).get_or_create_home(
+            iss, sub, email=email, display_name=display_name
+        )
+
     def find_user_id(self, iss: str, sub: str) -> str | None:
-        with self._conn() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT user_id FROM user_identity WHERE iss = %s AND sub = %s", (iss, sub)
-            )
-            row = cur.fetchone()
-        return None if row is None else str(row["user_id"])
+        with self._conn():
+            pass
+        return PostgresWorkspaceAccess(self._dsn).lookup_home(iss, sub)
 
     def get_account(self, user_id: str) -> Account | None:
         with self._conn() as conn, conn.cursor() as cur:
             cur.execute(
-                "SELECT user_id, display_name, email, created_date FROM account"
-                " WHERE user_id = %s",
+                "SELECT user_id, display_name, email, created_date FROM account WHERE user_id = %s",
                 (user_id,),
             )
             row = cur.fetchone()
