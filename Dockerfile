@@ -21,9 +21,12 @@ ENV UV_CACHE_DIR=/opt/uv-cache \
 
 WORKDIR /app
 
+# uv fetches the composer from its pinned public Git revision at build time.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies before source, so this layer survives every code edit.
 COPY pyproject.toml uv.lock ./
-COPY control-files/packages/procedure-composer ./control-files/packages/procedure-composer
 RUN --mount=type=cache,target=/opt/uv-cache \
     uv sync --locked --no-dev --no-install-project
 

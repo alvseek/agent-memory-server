@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-procedure-composer = { path = "control-files/packages/procedure-composer" }
+procedure-composer = { git = "https://github.com/alvseek/agent-memory-system.git", rev = "4f1dab49ecebfd54a27ebcfcd681b3cbb032756d", subdirectory = "packages/procedure-composer" }
 
 [project.scripts]
 munnin = "munnin.__main__:main"
