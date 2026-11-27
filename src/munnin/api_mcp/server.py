@@ -31,7 +31,11 @@ from munnin.business_services.memory_service import (
     MemoryService,
 )
 from munnin.business_services.service_factory import ServiceFactory
-from munnin.business_services.sharing_service import SharingError, SharingService
+from munnin.business_services.sharing_service import (
+    SharingError,
+    SharingService,
+    TenantAccessRevoked,
+)
 from munnin.business_services.tenant_resolver import TenantResolver
 from munnin.content.discovery import catalog_rows
 from munnin.content.loader import ContentLoader
@@ -176,7 +180,10 @@ def build_mcp(
 
         Called inside each tool body rather than captured when the tool is registered:
         registration happens once at boot, and the caller is not known until the call."""
-        return factory.for_user(resolver.current_user_id())
+        try:
+            return factory.for_user(resolver.current_home_user_id())
+        except TenantAccessRevoked as exc:
+            raise ToolError(str(exc)) from exc
 
     def _check_template(record_type: str, declared: str | None) -> None:
         """The template-version write gate, closed over the build-time loader.
@@ -244,8 +251,10 @@ def build_mcp(
         ] = None,
         include_edit_context: Annotated[
             bool,
-            Field(description="True adds full UUID, acting tenant and opaque full-row revision "
-                  "for conflict-safe editing. Compare every page's context before enabling Save."),
+            Field(
+                description="True adds full UUID, acting tenant and opaque full-row revision "
+                "for conflict-safe editing. Compare every page's context before enabling Save."
+            ),
         ] = False,
     ) -> dict[str, Any] | None:
         """Read a memory record by ID, including archived records. For paged reads, limit counts
@@ -292,8 +301,7 @@ def build_mcp(
         text: Annotated[
             str,
             Field(
-                description="Words to find in memory, e.g. 'catalog release'; "
-                "not a UUID lookup."
+                description="Words to find in memory, e.g. 'catalog release'; not a UUID lookup."
             ),
         ],
         include_archived: Annotated[
@@ -440,13 +448,18 @@ def build_mcp(
             ),
         ],
         name: Annotated[
-            str | None, Field(description="Display name, e.g. 'Software Architect'; omit/null if "
-                "not yet assigned.")
+            str | None,
+            Field(
+                description="Display name, e.g. 'Software Architect'; omit/null if "
+                "not yet assigned."
+            ),
         ] = None,
         role: Annotated[
             str | None,
-            Field(description="Specialty, e.g. 'Reviews system designs'; omit/null if "
-                "not yet assigned."),
+            Field(
+                description="Specialty, e.g. 'Reviews system designs'; omit/null if "
+                "not yet assigned."
+            ),
         ] = None,
         uuid: Annotated[
             str | None,
@@ -564,13 +577,20 @@ def build_mcp(
         the entry summary for listings."""
         _check_template("episode", template_version)
         return _svc().create_episode(
-            agent_id=agent_id, title=title, entry_title=entry_title, body=body,
-            content_summary=content_summary, project=project, tags=tags,
+            agent_id=agent_id,
+            title=title,
+            entry_title=entry_title,
+            body=body,
+            content_summary=content_summary,
+            project=project,
+            tags=tags,
         )
 
     @mcp.tool(title="Add a dated entry to an episode", annotations=_ADDITIVE)
     def prepend_episode_entry(
-        uuid: RecordRef, entry_title: EntryTitle, body: EntryBody,
+        uuid: RecordRef,
+        entry_title: EntryTitle,
+        body: EntryBody,
         content_summary: Annotated[str, Field(description="The new entry's authored Summary row.")],
         template_version: EpisodeVersion = None,
     ) -> dict[str, Any]:
@@ -594,8 +614,12 @@ def build_mcp(
         metadata and fresh edit_context instead."""
         try:
             return _svc().edit(
-                uuid, old_string, new_string, replace_all,
-                expected_revision=expected_revision, expected_tenant=expected_tenant,
+                uuid,
+                old_string,
+                new_string,
+                replace_all,
+                expected_revision=expected_revision,
+                expected_tenant=expected_tenant,
             )
         except EditConflict as exc:
             raise ToolError(f"edit conflict: {exc}") from exc
@@ -631,7 +655,7 @@ def build_mcp(
             list[dict[str, Any]],
             Field(
                 description="Ordered replacements, e.g. [{'old_string': 'draft', "
-                    "'new_string': 'ready'}]. Use "
+                "'new_string': 'ready'}]. Use "
                 "optional replace_all for repeated matches. Each matches the "
                 "body resulting from the previous edit; all edits succeed or none are written."
             ),
@@ -857,8 +881,8 @@ def _register_content(
     @mcp.tool(title="Read a served procedure", annotations=_READ)
     def read_procedure(
         name: Annotated[
-            str, Field(description="Name from list_procedures, e.g. 'awaken-agent', "
-                "without / or .md.")
+            str,
+            Field(description="Name from list_procedures, e.g. 'awaken-agent', without / or .md."),
         ],
         argument: Annotated[
             str | None,
